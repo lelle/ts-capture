@@ -1,0 +1,25 @@
+# Build output
+dist/
+**/dist/
+*.tsbuildinfo
+**/*.tsbuildinfo
+
+# Dependencies
+node_modules/
+**/node_modules/
+
+# Coverage
+coverage/
+**/coverage/
+
+# Lockfiles (managed by package manager)
+pnpm-lock.yaml
+
+# IDE
+.idea/
+
+# Local TS_CAPTURE_TYPES_DIR scratch dirs (per-PID/UUID JSON dumps)
+ts-capture-test/
+**/ts-capture-test/
+.ts-capture/
+**/.ts-capture/

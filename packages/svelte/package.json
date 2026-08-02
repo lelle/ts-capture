@@ -1,0 +1,73 @@
+{
+  "name": "@ts-capture/svelte",
+  "version": "0.1.0",
+  "description": "ts-capture Svelte preprocessor — instrument <script> blocks in .svelte files for runtime type observation. (0.x — API may change between minor versions.)",
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "default": "./dist/index.js"
+    },
+    "./apply": {
+      "types": "./dist/apply.d.ts",
+      "import": "./dist/apply.js",
+      "default": "./dist/apply.js"
+    },
+    "./runes": {
+      "types": "./dist/runes.d.ts",
+      "import": "./dist/runes.js",
+      "default": "./dist/runes.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc",
+    "typecheck": "tsc --noEmit -p tsconfig.test.json",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage",
+    "lint": "oxlint src/ --deny-warnings",
+    "check": "npm run lint && npm run build && npm run test"
+  },
+  "keywords": [
+    "ts-capture",
+    "svelte",
+    "preprocessor",
+    "type-inference",
+    "types",
+    "typescript"
+  ],
+  "license": "MIT",
+  "engines": {
+    "node": ">=22"
+  },
+  "peerDependencies": {
+    "@ts-capture/core": "workspace:*",
+    "svelte": ">=5.0.0"
+  },
+  "devDependencies": {
+    "@ts-capture/core": "workspace:*",
+    "@types/node": "26.2.0",
+    "@vitest/coverage-v8": "4.1.10",
+    "oxlint": "1.77.0",
+    "svelte": "5.56.8",
+    "typescript": "6.0.3",
+    "vitest": "4.1.10"
+  },
+  "author": "Sverre Ølnes <sverre.olnes@gmail.com>",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/lelle/ts-capture.git",
+    "directory": "packages/svelte"
+  },
+  "homepage": "https://github.com/lelle/ts-capture#readme",
+  "bugs": {
+    "url": "https://github.com/lelle/ts-capture/issues"
+  },
+  "publishConfig": {
+    "access": "public"
+  }
+}

@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Questions & ideas
+    url: https://github.com/lelle/ts-capture/discussions
+    about: Usage questions, ideas, and open-ended discussion belong in Discussions.
+  - name: Security vulnerability
+    url: https://github.com/lelle/ts-capture/security/advisories/new
+    about: Report security issues privately — never in a public issue.

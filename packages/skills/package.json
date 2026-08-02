@@ -1,0 +1,35 @@
+{
+  "name": "@ts-capture/skills",
+  "version": "0.1.0",
+  "description": "Agent skills for ts-capture onboarding and review of inferred annotations. (0.x — API may change between minor versions.)",
+  "files": [
+    "ts-capture-apply-review",
+    "ts-capture-setup",
+    "README.md"
+  ],
+  "license": "MIT",
+  "engines": {
+    "node": ">=20"
+  },
+  "keywords": [
+    "agent",
+    "coding-agent",
+    "ts-capture",
+    "skill",
+    "type-inference",
+    "typescript"
+  ],
+  "author": "Sverre Ølnes <sverre.olnes@gmail.com>",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/lelle/ts-capture.git",
+    "directory": "packages/skills"
+  },
+  "homepage": "https://github.com/lelle/ts-capture#readme",
+  "bugs": {
+    "url": "https://github.com/lelle/ts-capture/issues"
+  },
+  "publishConfig": {
+    "access": "public"
+  }
+}

@@ -1,0 +1,56 @@
+name: Release
+
+on:
+  push:
+    branches: [main]
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+# Least privilege at the top; the release job opts into exactly what it needs.
+permissions: {}
+
+jobs:
+  release:
+    name: Version PR or publish
+    runs-on: ubuntu-latest
+    # `Release` is a protected environment — require manual approval before
+    # a publish runs. Configure it in repo Settings → Environments.
+    environment: Release
+    permissions:
+      contents: write # push the version bump + create git tags
+      pull-requests: write # open / update the "Version Packages" PR
+      id-token: write # npm trusted publishing (OIDC) + provenance
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          fetch-depth: 0
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
+        with:
+          version: 10
+
+      - name: Setup Node
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      # Trusted publishing + automatic provenance require npm >= 11.5.1.
+      - name: Pin npm with trusted-publishing support
+        run: npm install -g npm@latest
+
+      - name: Create Release PR or publish
+        uses: changesets/action@63a615b9cd06ba9a3e6d13796c7fbcb080a60a0b # v1.8.0
+        with:
+          version: pnpm version-packages
+          publish: pnpm release
+          commit: "chore: version packages"
+          title: "chore: version packages"
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

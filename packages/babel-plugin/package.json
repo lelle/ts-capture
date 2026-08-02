@@ -1,0 +1,65 @@
+{
+  "name": "@ts-capture/babel-plugin",
+  "version": "0.1.0",
+  "description": "ts-capture Babel plugin — instrument TS/JS at compile time so test runs collect type observations. (0.x — API may change between minor versions.)",
+  "exports": {
+    ".": {
+      "require": "./dist/index.js",
+      "import": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    },
+    "./runtime": "./runtime.cjs"
+  },
+  "files": [
+    "dist",
+    "runtime.cjs"
+  ],
+  "scripts": {
+    "build": "tsc",
+    "typecheck": "tsc --noEmit -p tsconfig.test.json",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage",
+    "lint": "oxlint src/ --deny-warnings",
+    "check": "npm run lint && npm run build && npm run test"
+  },
+  "keywords": [
+    "babel",
+    "babel-plugin",
+    "ts-capture",
+    "type-inference",
+    "types",
+    "typescript"
+  ],
+  "license": "MIT",
+  "engines": {
+    "node": ">=20"
+  },
+  "peerDependencies": {
+    "@babel/core": ">=7.0.0",
+    "@ts-capture/core": "workspace:*"
+  },
+  "devDependencies": {
+    "@babel/core": "8.0.1",
+    "@babel/preset-typescript": "8.0.1",
+    "@ts-capture/core": "workspace:*",
+    "@types/node": "26.2.0",
+    "@vitest/coverage-v8": "4.1.10",
+    "oxlint": "1.77.0",
+    "typescript": "6.0.3",
+    "vitest": "4.1.10"
+  },
+  "author": "Sverre Ølnes <sverre.olnes@gmail.com>",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/lelle/ts-capture.git",
+    "directory": "packages/babel-plugin"
+  },
+  "homepage": "https://github.com/lelle/ts-capture#readme",
+  "bugs": {
+    "url": "https://github.com/lelle/ts-capture/issues"
+  },
+  "publishConfig": {
+    "access": "public"
+  }
+}

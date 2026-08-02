@@ -1,0 +1,65 @@
+{
+  "name": "@ts-capture/esbuild",
+  "version": "0.1.0",
+  "description": "ts-capture esbuild plugin — instrument TS at bundle time for tsup / Bun / esbuild-direct stacks. (0.x — API may change between minor versions.)",
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc",
+    "typecheck": "tsc --noEmit -p tsconfig.test.json",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage",
+    "lint": "oxlint src/ --deny-warnings",
+    "check": "npm run lint && npm run build && npm run test"
+  },
+  "keywords": [
+    "esbuild",
+    "esbuild-plugin",
+    "tsup",
+    "bun",
+    "ts-capture",
+    "type-inference",
+    "types",
+    "typescript"
+  ],
+  "license": "MIT",
+  "engines": {
+    "node": ">=20"
+  },
+  "peerDependencies": {
+    "esbuild": ">=0.20.0",
+    "@ts-capture/core": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/node": "26.2.0",
+    "@vitest/coverage-v8": "4.1.10",
+    "esbuild": "0.28.2",
+    "oxlint": "1.77.0",
+    "typescript": "6.0.3",
+    "vitest": "4.1.10",
+    "@ts-capture/core": "workspace:*"
+  },
+  "author": "Sverre Ølnes <sverre.olnes@gmail.com>",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/lelle/ts-capture.git",
+    "directory": "packages/esbuild"
+  },
+  "homepage": "https://github.com/lelle/ts-capture#readme",
+  "bugs": {
+    "url": "https://github.com/lelle/ts-capture/issues"
+  },
+  "publishConfig": {
+    "access": "public"
+  }
+}

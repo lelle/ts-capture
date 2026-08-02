@@ -1,0 +1,61 @@
+name: Bug report
+description: ts-capture produced the wrong TypeScript (or crashed). Anchor it to code.
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        ts-capture's domain is **TypeScript in → TypeScript out**, so every
+        bug needs a code example. Prose-only reports can't be acted on.
+  - type: textarea
+    id: input
+    attributes:
+      label: Input
+      description: The source ts-capture sees.
+      render: ts
+      placeholder: |
+        function greet(name) {
+          return "hi " + name;
+        }
+    validations:
+      required: true
+  - type: textarea
+    id: current
+    attributes:
+      label: Current
+      description: What ts-capture emits today (the wrong output), or the error.
+      render: ts
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected
+      description: The TypeScript you expected instead.
+      render: ts
+    validations:
+      required: true
+  - type: textarea
+    id: details
+    attributes:
+      label: What's wrong
+      description: Anything the code blocks don't make obvious.
+    validations:
+      required: false
+  - type: input
+    id: version
+    attributes:
+      label: Versions
+      description: Package + version, Node, and adapter (vite / esbuild / svelte / …).
+      placeholder: "@ts-capture/core 0.1.0, Node 22, vite"
+    validations:
+      required: true
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Checklist
+      options:
+        - label: I searched existing issues and this isn't a duplicate.
+          required: true
+        - label: The Input above reproduces the problem on its own.
+          required: true

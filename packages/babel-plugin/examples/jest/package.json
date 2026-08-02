@@ -1,0 +1,17 @@
+{
+  "name": "@ts-capture/babel-plugin-jest-example",
+  "version": "0.0.0",
+  "private": true,
+  "type": "commonjs",
+  "scripts": {
+    "test": "jest"
+  },
+  "devDependencies": {
+    "@babel/core": "^7.24.0",
+    "@babel/preset-env": "^7.24.0",
+    "@babel/preset-typescript": "^7.24.0",
+    "@ts-capture/babel-plugin": "workspace:*",
+    "jest": "^29.7.0",
+    "@ts-capture/core": "workspace:*"
+  }
+}

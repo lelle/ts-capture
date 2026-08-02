@@ -1,0 +1,39 @@
+name: Feature request
+description: Propose a transformation or capability. Show it in code.
+labels: [enhancement]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Anchor the proposal to code: what goes in, what should come out.
+        RFC-style design sketches are welcome too.
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: What can't you express today? What's the pain?
+    validations:
+      required: true
+  - type: textarea
+    id: input
+    attributes:
+      label: Input
+      description: Source ts-capture would see.
+      render: ts
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected
+      description: The TypeScript you'd want ts-capture to produce.
+      render: ts
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: Other approaches, prior art, or why existing flags don't cover it.
+    validations:
+      required: false

@@ -1,0 +1,65 @@
+{
+  "name": "@ts-capture/vite",
+  "version": "0.1.0",
+  "description": "ts-capture Vite plugin — instrument modules in browser + Vitest for click-for-types and test-driven type collection. (0.x — API may change between minor versions.)",
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc",
+    "typecheck": "tsc --noEmit -p tsconfig.test.json",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage",
+    "lint": "oxlint src/ --deny-warnings",
+    "check": "npm run lint && npm run build && npm run test"
+  },
+  "keywords": [
+    "ts-capture",
+    "type-inference",
+    "types",
+    "typescript",
+    "vite",
+    "vite-plugin",
+    "vitest"
+  ],
+  "license": "MIT",
+  "engines": {
+    "node": ">=20"
+  },
+  "peerDependencies": {
+    "@ts-capture/core": "workspace:*",
+    "vite": ">=5.0.0"
+  },
+  "devDependencies": {
+    "@ts-capture/core": "workspace:*",
+    "@types/node": "26.2.0",
+    "@vitest/coverage-v8": "4.1.10",
+    "jsdom": "29.1.1",
+    "oxlint": "1.77.0",
+    "typescript": "6.0.3",
+    "vite": "8.2.1",
+    "vitest": "4.1.10"
+  },
+  "author": "Sverre Ølnes <sverre.olnes@gmail.com>",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/lelle/ts-capture.git",
+    "directory": "packages/vite"
+  },
+  "homepage": "https://github.com/lelle/ts-capture#readme",
+  "bugs": {
+    "url": "https://github.com/lelle/ts-capture/issues"
+  },
+  "publishConfig": {
+    "access": "public"
+  }
+}

@@ -1,0 +1,44 @@
+{
+  "$schema": "https://unpkg.com/knip@latest/schema.json",
+  "ignoreExportsUsedInFile": { "interface": true, "type": true },
+  "rules": {
+    "dependencies": "off",
+    "devDependencies": "off",
+    "optionalPeerDependencies": "off",
+    "unlisted": "off",
+    "binaries": "off",
+    "unresolved": "off",
+    "duplicates": "off"
+  },
+  "workspaces": {
+    ".": {
+      "entry": ["eslint.config.mjs", "eslint.typed.mjs"],
+      "project": ["eslint.config.mjs", "eslint.typed.mjs"]
+    },
+    "packages/core": {
+      "entry": ["src/**/*.spec.ts!"],
+      "project": ["src/**/*.ts!"],
+      "vitest": false
+    },
+    "packages/babel-plugin": {
+      "entry": ["src/**/*.spec.ts!"],
+      "project": ["src/**/*.ts!"],
+      "vitest": false
+    },
+    "packages/esbuild": {
+      "entry": ["src/**/*.spec.ts!"],
+      "project": ["src/**/*.ts!"],
+      "vitest": false
+    },
+    "packages/svelte": {
+      "entry": ["src/**/*.spec.ts!"],
+      "project": ["src/**/*.ts!"],
+      "vitest": false
+    },
+    "packages/vite": {
+      "entry": ["src/**/*.spec.ts!"],
+      "project": ["src/**/*.ts!"],
+      "vitest": false
+    }
+  }
+}
