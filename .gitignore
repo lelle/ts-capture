@@ -13,3 +13,7 @@ types.json.applied
 
 # Personal Claude Code settings (team-shared settings live in .claude/settings.json)
 .claude/settings.local.json
+
+# Local working notes — thinking-in-progress, not repo documentation.
+# Graduates into docs/, an issue, or nothing.
+local-docs/
