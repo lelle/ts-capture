@@ -106,6 +106,53 @@ export function conflictCommentText(notes: readonly ConflictNote[], indent: stri
     .join("");
 }
 
+/** One suggestion, at one annotation site, for the preview mode. */
+export interface PreviewNote {
+  /** The annotation that would have been written. */
+  suggestion: string;
+  /** How many times the run saw a value here. */
+  observations: number;
+  /** What the checker infers, when a project made it askable. */
+  inferred?: string;
+}
+
+/**
+ * The preview block for one source line.
+ *
+ * What it says depends on whether the annotation is being written beside it.
+ * Alone, the note has to name the type, because nothing else does. Next to the
+ * annotation, naming it repeats the line below verbatim — a 156-character
+ * union twice over — and "would write" claims something did not happen when it
+ * did. What is left is what the annotation cannot say: how much the run saw,
+ * and what TypeScript held before.
+ *
+ * The observation count is here and deliberately not in the eval's report. As
+ * a machine gate it fails — a value seen once is as likely a config object read
+ * at startup as one arbitrary caller's payload, and nothing in the count
+ * separates those. A reader can separate them, by looking at where the value
+ * comes from, and "observed once" is the signal worth that minute.
+ */
+export function previewCommentText(
+  notes: readonly PreviewNote[],
+  indent: string,
+  mode: "comments" | "both" = "comments",
+): string {
+  return notes
+    .map((n) => {
+      const seen = n.observations === 1 ? "observed once" : `observed ${n.observations} times`;
+      const known = n.inferred === undefined ? "" : `; TypeScript infers \`${n.inferred}\``;
+      if (mode === "both") return `${indent}${CONFLICT_MARKER} ${seen}${known}\n`;
+      // The marker on both lines, not just the first: removal matches the
+      // marker, so a continuation line without it would be orphaned in the
+      // file the moment the note it belongs to was rewritten.
+      return (
+        `${indent}${CONFLICT_MARKER} would write \`${n.suggestion}\`\n` +
+        `${indent}${CONFLICT_MARKER}   ${seen}${known}\n`
+      );
+    })
+    .join("");
+}
+
 /**
  * Ranges of every whole line that is one of apply's notes, newline included.
  *

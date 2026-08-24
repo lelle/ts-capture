@@ -254,6 +254,24 @@ export interface InferOptions {
    * carrying `// @ts-capture:` is removed before the current set is written.
    */
   emitConflictComments: boolean;
+
+  /**
+   * What apply writes at a site it has something to say about.
+   *
+   * - `annotations` — the type, as always.
+   * - `comments` — a note saying what would be written, and nothing else. A
+   *   preview in the editor rather than in a terminal: `--dry-run` shows the
+   *   diff, this shows the proposal where the code is. The notes are
+   *   scaffolding, and the next ordinary apply removes them, because every
+   *   line carrying the marker belongs to apply.
+   * - `both` — the annotation with the note above it, for reading an applied
+   *   diff with the reasoning beside the result.
+   *
+   * Conflict notes are unaffected: a contradiction is reported in every mode,
+   * and a site that has one gets no suggestion beside it — the suggestion
+   * would be exactly the fix the tool declines to choose.
+   */
+  outputMode: "annotations" | "comments" | "both";
 }
 
 export const INFER_DEFAULTS: InferOptions = {
@@ -286,6 +304,7 @@ export const INFER_DEFAULTS: InferOptions = {
   emitDiagnosticComments: false,
   maxAnnotationChars: 4096,
   emitConflictComments: true,
+  outputMode: "annotations",
 };
 
 /**
@@ -420,6 +439,7 @@ function deepMergeInfer(
     emitDiagnosticComments: overrides.emitDiagnosticComments ?? defaults.emitDiagnosticComments,
     maxAnnotationChars: overrides.maxAnnotationChars ?? defaults.maxAnnotationChars,
     emitConflictComments: overrides.emitConflictComments ?? defaults.emitConflictComments,
+    outputMode: overrides.outputMode ?? defaults.outputMode,
   };
 }
 

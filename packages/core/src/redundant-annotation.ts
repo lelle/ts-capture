@@ -335,6 +335,15 @@ export function writesOverCallSignature(
   return hasCallSignature(checker, inferred);
 }
 
+/** How the checker's type reads, for a note addressed to a person. */
+export function describeInferred(
+  checker: ts.TypeChecker | undefined,
+  type: ts.Type | undefined,
+): string | undefined {
+  if (!checker || !type) return undefined;
+  return checker.typeToString(type, undefined, ts.TypeFormatFlags.NoTruncation);
+}
+
 /** Type the checker infers at a node, or undefined when it cannot be asked. */
 export function typeAt(
   checker: ts.TypeChecker | undefined,

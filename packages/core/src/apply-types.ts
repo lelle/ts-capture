@@ -16,6 +16,8 @@ import {
   lineStartAndIndent,
   markerLineRanges,
   parseForNoteSafety,
+  previewCommentText,
+  type PreviewNote,
   siteName,
 } from "./conflict-comment.js";
 import { buildCstSiteIndex } from "./cst-site-index.js";
@@ -34,6 +36,7 @@ import {
 import { isParseableTypeString } from "./parseable.js";
 import {
   carriesPolymorphicThis,
+  describeInferred,
   discardsUnionArm,
   erasesEnum,
   erasesNamedType,
@@ -83,6 +86,29 @@ export function applyTypesToFile(
   function canPlaceNoteAt(lineStart: number): boolean {
     noteSafetySf ??= parseForNoteSafety(options.filename, source);
     return !isInsideTextRun(noteSafetySf, lineStart);
+  }
+
+  // What apply would have written, for the preview modes.
+  const previewNotes = new Map<number, { indent: string; notes: PreviewNote[] }>();
+  let lastInferredString: string | undefined;
+  const pendingPreviews = new Map<number, PreviewNote>();
+
+  /** See `recordPreview` in cst-replacements.ts — same job, same shape. */
+  function recordPreview(pos: number, suggestion: string, observations: number): void {
+    if (infer.outputMode === "annotations") return;
+    pendingPreviews.set(pos, { suggestion, observations, inferred: lastInferredString });
+  }
+
+  /** See `settlePreview` in cst-replacements.ts — a preview is only true once
+   * the annotation it describes has survived verify. */
+  function settlePreview(pos: number): void {
+    const note = pendingPreviews.get(pos);
+    if (!note) return;
+    const { lineStart, indent } = lineStartAndIndent(source, pos);
+    if (!canPlaceNoteAt(lineStart)) return;
+    const bucket = previewNotes.get(lineStart) ?? { indent, notes: [] };
+    bucket.notes.push(note);
+    previewNotes.set(lineStart, bucket);
   }
   const prefix = options.prefix ?? "";
   const infer = options.infer ?? INFER_DEFAULTS;
@@ -202,6 +228,10 @@ export function applyTypesToFile(
 
   const telemetry = options.telemetry;
   for (const [, pos, types, opts] of dedupedTypeInfo.values()) {
+    // Each site answers for itself. This is one variable shared by every
+    // branch, and a value left over from the previous entry names a different
+    // position — a note that gets that wrong is worse than one that omits it.
+    lastInferredString = undefined;
     if (telemetry) telemetry.totalEntries++;
     // User opt-out via @ts-capture-ignore comment — applies to
     // any insertion position (varDecl, param, return type, class
@@ -465,6 +495,7 @@ export function applyTypesToFile(
       if (erasesEnum(checker, inferred, emitted)) continue;
       if (discardsUnionArm(checker, inferred, emitted)) continue;
 
+      lastInferredString = describeInferred(checker, inferred);
       const observed = infer.emitConflictComments
         ? observedBeyondInferred(checker, inferred, emitted)
         : null;
@@ -496,6 +527,8 @@ export function applyTypesToFile(
 
     const annotationText = thisPrefix + ": " + prefix + emitted + suffix + markerSuffix;
 
+    recordPreview(pos, emitted, types.length);
+
     // Defer verify to a batch pass at the end of
     // the entry loop. Per-candidate probing was 30× slower than
     // necessary on the happy path. Here we just record the
@@ -510,6 +543,8 @@ export function applyTypesToFile(
       continue;
     }
 
+    settlePreview(pos);
+    if (infer.outputMode === "comments") continue;
     replacements.push(Replacement.insert(pos, annotationText, insertPriority));
     if (telemetry) telemetry.emitted++;
   }
@@ -529,6 +564,8 @@ export function applyTypesToFile(
     const acceptedSet = new Set(acceptedIdx);
     for (const i of acceptedIdx) {
       const c = annotationCandidates[i];
+      settlePreview(c.pos);
+      if (infer.outputMode === "comments") continue;
       replacements.push(Replacement.insert(c.pos, c.text, c.priority));
       if (telemetry) telemetry.emitted++;
     }
@@ -548,6 +585,13 @@ export function applyTypesToFile(
     }
     for (const [lineStart, { indent, notes }] of conflictNotes) {
       replacements.push(Replacement.insert(lineStart, conflictCommentText(notes, indent), -2));
+    }
+  }
+  if (infer.outputMode !== "annotations") {
+    for (const [lineStart, { indent, notes }] of previewNotes) {
+      replacements.push(
+        Replacement.insert(lineStart, previewCommentText(notes, indent, infer.outputMode), -3),
+      );
     }
   }
 

@@ -8,6 +8,7 @@ import {
   lineStartAndIndent,
   markerLineRanges,
   parseForNoteSafety,
+  previewCommentText,
   siteName,
 } from "./conflict-comment.js";
 
@@ -161,6 +162,79 @@ describe("CONFLICT_MARKER", () => {
       "",
     );
     expect(text.trimStart().startsWith(CONFLICT_MARKER)).toBe(true);
+  });
+});
+
+describe("previewCommentText — alongside an annotation", () => {
+  // In `both` mode the annotation is written, so "would write" is a claim
+  // about something that did happen — and the type it names is repeated
+  // verbatim on the next line, which for a 156-character union is the whole
+  // line twice. What the annotation does not say is why, so that is what is
+  // left.
+  it("says what the annotation cannot, and not what it already says", () => {
+    expect(
+      previewCommentText([{ suggestion: "string", observations: 5, inferred: "any" }], "", "both"),
+    ).toBe("// @ts-capture: observed 5 times; TypeScript infers `any`\n");
+  });
+
+  it("still carries the indentation", () => {
+    expect(previewCommentText([{ suggestion: "string", observations: 1 }], "  ", "both")).toBe(
+      "  // @ts-capture: observed once\n",
+    );
+  });
+});
+
+describe("previewCommentText", () => {
+  // The preview mode's comment. Two lines: what would be written, and the
+  // context a reader needs to judge it without looking anything up.
+  it("names the suggestion, the evidence, and what TypeScript has", () => {
+    expect(
+      previewCommentText([{ suggestion: "string", observations: 14, inferred: "any" }], ""),
+    ).toBe(
+      "// @ts-capture: would write `string`\n" +
+        "// @ts-capture:   observed 14 times; TypeScript infers `any`\n",
+    );
+  });
+
+  // Singular reads as prose, and "observed once" is the number a reader should
+  // stop at — not because one sighting is wrong, but because it is the case
+  // where looking at *where* the value came from is worth the minute.
+  it("says `once` rather than `1 times`", () => {
+    expect(
+      previewCommentText([{ suggestion: "string", observations: 1, inferred: "any" }], ""),
+    ).toContain("observed once;");
+  });
+
+  it("carries the indentation onto both lines", () => {
+    expect(
+      previewCommentText([{ suggestion: "string", observations: 2, inferred: "any" }], "  "),
+    ).toBe(
+      "  // @ts-capture: would write `string`\n" +
+        "  // @ts-capture:   observed 2 times; TypeScript infers `any`\n",
+    );
+  });
+
+  // No project, no checker, nothing to say about what TypeScript holds.
+  it("drops the checker clause when there is no checker", () => {
+    expect(previewCommentText([{ suggestion: "string", observations: 3 }], "")).toBe(
+      "// @ts-capture: would write `string`\n// @ts-capture:   observed 3 times\n",
+    );
+  });
+
+  it("writes a block per suggestion on the same line", () => {
+    const text = previewCommentText(
+      [
+        { suggestion: "string", observations: 1, inferred: "any" },
+        { suggestion: "number", observations: 2, inferred: "any" },
+      ],
+      "",
+    );
+    expect(text.split("\n").filter(Boolean)).toHaveLength(4);
+  });
+
+  it("is stripped by the same mechanism that owns every note", () => {
+    const text = previewCommentText([{ suggestion: "string", observations: 1 }], "");
+    expect(markerLineRanges(text + "const a = f();\n")).toHaveLength(2);
   });
 });
 

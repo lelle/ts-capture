@@ -16,6 +16,8 @@ import {
   lineStartAndIndent,
   markerLineRanges,
   parseForNoteSafety,
+  previewCommentText,
+  type PreviewNote,
   siteName,
 } from "./conflict-comment.js";
 import {
@@ -27,6 +29,7 @@ import { type NamedTypeIndex, rewriteToNamedInScope } from "./named-type-rewrite
 import { isParseableTypeString } from "./parseable.js";
 import {
   carriesPolymorphicThis,
+  describeInferred,
   discardsUnionArm,
   erasesEnum,
   erasesNamedType,
@@ -114,6 +117,12 @@ export function buildCstReplacements(
   // Contradictions between the run and the checker, grouped by the line they
   // sit on: one line can hold several sites, and their notes stack above it.
   const conflictNotes = new Map<number, { indent: string; notes: ConflictNote[] }>();
+  // What apply would have written, for the preview modes.
+  const previewNotes = new Map<number, { indent: string; notes: PreviewNote[] }>();
+  const pendingPreviews = new Map<number, PreviewNote>();
+  // The checker's view at the site currently being decided, so the preview can
+  // report it without every branch threading it through.
+  let lastInferredString: string | undefined;
 
   /**
    * Record a contradiction and report that this site is spoken for. The site
@@ -172,17 +181,49 @@ export function buildCstReplacements(
     if (!pendingWraps.has(closePos)) pendingWraps.set(closePos, openPos);
   }
 
+  /**
+   * Note what would be written here, pending acceptance.
+   *
+   * Held by position rather than written straight out: a candidate can still
+   * be rejected by the batch verify pass, and a preview promising an
+   * annotation that would never land is not a preview. `settlePreview` moves
+   * it across once the annotation is accepted.
+   */
+  function recordPreview(pos: number, suggestion: string, observations: number): void {
+    if (infer.outputMode === "annotations" || source === undefined) return;
+    pendingPreviews.set(pos, { suggestion, observations, inferred: lastInferredString });
+  }
+
+  /** Move an accepted site's preview into the per-line blocks. */
+  function settlePreview(pos: number): void {
+    const note = pendingPreviews.get(pos);
+    if (!note || source === undefined) return;
+    const { lineStart, indent } = lineStartAndIndent(source, pos);
+    if (!canPlaceNoteAt(lineStart)) return;
+    const bucket = previewNotes.get(lineStart) ?? { indent, notes: [] };
+    bucket.notes.push(note);
+    previewNotes.set(lineStart, bucket);
+  }
+
   function pushOrBufferAnnotation(pos: number, text: string, priority?: number): void {
+    // Comments mode still buffers, so verify still gets to reject: the preview
+    // has to agree with what an ordinary apply would do.
     if (verify) {
       annotationCandidates.push({ pos, text, priority });
-    } else {
-      annotatedPositions.add(pos);
-      cstReplacements.push(Replacement.insert(pos, text, priority ?? 0));
-      if (telemetry) telemetry.emitted++;
+      return;
     }
+    settlePreview(pos);
+    if (infer.outputMode === "comments") return;
+    annotatedPositions.add(pos);
+    cstReplacements.push(Replacement.insert(pos, text, priority ?? 0));
+    if (telemetry) telemetry.emitted++;
   }
 
   for (const { entry, kind } of eligible.values()) {
+    // Each site answers for itself. This is one variable shared by every
+    // branch, and a value left over from the previous entry names a different
+    // position — a note that gets that wrong is worse than one that omits it.
+    lastInferredString = undefined;
     const [, pos, types, opts] = entry;
     // Shared marker-comment suffix; appended after the type and before
     // any structural suffix (`)` for paren-less arrow wrap, `, ` for
@@ -235,6 +276,7 @@ export function buildCstReplacements(
       // Nothing to add when the checker already types this parameter — a
       // contextually typed callback param, for instance.
       const inferredParam = typeAt(checker, checkerIndex?.paramSites.get(pos)?.node.name);
+      lastInferredString = describeInferred(checker, inferredParam);
       // `Function` over a signature the checker already has replaces an answer
       // with a shrug.
       if (writesOverCallSignature(checker, inferredParam, emitted)) continue;
@@ -264,8 +306,10 @@ export function buildCstReplacements(
       // `(x: T) => body`. Mirrors the offset-based path.
       if (site.parensOpenPos !== undefined) {
         requestParenWrap(site.parensOpenPos, pos);
+        recordPreview(pos, emitted, types.length);
         pushOrBufferAnnotation(pos, ": " + prefix + emitted + markerSuffix, 1);
       } else {
+        recordPreview(pos, emitted, types.length);
         pushOrBufferAnnotation(pos, ": " + prefix + emitted + markerSuffix);
       }
     } else if (kind === "thisType") {
@@ -287,6 +331,7 @@ export function buildCstReplacements(
       // Mirrors the offset-based path's opts.thisNeedsComma flag —
       // here read directly from the AST.
       const suffix = site.hasOtherParams ? ", " : "";
+      recordPreview(pos, emitted, types.length);
       pushOrBufferAnnotation(pos, "this: " + prefix + emitted + markerSuffix + suffix);
     } else if (kind === "returnType") {
       const computed = computeAnnotationTypeString(types, opts, infer, false, program);
@@ -305,6 +350,7 @@ export function buildCstReplacements(
         checker,
         checkerIndex?.returnTypeSites.get(pos)?.node,
       );
+      lastInferredString = describeInferred(checker, inferredReturn);
 
       // `this` has no single value to write down. Any concrete type here —
       // however well observed — costs every subclass its own return type.
@@ -345,6 +391,7 @@ export function buildCstReplacements(
       // expansion in particular turns a keepable bare `Container` into
       // `Container<unknown>`, which describes no payload.
       if (!infer.emitDiagnosticComments && carriesNoInformation(emitted)) continue;
+      recordPreview(pos, emitted, types.length);
       pushOrBufferAnnotation(pos, ": " + prefix + emitted + markerSuffix, -1);
     } else {
       // varDecl: user-written `as Type` / `<Type>` cast on RHS — defer
@@ -366,6 +413,7 @@ export function buildCstReplacements(
       // restatement, so it does not wait for the flag either.
       if (emitted === "symbol" && site.initializer && isSymbolCall(site.initializer)) continue;
       const inferredBinding = typeAt(checker, checkerIndex?.varDeclSites.get(pos)?.nameNode);
+      lastInferredString = describeInferred(checker, inferredBinding);
       // `const self = this` — the same erasure as on a return type, in a
       // binding. nest aliases `this` that way so a class expression can close
       // over it.
@@ -408,6 +456,7 @@ export function buildCstReplacements(
       // expansion in particular turns a keepable bare `Container` into
       // `Container<unknown>`, which describes no payload.
       if (!infer.emitDiagnosticComments && carriesNoInformation(emitted)) continue;
+      recordPreview(pos, emitted, types.length);
       pushOrBufferAnnotation(pos, ": " + prefix + emitted + markerSuffix);
     }
   }
@@ -429,6 +478,8 @@ export function buildCstReplacements(
     const acceptedSet = new Set(acceptedIdx);
     for (const i of acceptedIdx) {
       const c = annotationCandidates[i];
+      settlePreview(c.pos);
+      if (infer.outputMode === "comments") continue;
       cstReplacements.push(Replacement.insert(c.pos, c.text, c.priority ?? 0));
       annotatedPositions.add(c.pos);
       if (telemetry) telemetry.emitted++;
@@ -457,6 +508,15 @@ export function buildCstReplacements(
     }
     for (const [lineStart, { indent, notes }] of conflictNotes) {
       cstReplacements.push(Replacement.insert(lineStart, conflictCommentText(notes, indent), -2));
+    }
+  }
+  // Preview blocks sort above a conflict note on the same line: the note is
+  // about the code, the preview is about what apply would do to it.
+  if (infer.outputMode !== "annotations") {
+    for (const [lineStart, { indent, notes }] of previewNotes) {
+      cstReplacements.push(
+        Replacement.insert(lineStart, previewCommentText(notes, indent, infer.outputMode), -3),
+      );
     }
   }
 

@@ -1121,6 +1121,76 @@ describe("applyTypesToFileCst — TypeChecker verify integration", () => {
     expect(applyTypesToFile(proj.targetSource, typeInfo, opts, program)).toBe(proj.targetSource);
   });
 
+  // A line start inside a multi-line template is inside the *string*. Writing
+  // a note there makes it text, and its backticks close the template early.
+  // Found by looking at applied output, not by a test — nest has no
+  // annotation site inside a template literal.
+  it("writes no note where the line start is inside a template literal", () => {
+    const src = "const items = [{ id: 1 }];\nconst s = `\n  ${items.map(x => x.id)}\n`;\n";
+    const xEnd = src.indexOf("x =>") + 1;
+    const typeInfo: CollectedTypeInfo = [entry("t.ts", xEnd, [["number"]])];
+    const out = applyTypesToFileCst(src, typeInfo, {
+      infer: { ...INFER_DEFAULTS, outputMode: "both" },
+      filename: "t.ts",
+    });
+    expect(out).not.toContain("@ts-capture");
+    // The annotation itself is unaffected — it goes inside the interpolation,
+    // which is code.
+    expect(out).toContain("(x: number)");
+  });
+
+  // The dialect matters: parsing a `.ts` file as TSX reads `<` as a JSX tag,
+  // and the misparse invents JsxText over ordinary code. That refused a real
+  // note on nest — `const currentRoutingKey = routingKeySegments[i];`, which
+  // is not inside anything.
+  it("writes a note in a .ts file that uses angle brackets", () => {
+    const src = "const parts = collect<string>(input);\nconst first = parts[0];\n";
+    const firstEnd = src.indexOf("const first") + "const first".length;
+    const typeInfo: CollectedTypeInfo = [entry("t.ts", firstEnd, [["string"]], { varDecl: true })];
+    const out = applyTypesToFileCst(src, typeInfo, {
+      infer: { ...INFER_DEFAULTS, outputMode: "comments" },
+      filename: "t.ts",
+    });
+    expect(out).toContain("// @ts-capture: would write `string`");
+  });
+
+  // The checker's view is held in one variable shared by every branch, and the
+  // `this` branch never sets it — so its preview reported whatever the previous
+  // entry had asked about. Here that is `v`, a binding in another function two
+  // lines up. A note that names the wrong position is worse than no note.
+  it("does not let a preview claim a type from another site", () => {
+    const proj = makeProject({
+      "target.ts":
+        "declare const n: number;\n" +
+        "export function g() {\n" +
+        "  const v = n;\n" +
+        "  return v;\n" +
+        "}\n" +
+        "export function needsThis(x) {\n" +
+        "  return x;\n" +
+        "}\n",
+    });
+    const program = createProjectVerificationContext(
+      proj.fileNames,
+      proj.compilerOptions,
+      proj.dir,
+    ).service.getProgram();
+    const vEnd = proj.targetSource.indexOf("const v") + "const v".length;
+    const parensPos = proj.targetSource.indexOf("needsThis(") + "needsThis(".length;
+    const typeInfo: CollectedTypeInfo = [
+      entry(proj.target, vEnd, [["number"]], { varDecl: true }),
+      entry(proj.target, parensPos, [["string"]], { thisType: true }),
+    ];
+    const out = applyTypesToFileCst(
+      proj.targetSource,
+      typeInfo,
+      { filename: proj.target, infer: { ...INFER_DEFAULTS, outputMode: "comments" } },
+      program,
+    );
+    expect(out).toContain("would write `string`");
+    expect(out).not.toContain("TypeScript infers `number`");
+  });
+
   it("never annotates a return type the checker infers as `this`", () => {
     // A builder that returns `this` keeps working in a subclass. The run only
     // ever sees the concrete instance, so ts-capture writes the class name and
@@ -1255,6 +1325,107 @@ describe("applyTypesToFileCst — TypeChecker verify integration", () => {
       program,
     );
     expect(result).toContain("// @ts-capture: `p` observed `undefined`");
+  });
+
+  describe("outputMode", () => {
+    const project = () => {
+      const proj = makeProject({
+        "target.ts": "export function f(x) {\n  return x.length;\n}\nf('a');\nf('b');\n",
+      });
+      const program = createProjectVerificationContext(
+        proj.fileNames,
+        proj.compilerOptions,
+        proj.dir,
+      ).service.getProgram();
+      const xEnd = proj.targetSource.indexOf("(x)") + 2;
+      const seen: [string] = ["string"];
+      const typeInfo: CollectedTypeInfo = [entry(proj.target, xEnd, [seen, seen])];
+      return { proj, program, typeInfo };
+    };
+
+    it("annotations: writes the type and no note", () => {
+      const { proj, program, typeInfo } = project();
+      const out = applyTypesToFileCst(
+        proj.targetSource,
+        typeInfo,
+        { filename: proj.target },
+        program,
+      );
+      expect(out).toContain("function f(x: string)");
+      expect(out).not.toContain("@ts-capture");
+    });
+
+    it("comments: writes the note and leaves the code alone", () => {
+      const { proj, program, typeInfo } = project();
+      const out = applyTypesToFileCst(
+        proj.targetSource,
+        typeInfo,
+        { filename: proj.target, infer: { ...INFER_DEFAULTS, outputMode: "comments" } },
+        program,
+      );
+      expect(out).toContain("// @ts-capture: would write `string`");
+      expect(out).toContain("// @ts-capture:   observed 2 times; TypeScript infers `any`");
+      expect(out).toContain("function f(x)");
+      expect(out).not.toContain("x: string");
+    });
+
+    // Beside the annotation the note drops the type: it is on the next line
+    // already, and "would write" would claim something did not happen when it
+    // did. What is left is what the annotation cannot say.
+    it("both: writes the type, and a note saying only what the type cannot", () => {
+      const { proj, program, typeInfo } = project();
+      const out = applyTypesToFileCst(
+        proj.targetSource,
+        typeInfo,
+        { filename: proj.target, infer: { ...INFER_DEFAULTS, outputMode: "both" } },
+        program,
+      );
+      expect(out).toContain("// @ts-capture: observed 2 times; TypeScript infers `any`");
+      expect(out).not.toContain("would write");
+      expect(out).toContain("function f(x: string)");
+    });
+
+    // A preview that names an annotation apply would not actually write is not
+    // a preview. The first run on nest wrote 261 of them against 125 real
+    // annotations — the difference being exactly the candidates the batch
+    // verify pass rejects.
+    it("does not preview an annotation verify would reject", () => {
+      const proj = makeProject({ "target.ts": "const x = 1;\n" });
+      const projectCtx = createProjectVerificationContext(
+        proj.fileNames,
+        proj.compilerOptions,
+        proj.dir,
+      );
+      const verifyCtx = createVerificationContext(projectCtx, proj.target, proj.targetSource);
+      // `const x = 1` cannot be a `string`; verify rejects it.
+      const xEnd = proj.targetSource.indexOf("x") + 1;
+      const typeInfo: CollectedTypeInfo = [
+        entry(proj.target, xEnd, [["string"]], { varDecl: true }),
+      ];
+      const out = applyTypesToFileCst(proj.targetSource, typeInfo, {
+        verify: verifyCtx,
+        infer: { ...INFER_DEFAULTS, outputMode: "comments" },
+      });
+      expect(out).toBe(proj.targetSource);
+    });
+
+    // The preview is scaffolding: an ordinary apply owns every line carrying
+    // the marker, so the next run cleans up after the review.
+    it("an ordinary apply removes a preview left behind", () => {
+      const { proj, program, typeInfo } = project();
+      const previewed = applyTypesToFileCst(
+        proj.targetSource,
+        typeInfo,
+        { filename: proj.target, infer: { ...INFER_DEFAULTS, outputMode: "comments" } },
+        program,
+      );
+      expect(previewed).toContain("@ts-capture");
+      // Second pass over the previewed text, in the default mode. The offsets
+      // the entries carry are into the original source, so this asserts only
+      // that the notes are gone.
+      const cleaned = applyTypesToFileCst(previewed, [], { filename: proj.target });
+      expect(cleaned).not.toContain("@ts-capture");
+    });
   });
 
   it("removes a note whose conflict is gone", () => {
