@@ -107,11 +107,33 @@ export function applyTypesToFile(
   // (vitest workers, jest forks) observe the same code path many times;
   // without this, two observations of `const x = true` would produce
   // `const x: boolean: boolean = true` (one Replacement.insert per entry).
-  // Same pos + same opts = same site; merge their type observations.
+  //
+  // The key is file + pos + *site kind*, not file + pos + the whole opts
+  // object. One position can host genuinely different sites — a paren-less
+  // arrow's param annotation and its return annotation both key on the
+  // param pos — so pos alone is too coarse. But the full opts object is
+  // too fine: incidental fields (`fnRetPos`, `async`) split one site into
+  // several, and each emits its own annotation.
+  //
+  // The first entry's opts wins; later entries contribute only their
+  // observed types.
   const dedupedTypeInfo = new Map<string, CollectedTypeInfo[number]>();
   for (const entry of typeInfo) {
     const [file, pos, types, opts] = entry;
-    const key = `${file}\x00${pos}\x00${JSON.stringify(opts ?? null)}`;
+    // Not an observation of this position's own type: a `paramReturn` record
+    // holds what calling the parameter returned. Merging it in would make
+    // `resolve` read `Function|undefined` when it is only ever a `Function`.
+    // `crossReferenceObservations` already drops these one step earlier — the
+    // guard is here so a caller reaching the applier directly cannot bypass it.
+    if (opts?.paramReturn) continue;
+    const siteKind = opts?.returnType
+      ? "ret"
+      : opts?.varDecl
+        ? "var"
+        : opts?.thisType
+          ? "this"
+          : "param";
+    const key = `${file}\x00${pos}\x00${siteKind}`;
     const existing = dedupedTypeInfo.get(key);
     if (existing) {
       existing[2].push(...types);

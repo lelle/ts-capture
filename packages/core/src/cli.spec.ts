@@ -281,6 +281,126 @@ describe("cli", () => {
         });
       });
 
+      // Regression: the verify gate builds one LanguageService for the run,
+      // but nothing told it what earlier files had been written. Every file
+      // was checked against a project where all previously-applied files were
+      // still unannotated, so annotations that only conflict in combination
+      // reached disk. Surfaced on nestjs/nest, where six type errors survived
+      // a run with `typecheckVerify` on.
+      it("verify sees annotations already applied to earlier files", () => {
+        withTmpDir((rawDir) => {
+          // realpath: on macOS os.tmpdir() is a symlink (/var → /private/var).
+          // The CLI resolves the project through process.cwd(), so unresolved
+          // paths in types.json never match `userFiles` and the verify gate
+          // silently switches off — the test would pass for the wrong reason.
+          const dir = fs.realpathSync(rawDir);
+          fs.writeFileSync(
+            path.join(dir, "tsconfig.json"),
+            JSON.stringify({
+              compilerOptions: {
+                noImplicitAny: false,
+                target: "ES2022",
+                module: "ES2022",
+                moduleResolution: "Bundler",
+                skipLibCheck: true,
+                noEmit: true,
+              },
+              include: ["**/*.ts"],
+            }),
+          );
+          const aFile = path.join(dir, "a.ts");
+          const bFile = path.join(dir, "b.ts");
+          const aSource = "export function makeValue(x) {\n  return x;\n}\n";
+          const bSource =
+            'import { makeValue } from "./a.js";\n' +
+            "export function useValue(v) {\n  return makeValue(v);\n}\n";
+          fs.writeFileSync(aFile, aSource);
+          fs.writeFileSync(bFile, bSource);
+
+          // Once `a.ts` gets `x: string`, annotating `v` as `string | number`
+          // makes `makeValue(v)` a type error — but only a verify pass that
+          // knows about `a.ts`'s new annotation can see that.
+          const typeInfo = [
+            [aFile, aSource.indexOf("x)") + 1, [["string", undefined]], {}],
+            [
+              bFile,
+              bSource.indexOf("v)") + 1,
+              [
+                ["string", undefined],
+                ["number", undefined],
+              ],
+              {},
+            ],
+          ];
+          const jsonFile = path.join(dir, "types.json");
+          fs.writeFileSync(jsonFile, JSON.stringify(typeInfo));
+
+          const { exitCode } = runInDir(dir, "apply", jsonFile);
+          expect(exitCode).toBe(0);
+          expect(fs.readFileSync(aFile, "utf-8")).toContain("x: string");
+          // The union annotation on `v` must be rejected: with `x: string`
+          // already on disk, `makeValue(v)` would not type-check.
+          expect(fs.readFileSync(bFile, "utf-8")).not.toMatch(/v:[^)]*\|/);
+        });
+      });
+
+      // `--dry-run` answers "what would this run write?", so it has to advance
+      // the in-memory source the same way. Nothing here touches disk; a
+      // preview that judged every file against the project's starting state
+      // listed files the real run then rejects at verify.
+      it("dry-run previews the same files the real run would write", () => {
+        withTmpDir((rawDir) => {
+          const dir = fs.realpathSync(rawDir);
+          fs.writeFileSync(
+            path.join(dir, "tsconfig.json"),
+            JSON.stringify({
+              compilerOptions: {
+                noImplicitAny: false,
+                target: "ES2022",
+                module: "ES2022",
+                moduleResolution: "Bundler",
+                skipLibCheck: true,
+                noEmit: true,
+              },
+              include: ["**/*.ts"],
+            }),
+          );
+          const aFile = path.join(dir, "a.ts");
+          const bFile = path.join(dir, "b.ts");
+          const aSource = "export function makeValue(x) {\n  return x;\n}\n";
+          const bSource =
+            'import { makeValue } from "./a.js";\n' +
+            "export function useValue(v) {\n  return makeValue(v);\n}\n";
+          fs.writeFileSync(aFile, aSource);
+          fs.writeFileSync(bFile, bSource);
+
+          const typeInfo = [
+            [aFile, aSource.indexOf("x)") + 1, [["string", undefined]], {}],
+            [
+              bFile,
+              bSource.indexOf("v)") + 1,
+              [
+                ["string", undefined],
+                ["number", undefined],
+              ],
+              {},
+            ],
+          ];
+          const jsonFile = path.join(dir, "types.json");
+          fs.writeFileSync(jsonFile, JSON.stringify(typeInfo));
+
+          const { exitCode, stdout } = runInDir(dir, "apply", jsonFile, "--dry-run");
+          expect(exitCode).toBe(0);
+          // `b.ts` is the file the real run rejects at verify, so the preview
+          // must not offer it.
+          expect(stdout).toContain("a.ts");
+          expect(stdout).not.toContain("b.ts");
+          // And a dry run writes nothing.
+          expect(fs.readFileSync(aFile, "utf-8")).toBe(aSource);
+          expect(fs.readFileSync(bFile, "utf-8")).toBe(bSource);
+        });
+      });
+
       it("does not skip a normal .ts file even when path contains 'svelte'", () => {
         // `svelte-utils.ts` is a normal file that happens to mention
         // svelte — it must still be applied normally.

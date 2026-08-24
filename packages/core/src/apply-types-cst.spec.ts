@@ -44,6 +44,30 @@ describe("applyTypesToFileCst — param annotations via AST lookup", () => {
     expect(applyTypesToFileCst(source, typeInfo, {})).toBe("function foo(a: string) {}");
   });
 
+  // Regression: nestjs/nest, packages/core/router/router-response-controller.ts.
+  // A promise executor parameter was observed twice at one offset — once as
+  // the arrow parameter, once as the return of calling it (`paramReturn`).
+  // Routing keyed on the raw opts object kept them as separate sites and both
+  // were emitted, producing `(resolve: undefined: Function)`, which does not
+  // parse and took 21 spec files down with it.
+  it("annotates a param from its own observation, not from what calling it returned", () => {
+    const source = "const run = (resolve) => { resolve(); };";
+    const typeInfo: CollectedTypeInfo = [
+      entry("test.ts", 20, [["Function"]], { arrow: true, fnRetPos: 21 }),
+      entry("test.ts", 20, [["undefined"]], {
+        paramReturn: true,
+        paramReturnMember: "resolve",
+      }),
+    ];
+    // `resolve` is a `Function`; the `undefined` is what calling it produced.
+    // Keying dedup by site kind alone merged the two into `Function|undefined`
+    // — parseable, and wrong. `crossReferenceObservations` drops paramReturn
+    // records before apply ever sees them; this covers the direct-API route.
+    const expected = "const run = (resolve: Function) => { resolve(); };";
+    expect(applyTypesToFileCst(source, typeInfo, {})).toBe(expected);
+    expect(applyTypesToFile(source, typeInfo, {})).toBe(expected);
+  });
+
   it("annotates multiple params the same as the offset-based applier", () => {
     const source = "function foo(a, b, c) { return a; }";
     const typeInfo: CollectedTypeInfo = [

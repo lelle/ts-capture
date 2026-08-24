@@ -20,7 +20,7 @@ export interface RoutedEntry {
 }
 
 export interface RoutedEntries {
-  /** CST-eligible entries, deduped by `(file, pos, opts)`. */
+  /** CST-eligible entries, deduped by `(file, pos, kind)`. */
   eligible: Map<string, RoutedEntry>;
   /** Entries delegated to the offset-based applier. */
   passThrough: CollectedTypeInfo;
@@ -49,6 +49,9 @@ export function routeEntries(
     if (ignoredRanges.some(([s, e]) => pos >= s && pos < e)) {
       continue;
     }
+    // See the same guard in `apply-types.ts`: a `paramReturn` record says what
+    // calling the parameter returned, not what the parameter is.
+    if (opts?.paramReturn) continue;
     if (opts?.thisType) {
       const site = thisTypeSites.get(pos);
       if (site) {
@@ -112,11 +115,19 @@ export function routeEntries(
     }
   }
 
-  // Dedup CST-eligible entries by (file, pos, opts).
+  // Dedup CST-eligible entries by (file, pos, kind).
+  //
+  // Keyed on the routed `kind`, not the raw opts object. One position can
+  // host different kinds legitimately (a paren-less arrow's param and its
+  // return annotation share the param-end offset), so pos alone is too
+  // coarse — but the whole opts object is too fine: incidental fields
+  // (`fnRetPos`, `async`) split one site into several, and each
+  // then emits its own annotation, producing `x: string: string`. The offset
+  // applier keys the same way and for the same reason.
   const eligible = new Map<string, RoutedEntry>();
   for (const item of cstEligible) {
     const [file, pos, types, opts] = item.entry;
-    const k = `${file}\x00${pos}\x00${JSON.stringify(opts ?? null)}`;
+    const k = `${file}\x00${pos}\x00${item.kind}`;
     const existing = eligible.get(k);
     if (existing) {
       existing.entry[2].push(...types);

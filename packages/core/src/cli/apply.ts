@@ -9,6 +9,7 @@ import { type ApplierPlugin, loadPluginsFromConfig, routeFile } from "../applier
 import { buildSkipMatcher } from "../apply-skip.js";
 import { applyTypesToFileCst } from "../apply-types-cst.js";
 import {
+  advanceCurrentSource,
   createProjectVerificationContext,
   createVerificationContext,
 } from "../apply-types-verify.js";
@@ -301,6 +302,25 @@ export async function cmdApply(args: string[], flags: Set<string>) {
     } else {
       const apply = infer.cstAware ? applyTypesToFileCst : applyTypesToFile;
       result = apply(source, group.entries, { infer, filename: file, verify, telemetry }, program);
+    }
+
+    // Tell the shared LanguageService what this file now says, so later
+    // files verify against the project as it actually is rather than
+    // against every earlier file's original text. Without this, an
+    // annotation that is only wrong in combination with an earlier file's
+    // annotation is never seen — six such errors survived a run on
+    // nestjs/nest with `typecheckVerify` on.
+    //
+    // `advanceCurrentSource`, not `commitReplacements`: the cheap variant
+    // swaps the in-memory source without the project-wide re-baseline. The
+    // re-baseline would absorb exactly the cross-file regressions we want
+    // to catch, and costs a full diagnostic scan per applied file.
+    //
+    // `--dry-run` advances too. Nothing here touches disk, and a preview
+    // that judged every file against the project's starting state would
+    // list files the real run then rejects at verify.
+    if (verify) {
+      advanceCurrentSource(verify, result);
     }
 
     if (result === source) {

@@ -36,6 +36,33 @@ describe("applyTypesToFile", () => {
     expect(result).toBe("function foo(a: string) {}");
   });
 
+  // Regression: nestjs/nest, packages/core/router/router-response-controller.ts.
+  // A promise executor parameter was observed twice at one offset — once as
+  // the arrow parameter, once as the return of calling it (`paramReturn`).
+  // Both were emitted, producing `(resolve: undefined: Function)`, which does
+  // not parse and took 21 spec files down with it.
+  it("emits one annotation when a position is observed as both a param and a paramReturn", () => {
+    // const run = (resolve) => { resolve(); };
+    //                     ^20
+    const source = "const run = (resolve) => { resolve(); };";
+    const typeInfo: CollectedTypeInfo = [
+      entry("test.ts", 20, [["Function"]], { arrow: true, fnRetPos: 21 }),
+      entry("test.ts", 20, [["undefined"]], {
+        paramReturn: true,
+        paramReturnMember: "resolve",
+      }),
+    ];
+    const result = applyTypesToFile(source, typeInfo, {
+      infer: { ...INFER_DEFAULTS, requireTypeRefInScope: false },
+    });
+    const parsed = ts.createSourceFile("out.ts", result, ts.ScriptTarget.Latest, true);
+    const diags = (parsed as ts.SourceFile & { parseDiagnostics?: ts.Diagnostic[] })
+      .parseDiagnostics;
+    expect(diags ?? []).toHaveLength(0);
+    // Exactly one annotation on the parameter, never `resolve: A: B`.
+    expect(result).not.toMatch(/resolve\s*:[^,)]*:/);
+  });
+
   it("inserts annotations for multiple parameters", () => {
     // function foo(a, b) {}
     //               ^14  ^17
