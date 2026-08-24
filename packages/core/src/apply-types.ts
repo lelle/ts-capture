@@ -7,13 +7,15 @@ import { decideVarDeclSite, suppressArrayCallbackStructural } from "./annotation
 import { buildDiagnosticMarkerSuffix } from "./apply-diagnostics.js";
 import { filterAcceptedReplacements } from "./apply-types-verify.js";
 import { inferClassFieldTypes } from "./class-field-inference.js";
-import { computeAnnotationTypeString } from "./compute-annotation.js";
+import { carriesNoInformation, computeAnnotationTypeString } from "./compute-annotation.js";
 import { INFER_DEFAULTS } from "./configuration.js";
 import { buildCstSiteIndex } from "./cst-site-index.js";
 import {
   buildInferableInfoMap,
+  hasConstAssertion,
   type InferableInfo,
   inferTypeFromInitializer,
+  isSymbolCall,
 } from "./initializer-inference.js";
 import {
   buildNamedTypeIndex,
@@ -66,12 +68,10 @@ export function applyTypesToFile(
     validVarDeclEnds,
     validArrowParamEnds,
   } = buildOuterAnnotationSkipSet(source);
-  // Lazy: only parse the source for inferable-info when the flag is on;
-  // an empty Map for the off-path means the lookup loop below is a
-  // single Map.has() per entry, which is constant-time.
-  const inferableInfoMap: Map<number, InferableInfo> = infer.skipRedundantAnnotations
-    ? buildInferableInfoMap(source)
-    : new Map();
+  // Built unconditionally: `skipRedundantAnnotations` gates the shape
+  // comparison below, but the const-assertion guard beside it is not a
+  // redundancy question and holds whatever that flag says.
+  const inferableInfoMap: Map<number, InferableInfo> = buildInferableInfoMap(source);
   // When Program + filename available, use the cross-file index (seeded
   // with same-file via getSymbolsInScope). Falls back to same-file-only
   // when no Program is provided.
@@ -384,11 +384,23 @@ export function applyTypesToFile(
     // surrounding code). Detection is purely syntactic; we bail out for
     // anything we can't model exactly to avoid suppressing a useful
     // annotation.
-    if (infer.skipRedundantAnnotations && opts?.varDecl) {
+    if (opts?.varDecl) {
       const info = inferableInfoMap.get(pos);
       if (info) {
-        const inferredFromSource = inferTypeFromInitializer(info.initializer, info.narrowsLiterals);
-        if (inferredFromSource !== null && inferredFromSource === emitted) continue;
+        // See `hasConstAssertion`: writing over `as const` can only remove
+        // information, so this one does not wait for the flag.
+        if (hasConstAssertion(info.initializer)) continue;
+        // A `unique symbol` is the same narrowing, inferred rather than
+        // asked for: widening it to `symbol` is destruction, not
+        // restatement, so it does not wait for the flag either.
+        if (emitted === "symbol" && isSymbolCall(info.initializer)) continue;
+        if (infer.skipRedundantAnnotations) {
+          const inferredFromSource = inferTypeFromInitializer(
+            info.initializer,
+            info.narrowsLiterals,
+          );
+          if (inferredFromSource !== null && inferredFromSource === emitted) continue;
+        }
       }
     }
 
@@ -397,6 +409,11 @@ export function applyTypesToFile(
     // opted in via `infer.emitDiagnosticComments`. Reviewers use the
     // markers to distinguish confident emits from fallbacks.
     const markerSuffix = buildDiagnosticMarkerSuffix(types, infer);
+
+    // Same re-check as the CST applier: the string can gain `unknown` after
+    // `computeAnnotationTypeString` returned, via arity expansion turning a
+    // keepable bare `Container` into `Container<unknown>`.
+    if (!infer.emitDiagnosticComments && carriesNoInformation(emitted)) continue;
 
     if (checker && checkerSites) {
       const origPos = checkerSites.toOriginalPos(pos);

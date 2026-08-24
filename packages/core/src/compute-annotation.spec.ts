@@ -154,7 +154,9 @@ describe("computeAnnotationTypeString — useless-arrow suppression", () => {
         ],
         {},
       ),
-    ).toBe("(arg: unknown) => unknown|string");
+      // Parenthesised: without it the string reads as a function *returning*
+      // `unknown|string`, which is a different type from a union with one.
+    ).toBe("((arg: unknown) => unknown)|string");
   });
 });
 
@@ -188,8 +190,42 @@ describe("computeAnnotationTypeString — unknown[] union collapse", () => {
     ).toBe("Array<string | number>");
   });
 
-  it("keeps unknown[] when it is the only observation", () => {
-    expect(run([["unknown[]", undefined]], {})).toBe("unknown[]");
+  // `unknown` absorbs everything it is unioned with — `unknown | undefined`
+  // *is* `unknown` in TypeScript, so the union describes nothing either.
+  // Found on nestjs/nest: `Promise<unknown | undefined>` was written where
+  // TypeScript already had `Promise<void>`.
+  it("drops a union whose member is unknown", () => {
+    expect(
+      run(
+        [
+          ["unknown", undefined],
+          ["undefined", undefined],
+        ],
+        {},
+      ),
+    ).toBeNull();
+  });
+
+  it("drops a generic carrying a union with unknown", () => {
+    expect(run([["Promise<unknown | undefined>", undefined]], {})).toBeNull();
+  });
+
+  it("keeps a union of described types", () => {
+    expect(
+      run(
+        [
+          ["string", undefined],
+          ["undefined", undefined],
+        ],
+        {},
+      ),
+    ).toBe("string|undefined");
+  });
+
+  // Reversed deliberately: `unknown[]` names the container and discards the
+  // payload, exactly like `Promise<unknown>`. Both are now suppressed.
+  it("drops unknown[] when it is the only observation", () => {
+    expect(run([["unknown[]", undefined]], {})).toBeNull();
   });
 
   it("keeps unknown[] when paired with a non-array type", () => {
@@ -241,8 +277,8 @@ describe("computeAnnotationTypeString — suppress object-shape with unknown[] f
     expect(run([["{ a: string, b: number[] }", undefined]], {})).toBe("{ a: string, b: number[] }");
   });
 
-  it("keeps a standalone unknown[] (not an object field)", () => {
-    expect(run([["unknown[]", undefined]], {})).toBe("unknown[]");
+  it("drops a standalone unknown[] (not an object field)", () => {
+    expect(run([["unknown[]", undefined]], {})).toBeNull();
   });
 
   it("does not match unknown[] inside a function-parameter type", () => {
@@ -311,5 +347,89 @@ describe("computeAnnotationTypeString — length cap", () => {
 
   it("still drops an over-cap union with no @sa chain info to collapse", () => {
     expect(run([[makeLongShape(500), undefined]], { varDecl: true })).toBeNull();
+  });
+});
+
+describe("computeAnnotationTypeString — a nullish arm is not a payload", () => {
+  // The vacuity rule walked a union and stopped at the first arm that
+  // described something. `null` describes something, so any union containing
+  // it was declared informative however empty its other arms were. Eleven
+  // annotations on nestjs/nest survived on that alone — seven of them
+  // replacing `MessageHandler<any, any, any> | null` with
+  // `((...argsArray: unknown[]) => unknown)|null`, which is worse than what it
+  // replaced.
+  it.each([
+    ["(...argsArray: unknown[]) => unknown", "null"],
+    ["(req: unknown, res: unknown) => unknown", "undefined"],
+    ["Promise<unknown>", "null"],
+    ["Observable<unknown>", "null"],
+    ["InstanceWrapper<unknown>", "undefined"],
+    ["Map<unknown, unknown>", "null"],
+    // `void` and `undefined` are one claim about a value that is not there —
+    // `observedBeyondInferred` settles them to the same arm, and the vacuity
+    // walk has to agree or `Promise<unknown>|void` reads as informative while
+    // `Promise<unknown>|undefined` does not.
+    ["Promise<unknown>", "void"],
+    ["(...argsArray: unknown[]) => unknown", "void"],
+  ])("suppresses `%s` joined with `%s`", (payload, nullish) => {
+    expect(
+      run(
+        [
+          [payload, undefined],
+          [nullish, undefined],
+        ],
+        {},
+      ),
+    ).toBeNull();
+  });
+
+  // A union of nothing but nullish arms IS the answer, not the absence of one.
+  it.each([["null"], ["undefined"], ["void"]])("keeps a bare `%s`", (t) => {
+    expect(run([[t, undefined]], {})).toBe(t);
+  });
+
+  it("keeps a union of null and undefined", () => {
+    expect(
+      run(
+        [
+          ["null", undefined],
+          ["undefined", undefined],
+        ],
+        {},
+      ),
+    ).toBe("null|undefined");
+  });
+
+  it.each([
+    ["string", "null", "null|string"],
+    ["Promise<string>", "null", "Promise<string>|null"],
+    ["Set<string>", "undefined", "Set<string>|undefined"],
+  ])("keeps `%s` joined with `%s`", (payload, nullish, expected) => {
+    expect(
+      run(
+        [
+          [payload, undefined],
+          [nullish, undefined],
+        ],
+        {},
+      ),
+    ).toBe(expected);
+  });
+
+  it("preserves a nullish-arm union in diagnostic mode", () => {
+    expect(
+      run(
+        [
+          ["Promise<unknown>", undefined],
+          ["null", undefined],
+        ],
+        {},
+        false,
+        {
+          ...INFER_DEFAULTS,
+          emitDiagnosticComments: true,
+        },
+      ),
+    ).toBe("Promise<unknown>|null");
   });
 });

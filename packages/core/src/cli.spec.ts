@@ -470,6 +470,20 @@ describe("cli", () => {
       // diff: 25 `Promise<unknown>`, 7 `Map<unknown, unknown>`, 6 `Set<unknown>`.
       // Knowing a value is a Promise without knowing what it resolves to is not
       // worth rewriting a line for.
+      it("skips a type carrying `unknown` inside a generic", () => {
+        const result = applyFixture(PASSTHROUGH, (file, src) => [
+          [file, src.indexOf("(x)") + 2, [["Promise<unknown>", null]], {}],
+        ]);
+        expect(result).toBe(PASSTHROUGH);
+      });
+
+      it("skips a bare `unknown`", () => {
+        const result = applyFixture(PASSTHROUGH, (file, src) => [
+          [file, src.indexOf("(x)") + 2, [["unknown", null]], {}],
+        ]);
+        expect(result).toBe(PASSTHROUGH);
+      });
+
       it("skips a function type whose parameters are all `unknown`", () => {
         const result = applyFixture(PASSTHROUGH, (file, src) => [
           [file, src.indexOf("(x)") + 2, [["(a: unknown) => unknown", null]], {}],

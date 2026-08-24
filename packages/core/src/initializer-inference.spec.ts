@@ -1,6 +1,11 @@
+import ts from "typescript";
 import { describe, expect, it } from "vitest";
 
-import { buildInferableInfoMap, inferTypeFromInitializer } from "./initializer-inference.js";
+import {
+  buildInferableInfoMap,
+  hasConstAssertion,
+  inferTypeFromInitializer,
+} from "./initializer-inference.js";
 
 // Boundary spec for the syntactic initializer-inference behind
 // skipRedundantAnnotations. inferTypeFromInitializer computes the type TS would
@@ -16,6 +21,24 @@ function infer(source: string): string | null {
   if (!info) throw new Error("no inferable binding in fixture");
   return inferTypeFromInitializer(info.initializer, info.narrowsLiterals);
 }
+
+describe("inferTypeFromInitializer — symbols", () => {
+  // `const S = Symbol('x')` gives TypeScript a `unique symbol`. Annotating it
+  // `: symbol` widens that away, and every `x === S` narrowing downstream
+  // stops working. On nestjs/nest a single such annotation on
+  // `VERSION_NEUTRAL` produced three compile errors in unrelated files.
+  it("infers symbol from Symbol(...)", () => {
+    expect(infer("const s = Symbol('x');")).toBe("symbol");
+  });
+
+  it("infers symbol from Symbol.for(...)", () => {
+    expect(infer("const s = Symbol.for('x');")).toBe("symbol");
+  });
+
+  it("does not treat an unrelated call named like a member as Symbol", () => {
+    expect(infer("const s = ns.Symbol('x');")).toBe(null);
+  });
+});
 
 describe("inferTypeFromInitializer — primitives", () => {
   it("infers number from a numeric literal", () => {
@@ -107,5 +130,41 @@ describe("buildInferableInfoMap", () => {
 
   it("does not record a binding with no initializer", () => {
     expect(buildInferableInfoMap("let x;").size).toBe(0);
+  });
+});
+
+describe("hasConstAssertion", () => {
+  const has = (source: string): boolean => {
+    const sf = ts.createSourceFile("t.ts", source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TS);
+    let found: boolean | undefined;
+    const visit = (node: ts.Node): void => {
+      if (ts.isVariableDeclaration(node) && node.initializer) {
+        found = hasConstAssertion(node.initializer);
+      }
+      ts.forEachChild(node, visit);
+    };
+    visit(sf);
+    if (found === undefined) throw new Error("no initialised declaration in fixture");
+    return found;
+  };
+
+  it.each([
+    "const x = { a: 1 } as const;",
+    "const x = [1, 2] as const;",
+    "const x = ({ a: 1 } as const);",
+    "const x = [1, 2] as const satisfies number[];",
+    "const x = { a: 1 } as const satisfies Record<string, number>;",
+  ])("%s carries a const assertion", (source) => {
+    expect(has(source)).toBe(true);
+  });
+
+  it.each([
+    "const x = { a: 1 };",
+    "const x = [1, 2];",
+    "const x = y as Foo;",
+    "const x = { a: 1 } satisfies Record<string, number>;",
+    "const x = { a: 1 as const };",
+  ])("%s does not", (source) => {
+    expect(has(source)).toBe(false);
   });
 });

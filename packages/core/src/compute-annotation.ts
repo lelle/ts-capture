@@ -168,7 +168,25 @@ export function computeAnnotationTypeString(
     return null;
   }
 
-  const finalType = stripAllChainMarkers(sortedTypes.join("|"));
+  const finalType = stripAllChainMarkers(joinUnion(sortedTypes));
+
+  // Refuse to write a type that does not describe the value.
+  //
+  // Generalises `isUselessArrow` above: `unknown` or `any` anywhere in the
+  // annotation means the run saw the value but could not say what it was.
+  // `Promise<unknown>` reports that something is a Promise while discarding
+  // the part a reader needs, and where the checker already had a real type it
+  // is a downgrade. On nestjs/nest this was the largest single group in the
+  // diff — 106 of 366 emitted fragments, led by 25 `Promise<unknown>`,
+  // 7 `Map<unknown, unknown>` and 6 each of `Set<unknown>` and
+  // `Observable<unknown>`.
+  //
+  // Same diagnostic-mode escape as `isUselessArrow`: with
+  // `emitDiagnosticComments` on, the user is asking to see where coverage is
+  // thin, so the gaps stay visible.
+  if (!infer.emitDiagnosticComments && carriesNoInformation(finalType)) {
+    return null;
+  }
 
   // Suppress the annotation when the final union exceeds the
   // configured cap. A 19K-char annotation locks the entire observed
@@ -185,7 +203,7 @@ export function computeAnnotationTypeString(
     // preferable.
     const collapsed = rewriteCommonBase(preMergeTypes, { ...infer, rewriteCommonBase: true });
     if (collapsed.length < preMergeTypes.length) {
-      const candidate = stripAllChainMarkers(collapsed.sort().join("|"));
+      const candidate = stripAllChainMarkers(joinUnion(collapsed.sort()));
       if (candidate.length <= infer.maxAnnotationChars) {
         return candidate;
       }
@@ -264,6 +282,155 @@ function hasUnknownArrayField(t: string): boolean {
  * Excludes `() => unknown` (zero-param) because a callable shape with no
  * args may still carry semantic intent even when the return is unknown.
  */
+/**
+ * Does the annotation describe nothing?
+ *
+ * True when every payload position in the type is `unknown` or `any` —
+ * `Promise<unknown>`, `Map<unknown, unknown>`, `Set<unknown>`, `() => unknown`.
+ * Knowing a value is a Promise while discarding what it resolves to is not
+ * worth rewriting a line for, and where the checker already had a real type it
+ * is a downgrade.
+ *
+ * A type is *not* vacuous as soon as one position is described:
+ * `(arg: string) => unknown` still tells a reader the callback takes a string,
+ * and `unknown[] | string` still names one arm. Those are kept deliberately.
+ *
+ * Parameter *names* do not count as payload — only the types they carry.
+ * (An earlier draft walked every token and treated `argsArray` in
+ * `(...argsArray: unknown[]) => Promise<unknown>` as information.)
+ */
+/**
+ * Join observed types into a union, parenthesising function types.
+ *
+ * `((a: T) => R) | string` and `(a: T) => R | string` are different types —
+ * the second is a function returning a union. Joining with a bare `|` emitted
+ * the second while meaning the first. Surfaced on nestjs/nest by the vacuity
+ * guard, which correctly read `(arg: unknown) => unknown|string` as a function
+ * returning `unknown`.
+ */
+function joinUnion(types: readonly string[]): string {
+  if (types.length < 2) return types.join("|");
+  return types.map((t) => (isTopLevelFunctionType(t) ? `(${t})` : t)).join("|");
+}
+
+/** Does the type read as a function type at its top level? */
+function isTopLevelFunctionType(t: string): boolean {
+  const sf = ts.createSourceFile(
+    "__union_probe.ts",
+    `type __X = ${t};`,
+    ts.ScriptTarget.Latest,
+    /*setParentNodes*/ false,
+  );
+  const stmt = sf.statements[0];
+  if (!stmt || !ts.isTypeAliasDeclaration(stmt)) return false;
+  return ts.isFunctionTypeNode(stmt.type) || ts.isConstructorTypeNode(stmt.type);
+}
+
+export function carriesNoInformation(t: string): boolean {
+  const sf = ts.createSourceFile(
+    "__vacuity_probe.ts",
+    `type __X = ${t};`,
+    ts.ScriptTarget.Latest,
+    /*setParentNodes*/ false,
+  );
+  const stmt = sf.statements[0];
+  // Unparseable here means some other guard will reject it; do not also claim
+  // it is vacuous.
+  if (!stmt || !ts.isTypeAliasDeclaration(stmt)) return false;
+
+  let describesSomething = false;
+
+  const walk = (node: ts.Node): void => {
+    if (describesSomething) return;
+
+    switch (node.kind) {
+      case ts.SyntaxKind.UnknownKeyword:
+      case ts.SyntaxKind.AnyKeyword:
+        return;
+      default:
+        break;
+    }
+
+    // `unknown` absorbs every union it appears in: `unknown | undefined` *is*
+    // `unknown`. A union with an unknown member therefore describes nothing,
+    // whatever its other arms say. (`mergeTypes` already collapses this at the
+    // top level; inside a generic argument it does not.)
+    if (ts.isUnionTypeNode(node)) {
+      const absorbed = node.types.some(
+        (t) => t.kind === ts.SyntaxKind.UnknownKeyword || t.kind === ts.SyntaxKind.AnyKeyword,
+      );
+      if (absorbed) return;
+      // Only the arms that can carry a payload get to answer for the union.
+      // `null` and `undefined` describe themselves and nothing else, so a
+      // union whose every other arm is empty is empty too:
+      // `((...args: unknown[]) => unknown) | null` says no more than
+      // `unknown | null` does. Walking every arm let the nullish one speak for
+      // the union and kept 11 such annotations on nestjs/nest.
+      //
+      // When there is no payload arm at all — `null`, `null | undefined` —
+      // the nullish arms ARE the answer, and answer for themselves.
+      const payload = node.types.filter((t) => !isNullishType(t));
+      (payload.length > 0 ? payload : node.types).forEach(walk);
+      return;
+    }
+
+    if (ts.isTypeReferenceNode(node)) {
+      const args = node.typeArguments ?? [];
+      // A bare `Foo` is the whole answer. `Promise<unknown>` is not — the
+      // constructor name alone does not describe the value it carries.
+      if (args.length === 0) {
+        describesSomething = true;
+        return;
+      }
+      args.forEach(walk);
+      return;
+    }
+
+    // Function-like: the names are ours to ignore, the types are not.
+    if (ts.isFunctionTypeNode(node) || ts.isConstructorTypeNode(node)) {
+      node.parameters.forEach((p) => p.type && walk(p.type));
+      if (node.type) walk(node.type);
+      return;
+    }
+
+    if (ts.isTypeLiteralNode(node)) {
+      node.members.forEach((m) => {
+        if ((ts.isPropertySignature(m) || ts.isMethodSignature(m)) && m.type) walk(m.type);
+      });
+      return;
+    }
+
+    // Any other keyword type — string, number, boolean, void, null, never,
+    // a literal type — describes the value.
+    if (ts.isToken(node)) {
+      describesSomething = true;
+      return;
+    }
+
+    ts.forEachChild(node, walk);
+  };
+
+  walk(stmt.type);
+  return !describesSomething;
+}
+
+/**
+ * `null`, `undefined` or `void` — the types that describe only their own
+ * absence of a value. Everything else is a payload, however vague.
+ *
+ * `void` sits here for the same reason `observedBeyondInferred` settles it to
+ * `undefined`: as a union arm it makes one claim, that there is nothing there.
+ * Leaving it out let `Promise<unknown>|void` read as informative while
+ * `Promise<unknown>|undefined` did not.
+ *
+ * A union of nothing but these is still the answer — see the caller.
+ */
+function isNullishType(node: ts.TypeNode): boolean {
+  if (node.kind === ts.SyntaxKind.UndefinedKeyword) return true;
+  if (node.kind === ts.SyntaxKind.VoidKeyword) return true;
+  return ts.isLiteralTypeNode(node) && node.literal.kind === ts.SyntaxKind.NullKeyword;
+}
+
 function isUselessArrow(t: string): boolean {
   const m = t.match(/^\(([^)]*)\) => unknown$/);
   if (!m) return false;

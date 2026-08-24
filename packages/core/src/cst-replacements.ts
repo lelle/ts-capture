@@ -8,8 +8,12 @@ import type { CstSiteIndex } from "./cst-site-index.js";
 import { suppressArrayCallbackStructural } from "./annotation-eligibility.js";
 import { buildDiagnosticMarkerSuffix } from "./apply-diagnostics.js";
 import { filterAcceptedReplacements, type VerificationContext } from "./apply-types-verify.js";
-import { computeAnnotationTypeString } from "./compute-annotation.js";
-import { inferTypeFromInitializer } from "./initializer-inference.js";
+import { carriesNoInformation, computeAnnotationTypeString } from "./compute-annotation.js";
+import {
+  hasConstAssertion,
+  inferTypeFromInitializer,
+  isSymbolCall,
+} from "./initializer-inference.js";
 import { type NamedTypeIndex, rewriteToNamedInScope } from "./named-type-rewrite.js";
 import { isParseableTypeString } from "./parseable.js";
 import { inferredReturnType, isRedundantAnnotation, typeAt } from "./redundant-annotation.js";
@@ -78,17 +82,32 @@ export function buildCstReplacements(
 
   const cstReplacements: Replacement[] = [];
   // When verify is enabled, buffer annotation insertions here and decide
-  // acceptance in a single batch pass at the end of the loop. Structural
-  // inserts (paren wraps for paren-less arrows, separator commas for `this:`)
-  // still go directly into `cstReplacements` — matching the offset-based
-  // pattern where the wrap is unconditional and only the annotation text is
-  // gated by verify.
+  // acceptance in a single batch pass at the end of the loop.
   const annotationCandidates: AnnotationCandidate[] = [];
+
+  // Paren wraps for paren-less arrows (`x => …` needs `(x) => …` before an
+  // annotation can attach) are deferred the same way, keyed by the position
+  // the `)` goes at — which is also the position any annotation lands at.
+  //
+  // The wrap must outlive *one* entry being skipped, because a sibling entry
+  // at the same position may still land: a rejected param annotation and an
+  // accepted returnType annotation share this offset. But when nothing lands
+  // there the parens are pure diff noise — `key => …` rewritten to
+  // `(key) => …` with no type gained. A nest run produced 175 such lines, 36%
+  // of the whole diff. So: record the wrap, and materialise it at the end only
+  // if some annotation at that position survived.
+  const pendingWraps = new Map<number, number>();
+  const annotatedPositions = new Set<number>();
+
+  function requestParenWrap(openPos: number, closePos: number): void {
+    if (!pendingWraps.has(closePos)) pendingWraps.set(closePos, openPos);
+  }
 
   function pushOrBufferAnnotation(pos: number, text: string, priority?: number): void {
     if (verify) {
       annotationCandidates.push({ pos, text, priority });
     } else {
+      annotatedPositions.add(pos);
       cstReplacements.push(Replacement.insert(pos, text, priority ?? 0));
       if (telemetry) telemetry.emitted++;
     }
@@ -115,8 +134,7 @@ export function buildCstReplacements(
         // is broken `name: T => body` syntax. Install the wrap so
         // returnType lands inside.
         if (site.parensOpenPos !== undefined) {
-          cstReplacements.push(Replacement.insert(site.parensOpenPos, "("));
-          cstReplacements.push(Replacement.insert(pos, ")"));
+          requestParenWrap(site.parensOpenPos, pos);
         }
         continue;
       }
@@ -134,13 +152,17 @@ export function buildCstReplacements(
         suppressArrayCallbackStructural(arrayCallbackArrowParams.has(pos), emitted)
       ) {
         if (site.parensOpenPos !== undefined) {
-          cstReplacements.push(Replacement.insert(site.parensOpenPos, "("));
-          cstReplacements.push(Replacement.insert(pos, ")"));
+          requestParenWrap(site.parensOpenPos, pos);
         }
         continue;
       }
       // Parse-check — refuse to write an unparseable type.
       if (!isParseableTypeString(emitted)) continue;
+      // Re-check the FINAL string: `rewriteToNamedInScope` and
+      // `expandCtorArity` run after `computeAnnotationTypeString`, and arity
+      // expansion in particular turns a keepable bare `Container` into
+      // `Container<unknown>`, which describes no payload.
+      if (!infer.emitDiagnosticComments && carriesNoInformation(emitted)) continue;
       // Nothing to add when the checker already types this parameter — a
       // contextually typed callback param, for instance.
       if (
@@ -161,8 +183,7 @@ export function buildCstReplacements(
       // annotation lands BEFORE the `)` in the output, yielding
       // `(x: T) => body`. Mirrors the offset-based path.
       if (site.parensOpenPos !== undefined) {
-        cstReplacements.push(Replacement.insert(site.parensOpenPos, "("));
-        cstReplacements.push(Replacement.insert(pos, ")", 0));
+        requestParenWrap(site.parensOpenPos, pos);
         pushOrBufferAnnotation(pos, ": " + prefix + emitted + markerSuffix, 1);
       } else {
         pushOrBufferAnnotation(pos, ": " + prefix + emitted + markerSuffix);
@@ -176,6 +197,11 @@ export function buildCstReplacements(
       if (!allTypeRefsInScope(emitted, scopedTypeNames)) continue;
       // Parse-check.
       if (!isParseableTypeString(emitted)) continue;
+      // Re-check the FINAL string: `rewriteToNamedInScope` and
+      // `expandCtorArity` run after `computeAnnotationTypeString`, and arity
+      // expansion in particular turns a keepable bare `Container` into
+      // `Container<unknown>`, which describes no payload.
+      if (!infer.emitDiagnosticComments && carriesNoInformation(emitted)) continue;
       // When the function already has params, the apply needs a
       // separator between `this: T` and the first real param.
       // Mirrors the offset-based path's opts.thisNeedsComma flag —
@@ -215,6 +241,11 @@ export function buildCstReplacements(
       // is purely defensive.
       // Parse-check.
       if (!isParseableTypeString(emitted)) continue;
+      // Re-check the FINAL string: `rewriteToNamedInScope` and
+      // `expandCtorArity` run after `computeAnnotationTypeString`, and arity
+      // expansion in particular turns a keepable bare `Container` into
+      // `Container<unknown>`, which describes no payload.
+      if (!infer.emitDiagnosticComments && carriesNoInformation(emitted)) continue;
       pushOrBufferAnnotation(pos, ": " + prefix + emitted + markerSuffix, -1);
     } else {
       // varDecl: user-written `as Type` / `<Type>` cast on RHS — defer
@@ -226,6 +257,15 @@ export function buildCstReplacements(
       const named = rewriteToNamedInScope(computed, namedTypeIndex);
       const emitted = ctorArityMap ? expandCtorArity(named, ctorArityMap) : named;
       if (!allTypeRefsInScope(emitted, scopedTypeNames)) continue;
+      // A const assertion is a narrowing the author asked for, and an
+      // observation can only widen it. Unconditional, unlike
+      // `skipRedundantAnnotations` below: asking for redundant annotations is
+      // asking for restatement, not for destruction.
+      if (site.initializer && hasConstAssertion(site.initializer)) continue;
+      // A `unique symbol` is the same narrowing, inferred rather than
+      // asked for: widening it to `symbol` is destruction, not
+      // restatement, so it does not wait for the flag either.
+      if (emitted === "symbol" && site.initializer && isSymbolCall(site.initializer)) continue;
       // Skip when TS would already infer the same type from the
       // initializer. Only fires when both `infer.skipRedundantAnnotations`
       // is on AND the initializer is a shape we can model exactly.
@@ -248,6 +288,11 @@ export function buildCstReplacements(
       }
       // Parse-check.
       if (!isParseableTypeString(emitted)) continue;
+      // Re-check the FINAL string: `rewriteToNamedInScope` and
+      // `expandCtorArity` run after `computeAnnotationTypeString`, and arity
+      // expansion in particular turns a keepable bare `Container` into
+      // `Container<unknown>`, which describes no payload.
+      if (!infer.emitDiagnosticComments && carriesNoInformation(emitted)) continue;
       pushOrBufferAnnotation(pos, ": " + prefix + emitted + markerSuffix);
     }
   }
@@ -270,11 +315,22 @@ export function buildCstReplacements(
     for (const i of acceptedIdx) {
       const c = annotationCandidates[i];
       cstReplacements.push(Replacement.insert(c.pos, c.text, c.priority ?? 0));
+      annotatedPositions.add(c.pos);
       if (telemetry) telemetry.emitted++;
     }
     if (telemetry) {
       telemetry.verifyReject += annotationCandidates.length - acceptedSet.size;
     }
+  }
+
+  // Materialise only the wraps whose position actually received an
+  // annotation. Priority 0 for the `)` puts it between a returnType
+  // annotation (-1, ends up right of the paren) and a param annotation
+  // (1, ends up left of it), yielding `(x: T): R => body`.
+  for (const [closePos, openPos] of pendingWraps) {
+    if (!annotatedPositions.has(closePos)) continue;
+    cstReplacements.push(Replacement.insert(openPos, "("));
+    cstReplacements.push(Replacement.insert(closePos, ")", 0));
   }
 
   return cstReplacements;

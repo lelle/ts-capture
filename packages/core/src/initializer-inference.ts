@@ -60,6 +60,31 @@ function isAsConst(expr: ts.Expression): boolean {
 }
 
 /**
+ * Does this initializer carry a const assertion?
+ *
+ * `as const` is the author stating that the value must stay as narrow as
+ * TypeScript can make it. A runtime observation can only ever be wider — it
+ * reports `string`, never `"guard"` — so an annotation here cannot add
+ * information and can take a great deal away. On nestjs/nest, annotating
+ * `ENHANCER_KEY_TO_SUBTYPE_MAP` turned the exported type
+ * `EnhancerSubtype = (typeof MAP)[keyof typeof MAP]` from
+ * `"guard" | "interceptor" | "pipe" | "filter"` into `string`, and both `tsc`
+ * and the project's own suite stayed green.
+ *
+ * Looks through parentheses and `satisfies`, which wrap the assertion without
+ * undoing it: `[...] as const satisfies string[]` is still a const assertion.
+ * Does not look *into* the value — `{ a: 1 as const }` narrows one property,
+ * not the binding.
+ */
+export function hasConstAssertion(expr: ts.Expression): boolean {
+  let current = expr;
+  while (ts.isParenthesizedExpression(current) || ts.isSatisfiesExpression(current)) {
+    current = current.expression;
+  }
+  return isAsConst(current);
+}
+
+/**
  * Compute the type TypeScript would infer from an initializer expression
  * via syntactic rules only — no type checker, no semantic resolution.
  * Returns null when the shape isn't one we can confidently model
@@ -141,7 +166,33 @@ export function inferTypeFromInitializer(
     return expr.expression.text;
   }
 
+  if (isSymbolCall(expr)) return "symbol";
+
   return null;
+}
+
+/**
+ * Is this initializer `Symbol(...)` or `Symbol.for(...)`?
+ *
+ * On a `const` TypeScript infers a `unique symbol`, which is strictly narrower
+ * than the `symbol` a run observes. Writing `: symbol` widens it away and
+ * silently breaks every `x === THE_SYMBOL` narrowing downstream — on
+ * nestjs/nest one annotation on `VERSION_NEUTRAL` produced three compile
+ * errors in files that never mention it.
+ *
+ * Syntactic only, matching the rest of this module: a bare `Symbol`
+ * identifier, so `ns.Symbol('x')` is left alone.
+ */
+export function isSymbolCall(expr: ts.Expression): boolean {
+  if (!ts.isCallExpression(expr)) return false;
+  const callee = expr.expression;
+  if (ts.isIdentifier(callee) && callee.text === "Symbol") return true;
+  return (
+    ts.isPropertyAccessExpression(callee) &&
+    ts.isIdentifier(callee.expression) &&
+    callee.expression.text === "Symbol" &&
+    callee.name.text === "for"
+  );
 }
 
 function primitiveLiteralWidenedType(expr: ts.Expression): string | null {

@@ -1218,7 +1218,12 @@ describe("applyTypesToFile — generic ctor arity expansion (applier wiring)", (
     return { program, filename: rootNames[0] };
   }
 
-  it("expands a bare generic class name to Name<unknown>", () => {
+  // Arity expansion exists because bare `Container` is a type error when the
+  // class requires an argument — the only valid forms are `Container<unknown>`
+  // or no annotation. The vacuity guard now chooses the second: a container
+  // whose payload is unknown is not worth writing, same as `Promise<unknown>`.
+  // The expansion still runs, and still shows up under `emitDiagnosticComments`.
+  it("suppresses a bare generic class name rather than expanding it to Name<unknown>", () => {
     const source =
       "class Container<T> { constructor(public value: T) {} }\nfunction f(x) { return x; }";
     const { program, filename } = makeProgram({ "/test.ts": source });
@@ -1229,20 +1234,22 @@ describe("applyTypesToFile — generic ctor arity expansion (applier wiring)", (
       { infer: { ...INFER_DEFAULTS, cstAware: false }, filename },
       program,
     );
-    expect(result).toContain("function f(x: Container<unknown>)");
+    expect(result).toBe(source);
   });
 
   it("does not double-expand an already-parameterized generic", () => {
     const source = "class Container<T> {}\nfunction f(x) { return x; }";
     const { program, filename } = makeProgram({ "/test.ts": source });
-    const typeInfo: CollectedTypeInfo = [entry(filename, 34, [["Container<unknown>"]], {})];
+    // Payload is `string`, not `unknown`: the subject here is generic expansion,
+    // and a vacuous type would be dropped before it got that far.
+    const typeInfo: CollectedTypeInfo = [entry(filename, 34, [["Container<string>"]], {})];
     const result = applyTypesToFile(
       source,
       typeInfo,
       { infer: { ...INFER_DEFAULTS, cstAware: false }, filename },
       program,
     );
-    expect(result).toContain("function f(x: Container<unknown>)");
+    expect(result).toContain("function f(x: Container<string>)");
     expect(result).not.toContain("Container<unknown><unknown>");
   });
 });
@@ -2126,7 +2133,29 @@ describe("applyTypesToFile — built-in shape recognition (applier wiring)", () 
   // The Promise / Map / disabled / missing-key variants are unit-tested at the
   // boundary in type-merge.spec.ts. This e2e sample proves the applier emits the
   // recognized named ref through a param annotation.
-  it("rewrites Promise structural shape to Promise<unknown> (default-on)", () => {
+  // `Promise<unknown>` names the container and discards the payload, so the
+  // vacuity guard suppresses it by default. Diagnostic mode is the documented
+  // escape — users who turn it on are asking to see where coverage is thin —
+  // and it keeps this test on its actual subject: that the recognized named
+  // ref reaches the applier at all.
+  it("rewrites Promise structural shape to Promise<unknown> (diagnostic mode)", () => {
+    const source = "function foo(a) {}";
+    const typeInfo: CollectedTypeInfo = [
+      entry("test.ts", 14, [
+        ["{ then: (cb: unknown) => unknown, catch: (cb: unknown) => unknown }"],
+      ]),
+    ];
+    const result = applyTypesToFile(source, typeInfo, {
+      infer: {
+        ...INFER_DEFAULTS,
+        requireTypeRefInScope: false,
+        emitDiagnosticComments: true,
+      },
+    });
+    expect(result).toContain("Promise<unknown>");
+  });
+
+  it("suppresses the recognized ref by default — it describes no payload", () => {
     const source = "function foo(a) {}";
     const typeInfo: CollectedTypeInfo = [
       entry("test.ts", 14, [
@@ -2136,7 +2165,7 @@ describe("applyTypesToFile — built-in shape recognition (applier wiring)", () 
     const result = applyTypesToFile(source, typeInfo, {
       infer: { ...INFER_DEFAULTS, requireTypeRefInScope: false },
     });
-    expect(result).toBe("function foo(a: Promise<unknown>) {}");
+    expect(result).toBe(source);
   });
 });
 

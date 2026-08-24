@@ -629,6 +629,7 @@ describe("applyTypesToFileCst — TypeChecker verify integration", () => {
       (src, target) => [entry(target, src.indexOf("const v") + 7, [["string"]], { varDecl: true })],
     );
     expect(result).not.toContain("v: string");
+    expect(result).toBe('function g(): string {\n  return "x";\n}\nexport const v = g();\n');
   });
 
   it("drops a contextually typed Array.prototype callback param", () => {
@@ -639,6 +640,9 @@ describe("applyTypesToFileCst — TypeChecker verify integration", () => {
       (src, target) => [entry(target, src.indexOf("(v =>") + 2, [["string"]], { arrow: true })],
     );
     expect(result).not.toContain("v: string");
+    // ...and no orphaned parens either: wrapping `v` without annotating it is
+    // pure diff noise.
+    expect(result).toBe("const xs: string[] = [];\nexport const ys = xs.map(v => v.length);\n");
   });
 
   it("drops a return-type annotation the body already implies", () => {
@@ -647,6 +651,41 @@ describe("applyTypesToFileCst — TypeChecker verify integration", () => {
       (src, target) => [entry(target, src.indexOf("()") + 2, [["string"]], { returnType: true })],
     );
     expect(result).not.toContain("): string");
+  });
+
+  // The wrap for a paren-less arrow is emitted separately from the annotation
+  // so it survives *one* entry being skipped while a sibling still lands. When
+  // nothing lands at that position the parens are pure noise — 175 such lines
+  // in a nest run, 36% of the whole diff.
+  it("does not wrap a paren-less arrow param when the annotation is suppressed", () => {
+    const result = applyWithProgram(
+      { "target.ts": "const xs: { a: number }[] = [];\nexport const ys = xs.map(v => v.a);\n" },
+      (src, target) => [
+        entry(target, src.indexOf("(v =>") + 2, [["{ a: number }"]], { arrow: true }),
+      ],
+    );
+    expect(result).toBe("const xs: { a: number }[] = [];\nexport const ys = xs.map(v => v.a);\n");
+  });
+
+  // The guard on the guard: a paren-less arrow whose *param* annotation is
+  // dropped but whose *returnType* annotation lands still needs the parens —
+  // `v: number => body` is a syntax error. Deferring the wrap must not lose
+  // this case.
+  it("still wraps a paren-less arrow when a sibling annotation lands", () => {
+    const source = "const ys = xs.map(v => v.length);";
+    const paramPos = source.indexOf("(v =>") + 2;
+    const typeInfo: CollectedTypeInfo = [
+      // Rejected: `Unknowable` is not a type name in scope.
+      entry("test.ts", paramPos, [["Unknowable"]], { arrow: true }),
+      // Accepted, and lands at the same offset.
+      entry("test.ts", paramPos, [["number"]], { returnType: true }),
+    ];
+    const result = applyTypesToFileCst(source, typeInfo, {});
+    expect(result).toContain("(v): number =>");
+    const parsed = ts.createSourceFile("o.ts", result, ts.ScriptTarget.Latest, true);
+    const diags = (parsed as ts.SourceFile & { parseDiagnostics?: ts.Diagnostic[] })
+      .parseDiagnostics;
+    expect(diags ?? []).toHaveLength(0);
   });
 
   it("still annotates a parameter the checker only knows as any", () => {
@@ -708,11 +747,13 @@ describe("applyTypesToFileCst — TypeChecker verify integration", () => {
     const verifyCtx = createVerificationContext(projectCtx, proj.target, proj.targetSource);
     // pos = name.end of `a` (1-based after `function id(`).
     const aEnd = proj.targetSource.indexOf("(a)") + 2;
-    const typeInfo: CollectedTypeInfo = [entry(proj.target, aEnd, [["unknown"]])];
+    // `string`, not `unknown`: the subject is the CST verify path, and a
+    // vacuous type is dropped before verify ever sees it.
+    const typeInfo: CollectedTypeInfo = [entry(proj.target, aEnd, [["string"]])];
     const result = applyTypesToFileCst(proj.targetSource, typeInfo, {
       verify: verifyCtx,
     });
-    expect(result).toBe("function id(a: unknown) { return a; }\n");
+    expect(result).toBe("function id(a: string) { return a; }\n");
   });
 
   it("rejects an annotation that introduces a type error (varDecl narrowed below value)", () => {
@@ -1083,5 +1124,63 @@ describe("applyTypesToFileCst — infer.ignoreExistingTypes", () => {
     });
     expect(result).toContain(": string");
     expect(result).not.toBe(source);
+  });
+});
+
+describe("a const assertion is never overwritten", () => {
+  // `as const` is the author saying "keep this as narrow as possible". A
+  // runtime observation can only ever be wider, so the annotation cannot add
+  // information — it can only take some away. On nestjs/nest one such
+  // annotation turned the exported `EnhancerSubtype` from
+  // `"guard" | "interceptor" | "pipe" | "filter"` into `string`, and neither
+  // `tsc` nor the project's own suite noticed.
+  //
+  // Unconditional, unlike skipRedundantAnnotations: a user who asks for
+  // redundant annotations is asking for restatement, not for destruction.
+  it.each([
+    ['const M = { a: "guard" } as const;', "M", "{ a: string }"],
+    ['const M = ["a", "b"] as const satisfies string[];', "M", "string[]"],
+    ['const M = { [K]: "guard" } as const;', "M", "{ __guards__: string }"],
+  ])("leaves %s alone", (source, name, emitted) => {
+    const pos = source.indexOf(name) + name.length;
+    const typeInfo: CollectedTypeInfo = [entry("test.ts", pos, [[emitted]], { varDecl: true })];
+    expect(applyTypesToFileCst(source, typeInfo, KEEP_INFERABLE)).toBe(source);
+    expect(applyTypesToFile(source, typeInfo, KEEP_INFERABLE)).toBe(source);
+  });
+
+  // `unique symbol` is the same narrowing, inferred rather than asked for.
+  // Writing `: symbol` widens it away and every `x === THE_SYMBOL` narrowing
+  // downstream stops working — one annotation on nestjs/nest's
+  // `VERSION_NEUTRAL` produced three compile errors in files that never
+  // mention it. Destruction, not restatement, so it does not wait for the flag.
+  it.each([["const sym = Symbol('x');"], ["const sym = Symbol.for('x');"]])(
+    "leaves %s alone even with the flag off",
+    (source) => {
+      const pos = source.indexOf("sym") + 3;
+      const typeInfo: CollectedTypeInfo = [entry("test.ts", pos, [["symbol"]], { varDecl: true })];
+      expect(applyTypesToFileCst(source, typeInfo, KEEP_INFERABLE)).toBe(source);
+      expect(applyTypesToFile(source, typeInfo, KEEP_INFERABLE)).toBe(source);
+    },
+  );
+
+  // The guard is syntactic, like the rest of this module: a bare `Symbol`
+  // identifier and nothing else. This one is the control — if it stops being
+  // annotated, the guard has grown teeth it was not given.
+  it("still annotates a call that only looks like Symbol", () => {
+    const source = "const sym = ns.Symbol('x');";
+    const pos = source.indexOf("sym") + 3;
+    const typeInfo: CollectedTypeInfo = [entry("test.ts", pos, [["symbol"]], { varDecl: true })];
+    expect(applyTypesToFileCst(source, typeInfo, KEEP_INFERABLE)).toContain("const sym: symbol");
+  });
+
+  it("still annotates an initializer without the assertion", () => {
+    const source = 'const M = { [K]: "guard" };';
+    const pos = source.indexOf("M") + 1;
+    const typeInfo: CollectedTypeInfo = [
+      entry("test.ts", pos, [["{ __guards__: string }"]], { varDecl: true }),
+    ];
+    expect(applyTypesToFileCst(source, typeInfo, KEEP_INFERABLE)).toBe(
+      'const M: { __guards__: string } = { [K]: "guard" };',
+    );
   });
 });
