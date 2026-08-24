@@ -124,14 +124,18 @@ describe("svelte apply typecheck-verify", () => {
     const proj = makeProject({
       "ctx.ts": [
         "export function getCtx(): string | undefined { return undefined }",
+        // Untyped on purpose: TypeScript infers `any` from it, so an
+        // annotation here genuinely adds information and is not suppressed as
+        // redundant before verify ever sees it.
+        "export function getOpaque(x) { return x }",
         "",
       ].join("\n"),
     });
 
     const svelteFile = path.join(proj.dir, "Comp.svelte");
     const scriptBody =
-      "\nimport { getCtx } from './ctx'\n" +
-      "const sound = getCtx()\n" + // really string | undefined
+      "\nimport { getCtx, getOpaque } from './ctx'\n" +
+      "const sound = getOpaque('x')\n" + // TS infers `any`; ours informs
       "const unsound = getCtx()\n"; // also string | undefined
     const svelteSource = `<script lang="ts">${scriptBody}</script>`;
 
@@ -160,6 +164,7 @@ describe("svelte apply typecheck-verify", () => {
       projectVerify,
     });
     expect(verified).toMatch(/sound\s*:\s*string \| undefined/);
+    // `unsound` drops the undefined branch and must be rejected by verify.
     expect(verified).not.toMatch(/unsound\s*:\s*string(?!\s*\|)/);
   });
 });

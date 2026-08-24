@@ -31,6 +31,12 @@ function entry(
   return [filename, offset, normalized, opts];
 }
 
+// Several fixtures below declare `let x = 5` / `const name = "hi"`, which
+// `skipRedundantAnnotations` (on by default) correctly leaves alone — annotating
+// them would widen TypeScript's own inference. These tests are about applier
+// parity and offset handling, not about the skip, so they pin it off.
+const KEEP_INFERABLE = { infer: { ...INFER_DEFAULTS, skipRedundantAnnotations: false } };
+
 describe("applyTypesToFileCst — param annotations via AST lookup", () => {
   // The spike's narrow scope: function parameters get routed through
   // the AST-aware path. Tests check parity with the offset-based
@@ -153,8 +159,8 @@ describe("applyTypesToFileCst — param annotations via AST lookup", () => {
       entry("test.ts", xPos, [["number"]], { varDecl: true }),
       entry("test.ts", aPos, [["string"]]),
     ];
-    const cst = applyTypesToFileCst(source, typeInfo, {});
-    expect(cst).toBe(applyTypesToFile(source, typeInfo, {}));
+    const cst = applyTypesToFileCst(source, typeInfo, KEEP_INFERABLE);
+    expect(cst).toBe(applyTypesToFile(source, typeInfo, KEEP_INFERABLE));
     expect(cst).toContain("let x: number = 5");
     expect(cst).toContain("function foo(a: string)");
   });
@@ -170,8 +176,8 @@ describe("applyTypesToFileCst — param annotations via AST lookup", () => {
       entry("test.ts", aPos, [["string"]]),
       entry("test.ts", xPos, [["number"]], { varDecl: true }),
     ];
-    const cst = applyTypesToFileCst(source, typeInfo, {});
-    expect(cst).toBe(applyTypesToFile(source, typeInfo, {}));
+    const cst = applyTypesToFileCst(source, typeInfo, KEEP_INFERABLE);
+    expect(cst).toBe(applyTypesToFile(source, typeInfo, KEEP_INFERABLE));
     expect(cst).toContain("function foo(a: string)");
     expect(cst).toContain("let x: number = 5");
   });
@@ -203,8 +209,8 @@ describe("applyTypesToFileCst — param annotations via AST lookup", () => {
       entry("test.ts", aPos, [["number"]]),
       entry("test.ts", bPos, [["number"]]),
     ];
-    const cst = applyTypesToFileCst(source, typeInfo, {});
-    expect(cst).toBe(applyTypesToFile(source, typeInfo, {}));
+    const cst = applyTypesToFileCst(source, typeInfo, KEEP_INFERABLE);
+    expect(cst).toBe(applyTypesToFile(source, typeInfo, KEEP_INFERABLE));
     expect(cst).toContain("let x: number = 5");
     expect(cst).toContain("function foo(a: number, b: number)");
   });
@@ -295,33 +301,33 @@ describe("applyTypesToFileCst — varDecl + class-field annotations via AST look
   // varDecl + PropertyDeclaration entries indexed by name.end.
   // AST-native idempotency (skip when node.type set), function-RHS
   // guard (skip when RHS is a function expression), and
-  // skipInferableVarDecls (skip when TS would already infer the same
+  // skipRedundantAnnotations (skip when TS would already infer the same
   // type) are all expressed against the AST.
 
   it("annotates `let x = 5` the same as the offset-based applier", () => {
     const source = "let x = 5;";
     const typeInfo: CollectedTypeInfo = [entry("test.ts", 5, [["number"]], { varDecl: true })];
-    const cst = applyTypesToFileCst(source, typeInfo, {});
+    const cst = applyTypesToFileCst(source, typeInfo, KEEP_INFERABLE);
     expect(cst).toBe("let x: number = 5;");
-    expect(cst).toBe(applyTypesToFile(source, typeInfo, {}));
+    expect(cst).toBe(applyTypesToFile(source, typeInfo, KEEP_INFERABLE));
   });
 
   it('annotates `const name = "hi"` the same as the offset-based applier', () => {
     const source = 'const name = "hi";';
     const pos = source.indexOf("name") + 4;
     const typeInfo: CollectedTypeInfo = [entry("test.ts", pos, [["string"]], { varDecl: true })];
-    const cst = applyTypesToFileCst(source, typeInfo, {});
+    const cst = applyTypesToFileCst(source, typeInfo, KEEP_INFERABLE);
     expect(cst).toBe('const name: string = "hi";');
-    expect(cst).toBe(applyTypesToFile(source, typeInfo, {}));
+    expect(cst).toBe(applyTypesToFile(source, typeInfo, KEEP_INFERABLE));
   });
 
   it("annotates a class field initializer the same as the offset-based applier", () => {
     const source = "class C { value = 42; }";
     const pos = source.indexOf("value") + 5;
     const typeInfo: CollectedTypeInfo = [entry("test.ts", pos, [["number"]], { varDecl: true })];
-    const cst = applyTypesToFileCst(source, typeInfo, {});
+    const cst = applyTypesToFileCst(source, typeInfo, KEEP_INFERABLE);
     expect(cst).toBe("class C { value: number = 42; }");
-    expect(cst).toBe(applyTypesToFile(source, typeInfo, {}));
+    expect(cst).toBe(applyTypesToFile(source, typeInfo, KEEP_INFERABLE));
   });
 
   it("idempotency: re-apply on already-typed varDecl is a no-op (AST-native)", () => {
@@ -369,62 +375,77 @@ describe("applyTypesToFileCst — varDecl + class-field annotations via AST look
     const source = "const count = 42;";
     const pos = source.indexOf("count") + 5;
     const typeInfo: CollectedTypeInfo = [entry("test.ts", pos, [["number"]], { varDecl: true })];
-    const cst = applyTypesToFileCst(source, typeInfo, {});
+    const cst = applyTypesToFileCst(source, typeInfo, KEEP_INFERABLE);
     expect(cst).toBe("const count: number = 42;");
   });
 
-  it("skipInferableVarDecls (off): annotation lands as usual", () => {
-    const source = "let x = 5;";
-    const typeInfo: CollectedTypeInfo = [entry("test.ts", 5, [["number"]], { varDecl: true })];
-    const cst = applyTypesToFileCst(source, typeInfo, {});
-    expect(cst).toBe("let x: number = 5;");
-  });
-
-  it("skipInferableVarDecls (on): `let x = 5` skips redundant `: number`", () => {
+  it("skipRedundantAnnotations (off): annotation lands as usual", () => {
     const source = "let x = 5;";
     const typeInfo: CollectedTypeInfo = [entry("test.ts", 5, [["number"]], { varDecl: true })];
     const cst = applyTypesToFileCst(source, typeInfo, {
-      infer: { ...INFER_DEFAULTS, skipInferableVarDecls: true },
+      infer: { ...INFER_DEFAULTS, skipRedundantAnnotations: false },
+    });
+    expect(cst).toBe("let x: number = 5;");
+  });
+
+  // Defaults matter here: annotating `const X = 'lit'` with `: string` does not
+  // add information, it destroys it — TypeScript already infers the literal
+  // type `'lit'`, and the annotation widens it. A run on nestjs/nest produced
+  // 105 such widening annotations, ~8% of the whole diff.
+  it("skipRedundantAnnotations is on by default: a const literal keeps its narrow type", () => {
+    const source = "const FLAG = 'on';";
+    const typeInfo: CollectedTypeInfo = [
+      entry("test.ts", source.indexOf("FLAG") + 4, [["string"]], { varDecl: true }),
+    ];
+    expect(applyTypesToFileCst(source, typeInfo, {})).toBe(source);
+    expect(applyTypesToFile(source, typeInfo, {})).toBe(source);
+  });
+
+  it("skipRedundantAnnotations (on): `let x = 5` skips redundant `: number`", () => {
+    const source = "let x = 5;";
+    const typeInfo: CollectedTypeInfo = [entry("test.ts", 5, [["number"]], { varDecl: true })];
+    const cst = applyTypesToFileCst(source, typeInfo, {
+      infer: { ...INFER_DEFAULTS, skipRedundantAnnotations: true },
     });
     expect(cst).toBe(source);
     expect(cst).toBe(
       applyTypesToFile(source, typeInfo, {
-        infer: { ...INFER_DEFAULTS, skipInferableVarDecls: true },
+        infer: { ...INFER_DEFAULTS, skipRedundantAnnotations: true },
       }),
     );
   });
 
-  it("skipInferableVarDecls (on): `const x = 5` SKIPS annotation", () => {
-    // Without skipInferableVarDecls, ts-capture would widen TS's
+  it("skipRedundantAnnotations (on): `const x = 5` SKIPS annotation", () => {
+    // Without skipRedundantAnnotations, ts-capture would widen TS's
     // literal `5` to `: number`. With the flag on, TS's literal
     // narrowing wins.
     const source = "const x = 5;";
     const pos = source.indexOf("x") + 1;
     const typeInfo: CollectedTypeInfo = [entry("test.ts", pos, [["number"]], { varDecl: true })];
     const cst = applyTypesToFileCst(source, typeInfo, {
-      infer: { ...INFER_DEFAULTS, skipInferableVarDecls: true },
+      infer: { ...INFER_DEFAULTS, skipRedundantAnnotations: true },
     });
     expect(cst).toBe(source);
   });
 
-  it("skipInferableVarDecls (on): `readonly` class field with primitive SKIPS annotation", () => {
+  it("skipRedundantAnnotations (on): `readonly` class field with primitive SKIPS annotation", () => {
     const source = "class C { readonly x = 5; }";
     const pos = source.indexOf("x = 5") + 1;
     const typeInfo: CollectedTypeInfo = [entry("test.ts", pos, [["number"]], { varDecl: true })];
     const cst = applyTypesToFileCst(source, typeInfo, {
-      infer: { ...INFER_DEFAULTS, skipInferableVarDecls: true },
+      infer: { ...INFER_DEFAULTS, skipRedundantAnnotations: true },
     });
     expect(cst).toBe(source);
   });
 
-  it("skipInferableVarDecls (on): `as const` on object literal SKIPS annotation", () => {
+  it("skipRedundantAnnotations (on): `as const` on object literal SKIPS annotation", () => {
     const source = "const X = { a: 1 } as const;";
     const pos = source.indexOf("X") + 1;
     const typeInfo: CollectedTypeInfo = [
       entry("test.ts", pos, [["{ a: number }"]], { varDecl: true }),
     ];
     const cst = applyTypesToFileCst(source, typeInfo, {
-      infer: { ...INFER_DEFAULTS, skipInferableVarDecls: true },
+      infer: { ...INFER_DEFAULTS, skipRedundantAnnotations: true },
     });
     expect(cst).toBe(source);
   });
@@ -442,8 +463,8 @@ describe("applyTypesToFileCst — varDecl + class-field annotations via AST look
       entry("test.ts", aPos, [["string"]]),
       entry("test.ts", retPos, [["string"]], { returnType: true }),
     ];
-    const cst = applyTypesToFileCst(source, typeInfo, {});
-    expect(cst).toBe(applyTypesToFile(source, typeInfo, {}));
+    const cst = applyTypesToFileCst(source, typeInfo, KEEP_INFERABLE);
+    expect(cst).toBe(applyTypesToFile(source, typeInfo, KEEP_INFERABLE));
     expect(cst).toContain("let n: number = 0");
     expect(cst).toContain("function foo(a: string): string");
   });
@@ -575,6 +596,75 @@ describe("applyTypesToFileCst — TypeChecker verify integration", () => {
     }
   });
 
+  // --- checker-backed redundancy suppression -------------------------------
+  //
+  // The predicate itself is covered in redundant-annotation.spec.ts. These
+  // prove the wiring: with a real Program in hand the applier must drop
+  // annotations TypeScript already implies, at all three site kinds, and must
+  // keep the ones that carry information the checker does not have.
+
+  function applyWithProgram(
+    files: Record<string, string>,
+    typeInfoFor: (src: string, target: string) => CollectedTypeInfo,
+  ): string {
+    const proj = makeProject(files);
+    const program = ts.createProgram(proj.fileNames, proj.compilerOptions);
+    return applyTypesToFileCst(
+      proj.targetSource,
+      typeInfoFor(proj.targetSource, proj.target),
+      { filename: proj.target },
+      program,
+    );
+  }
+
+  // Deliberately NOT a literal initializer: `inferTypeFromInitializer` already
+  // suppresses those syntactically, so a literal fixture would pass with the
+  // checker disabled and prove nothing. A call expression is invisible to the
+  // syntactic path — only the checker knows `g()` returns a string.
+  it("drops a varDecl annotation the checker already infers from a call", () => {
+    const result = applyWithProgram(
+      {
+        "target.ts": 'function g(): string {\n  return "x";\n}\nexport const v = g();\n',
+      },
+      (src, target) => [entry(target, src.indexOf("const v") + 7, [["string"]], { varDecl: true })],
+    );
+    expect(result).not.toContain("v: string");
+  });
+
+  it("drops a contextually typed Array.prototype callback param", () => {
+    const result = applyWithProgram(
+      {
+        "target.ts": "const xs: string[] = [];\nexport const ys = xs.map(v => v.length);\n",
+      },
+      (src, target) => [entry(target, src.indexOf("(v =>") + 2, [["string"]], { arrow: true })],
+    );
+    expect(result).not.toContain("v: string");
+  });
+
+  it("drops a return-type annotation the body already implies", () => {
+    const result = applyWithProgram(
+      { "target.ts": 'export function greet() {\n  return "hi";\n}\n' },
+      (src, target) => [entry(target, src.indexOf("()") + 2, [["string"]], { returnType: true })],
+    );
+    expect(result).not.toContain("): string");
+  });
+
+  it("still annotates a parameter the checker only knows as any", () => {
+    const result = applyWithProgram(
+      { "target.ts": "export function use(p) {\n  return p;\n}\n" },
+      (src, target) => [entry(target, src.indexOf("(p)") + 2, [["string"]])],
+    );
+    expect(result).toContain("p: string");
+  });
+
+  it("still annotates when the run observed more than the checker infers", () => {
+    const result = applyWithProgram(
+      { "target.ts": "export function use(p) {\n  return p;\n}\n" },
+      (src, target) => [entry(target, src.indexOf("(p)") + 2, [["string"], ["number"]])],
+    );
+    expect(result).toMatch(/p: (number\|string|string\|number)/);
+  });
+
   function makeProject(files: Record<string, string>): {
     dir: string;
     target: string;
@@ -619,7 +709,9 @@ describe("applyTypesToFileCst — TypeChecker verify integration", () => {
     // pos = name.end of `a` (1-based after `function id(`).
     const aEnd = proj.targetSource.indexOf("(a)") + 2;
     const typeInfo: CollectedTypeInfo = [entry(proj.target, aEnd, [["unknown"]])];
-    const result = applyTypesToFileCst(proj.targetSource, typeInfo, { verify: verifyCtx });
+    const result = applyTypesToFileCst(proj.targetSource, typeInfo, {
+      verify: verifyCtx,
+    });
     expect(result).toBe("function id(a: unknown) { return a; }\n");
   });
 
@@ -657,7 +749,10 @@ describe("applyTypesToFileCst — TypeChecker verify integration", () => {
       entry(proj.target, aEnd, [["number"]], { varDecl: true }),
       entry(proj.target, bEnd, [["string"]], { varDecl: true }),
     ];
-    const result = applyTypesToFileCst(proj.targetSource, typeInfo, { verify: verifyCtx });
+    const result = applyTypesToFileCst(proj.targetSource, typeInfo, {
+      ...KEEP_INFERABLE,
+      verify: verifyCtx,
+    });
     expect(result).toContain("const a: number = 1");
     expect(result).toContain("const b = 2");
     expect(result).not.toContain("const b: string");

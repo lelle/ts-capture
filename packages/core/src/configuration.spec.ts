@@ -116,7 +116,7 @@ describe("InferOptions", () => {
     expect(INFER_DEFAULTS.recursiveObjectMerge).toBe(true);
     expect(INFER_DEFAULTS.crossSampleArrayMerge).toBe(false);
     expect(INFER_DEFAULTS.rewriteCommonBase).toBe(false);
-    expect(INFER_DEFAULTS.skipInferableVarDecls).toBe(false);
+    expect(INFER_DEFAULTS.skipRedundantAnnotations).toBe(true);
     // cstAware defaults to ON — the CST applier produces zero
     // regressions vs the offset-based path on real codebases and is
     // strictly more correct in two documented cases. See

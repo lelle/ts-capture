@@ -47,7 +47,7 @@ import {
  *     `rhsIsFunction` to skip outer annotation when RHS is a function
  *     expression (would conflict with inner observations), and
  *     `inferTypeFromInitializer` + the binding's literal-narrowing
- *     flag for `infer.skipInferableVarDecls`.
+ *     flag for `infer.skipRedundantAnnotations`.
  *   - `this` parameter annotations: insertion at
  *     `function.parameters.pos` (right after the opening `(`). Whether
  *     the comma separator is needed comes from
@@ -152,6 +152,19 @@ export function applyTypesToFileCst(
   // --- Build AST-site indices ---
 
   const cstIndex = buildCstSiteIndex(sf, source, infer);
+
+  // A second index over the *Program's* SourceFile, keyed identically.
+  //
+  // `sf` above is a detached SourceFile parsed from `source`; its nodes do not
+  // belong to the Program, so the TypeChecker cannot answer questions about
+  // them. The checker-backed redundancy oracle therefore looks its nodes up
+  // here instead. Both files hold the same text, so offsets line up — guarded
+  // explicitly, since a stale on-disk file would silently misalign them.
+  const programSf = options.filename ? program?.getSourceFile(options.filename) : undefined;
+  const checkerIndex =
+    programSf && programSf.text === source
+      ? buildCstSiteIndex(programSf, source, infer)
+      : undefined;
   const telemetry = options.telemetry;
 
   // --- Route entries: AST-eligible vs pass-through ---
@@ -169,6 +182,7 @@ export function applyTypesToFileCst(
     namedTypeIndex,
     scopedTypeNames,
     ctorArityMap,
+    checkerIndex,
   });
 
   const afterCst = applyReplacements(source, cstReplacements);
@@ -232,7 +246,24 @@ export function applyTypesToFileCst(
         verifyReject: 0,
       }
     : undefined;
-  const innerOptions = sub ? { ...options, telemetry: sub } : options;
+  // Invert the rebasing so the delegate can look sites up by their original
+  // offset. Built from the same pairs the rebase produced, so the two cannot
+  // drift apart.
+  const originalPosByRebased = new Map<number, number>();
+  for (const [, pos] of passThrough) originalPosByRebased.set(rebaseOffset(pos), pos);
+
+  const innerOptions = {
+    ...options,
+    ...(sub ? { telemetry: sub } : {}),
+    ...(checkerIndex
+      ? {
+          checkerSites: {
+            index: checkerIndex,
+            toOriginalPos: (p: number) => originalPosByRebased.get(p) ?? p,
+          },
+        }
+      : {}),
+  };
   const result = applyTypesToFile(afterCst, rebasedPassThrough, innerOptions, program);
   if (telemetry && sub) {
     telemetry.emitted += sub.emitted;

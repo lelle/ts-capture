@@ -9,6 +9,7 @@ import { filterAcceptedReplacements } from "./apply-types-verify.js";
 import { inferClassFieldTypes } from "./class-field-inference.js";
 import { computeAnnotationTypeString } from "./compute-annotation.js";
 import { INFER_DEFAULTS } from "./configuration.js";
+import { buildCstSiteIndex } from "./cst-site-index.js";
 import {
   buildInferableInfoMap,
   type InferableInfo,
@@ -20,6 +21,7 @@ import {
   rewriteToNamedInScope,
 } from "./named-type-rewrite.js";
 import { isParseableTypeString } from "./parseable.js";
+import { inferredReturnType, isRedundantAnnotation, typeAt } from "./redundant-annotation.js";
 import { type AnnotationCandidate, applyReplacements, Replacement } from "./replacement.js";
 import {
   allTypeRefsInScope,
@@ -67,7 +69,7 @@ export function applyTypesToFile(
   // Lazy: only parse the source for inferable-info when the flag is on;
   // an empty Map for the off-path means the lookup loop below is a
   // single Map.has() per entry, which is constant-time.
-  const inferableInfoMap: Map<number, InferableInfo> = infer.skipInferableVarDecls
+  const inferableInfoMap: Map<number, InferableInfo> = infer.skipRedundantAnnotations
     ? buildInferableInfoMap(source)
     : new Map();
   // When Program + filename available, use the cross-file index (seeded
@@ -152,6 +154,23 @@ export function applyTypesToFile(
   // insertions here and decide acceptance in a single batch pass at
   // the end of the entry loop. Without verify, this stays empty.
   const annotationCandidates: AnnotationCandidate[] = [];
+
+  // Checker-backed redundancy, same question the CST applier asks. Sites come
+  // either from the caller (the CST applier hands them over when delegating
+  // pass-through entries, along with the inverse of its rebasing) or, when this
+  // applier is driven directly, from the Program's own SourceFile.
+  const checkerSites =
+    options.checkerSites ??
+    (() => {
+      if (!infer.skipRedundantAnnotations || !program || !options.filename) return undefined;
+      const programSf = program.getSourceFile(options.filename);
+      if (!programSf || programSf.text !== source) return undefined;
+      return {
+        index: buildCstSiteIndex(programSf, source, infer),
+        toOriginalPos: (p: number) => p,
+      };
+    })();
+  const checker = checkerSites ? program?.getTypeChecker() : undefined;
 
   const telemetry = options.telemetry;
   for (const [, pos, types, opts] of dedupedTypeInfo.values()) {
@@ -352,13 +371,20 @@ export function applyTypesToFile(
     const insertPriority = opts?.returnType ? -1 : 1;
 
     // Skip annotations TS would already infer from the initializer.
-    // Only fires when both `infer.skipInferableVarDecls` is on AND the
+    //
+    // Syntactic only. The checker-backed equivalent in `cst-replacements.ts`
+    // is strictly better, but this applier works on raw offsets with no AST
+    // index, and nodes rebuilt from the source string do not belong to the
+    // checker's Program — so `getTypeAtLocation` cannot be asked here. The
+    // CST applier is the default (`infer.cstAware`); this path serves
+    // pass-through entries and `cstAware: false`.
+    // Only fires when both `infer.skipRedundantAnnotations` is on AND the
     // entry is a varDecl/class-field — function params, return types,
     // and `this` annotations stay (TS doesn't infer those from the
     // surrounding code). Detection is purely syntactic; we bail out for
     // anything we can't model exactly to avoid suppressing a useful
     // annotation.
-    if (infer.skipInferableVarDecls && opts?.varDecl) {
+    if (infer.skipRedundantAnnotations && opts?.varDecl) {
       const info = inferableInfoMap.get(pos);
       if (info) {
         const inferredFromSource = inferTypeFromInitializer(info.initializer, info.narrowsLiterals);
@@ -371,6 +397,21 @@ export function applyTypesToFile(
     // opted in via `infer.emitDiagnosticComments`. Reviewers use the
     // markers to distinguish confident emits from fallbacks.
     const markerSuffix = buildDiagnosticMarkerSuffix(types, infer);
+
+    if (checker && checkerSites) {
+      const origPos = checkerSites.toOriginalPos(pos);
+      const inferred = opts?.returnType
+        ? inferredReturnType(checker, checkerSites.index.returnTypeSites.get(origPos)?.node)
+        : typeAt(
+            checker,
+            checkerSites.index.varDeclSites.get(origPos)?.nameNode ??
+              checkerSites.index.paramSites.get(origPos)?.node.name,
+          );
+      if (isRedundantAnnotation(checker, inferred, emitted)) {
+        if (telemetry) telemetry.idempotent++;
+        continue;
+      }
+    }
 
     const annotationText = thisPrefix + ": " + prefix + emitted + suffix + markerSuffix;
 

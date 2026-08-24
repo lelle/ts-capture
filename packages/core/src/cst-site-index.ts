@@ -39,7 +39,15 @@ export type ThisTypeSite = { hasOtherParams: boolean };
 // for returnType entries — `findCloseParenPos` in transformer.ts.
 // For functions with `(...)`, that's `closeParen.end`; for paren-less
 // single-param arrows (`x => body`), that's `parameters.end`.
-export type ReturnTypeSite = { hasReturnType: boolean };
+export type ReturnTypeSite = {
+  hasReturnType: boolean;
+  /**
+   * The function-like node, so the checker can be asked what it infers.
+   * Optional: the redundancy check is best-effort and falls back to the
+   * syntactic guards when a site has no resolvable node.
+   */
+  node?: ts.SignatureDeclaration;
+};
 
 // VarDecl + class-field sites: indexed by `node.name.end` to match
 // the transformer's varDecl pos.
@@ -50,10 +58,13 @@ export type ReturnTypeSite = { hasReturnType: boolean };
 //      function expression (would be contravariantly incompatible
 //      with inner observations)
 //   - `initializer` + `narrowsLiterals`: let
-//      `infer.skipInferableVarDecls` skip when TS would already
+//      `infer.skipRedundantAnnotations` skip when TS would already
 //      infer the same type from the initializer
 export type VarDeclSite = {
   hasType: boolean;
+  /** The binding name, so the checker can be asked what it infers. Optional
+   * for the same reason as `ReturnTypeSite.node`. */
+  nameNode?: ts.Identifier;
   rhsIsFunction: boolean;
   initializer: ts.Expression | undefined;
   narrowsLiterals: boolean;
@@ -215,7 +226,10 @@ export function buildCstSiteIndex(
       const asteriskToken = (node as ts.FunctionDeclaration).asteriskToken;
       if (!asteriskToken) {
         const retPos = findReturnTypePos(node);
-        returnTypeSites.set(retPos, { hasReturnType: !!node.type });
+        returnTypeSites.set(retPos, {
+          hasReturnType: !!node.type,
+          node: node as ts.SignatureDeclaration,
+        });
       }
       // `this` type insertion site: parameters.pos is right after the
       // opening `(`. The transformer only emits a thisType entry when
@@ -231,6 +245,7 @@ export function buildCstSiteIndex(
       const list = node.parent;
       const isConst = ts.isVariableDeclarationList(list) && (list.flags & ts.NodeFlags.Const) !== 0;
       varDeclSites.set(node.name.end, {
+        nameNode: node.name,
         hasType: !!node.type,
         rhsIsFunction:
           !!initializer &&
@@ -252,6 +267,7 @@ export function buildCstSiteIndex(
       const isReadonly =
         node.modifiers?.some((m) => m.kind === ts.SyntaxKind.ReadonlyKeyword) ?? false;
       varDeclSites.set(node.name.end, {
+        nameNode: node.name,
         hasType: !!node.type,
         rhsIsFunction:
           !!initializer &&

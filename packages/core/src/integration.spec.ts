@@ -494,13 +494,19 @@ process(double);`;
 describe("integration: variable and property inference", () => {
   it("infers type for let declaration", () => {
     const input = `let x = 5;\nfunction use(a) { return a; }\nuse(x);`;
-    const result = runPipeline(input)!;
+    // Literal initializer: `skipRedundantAnnotations` (on by default) would skip
+    // this. Pinned off — the subject here is varDecl inference, not the skip.
+    const result = runPipeline(input, {
+      apply: { infer: { ...INFER_DEFAULTS, skipRedundantAnnotations: false } },
+    })!;
     expect(result).toContain("let x: number = 5");
   });
 
   it("infers type for const declaration", () => {
     const input = `const name = "hello";\nfunction use(a) { return a; }\nuse(name);`;
-    const result = runPipeline(input)!;
+    const result = runPipeline(input, {
+      apply: { infer: { ...INFER_DEFAULTS, skipRedundantAnnotations: false } },
+    })!;
     expect(result).toContain('const name: string = "hello"');
   });
 
@@ -511,7 +517,9 @@ class Foo {
     greet() { return this.value; }
 }
 new Foo().greet();`;
-    const result = runPipeline(input)!;
+    const result = runPipeline(input, {
+      apply: { infer: { ...INFER_DEFAULTS, skipRedundantAnnotations: false } },
+    })!;
     expect(result).toContain("value: number = 42");
   });
 
@@ -1101,14 +1109,16 @@ tag("plain string");`;
 // Skip annotations TS would already infer from the initializer.
 // End-to-end via the full pipeline: a `let count = 0` observation
 // should produce a redundant `: number` annotation by default, but
-// get suppressed when `infer.skipInferableVarDecls` is on.
-describe("integration: skipInferableVarDecls", () => {
-  it("OFF (default): `let count = 0` still gets redundant `: number`", () => {
+// get suppressed when `infer.skipRedundantAnnotations` is on.
+describe("integration: skipRedundantAnnotations", () => {
+  it("OFF (explicit): `let count = 0` still gets redundant `: number`", () => {
     const input = `
 let count = 0;
 function use(a) { return a; }
 use(count);`;
-    const result = runPipeline(input)!;
+    const result = runPipeline(input, {
+      apply: { infer: { ...INFER_DEFAULTS, skipRedundantAnnotations: false } },
+    })!;
     // varDecl observation fires for count; default behaviour annotates.
     expect(result).toContain("let count: number = 0");
   });
@@ -1119,7 +1129,7 @@ let count = 0;
 function use(a) { return a; }
 use(count);`;
     const result = runPipeline(input, {
-      apply: { infer: { ...INFER_DEFAULTS, skipInferableVarDecls: true } },
+      apply: { infer: { ...INFER_DEFAULTS, skipRedundantAnnotations: true } },
     })!;
     expect(result).not.toContain("let count: number");
     expect(result).toContain("let count = 0");
@@ -1132,7 +1142,7 @@ const c = new Cat();
 function use(a) { return a; }
 use(c);`;
     const result = runPipeline(input, {
-      apply: { infer: { ...INFER_DEFAULTS, skipInferableVarDecls: true } },
+      apply: { infer: { ...INFER_DEFAULTS, skipRedundantAnnotations: true } },
     })!;
     expect(result).not.toContain("const c: Cat");
     expect(result).toContain("const c = new Cat()");
@@ -1148,7 +1158,7 @@ const obj = JSON.parse('{"id":1}');
 function use(a) { return a; }
 use(obj);`;
     const result = runPipeline(input, {
-      apply: { infer: { ...INFER_DEFAULTS, skipInferableVarDecls: true } },
+      apply: { infer: { ...INFER_DEFAULTS, skipRedundantAnnotations: true } },
     })!;
     expect(result).toMatch(/const obj:\s*\{ id: number \}\s*=/);
   });
@@ -1270,13 +1280,13 @@ describe(new Dog());`,
     );
   });
 
-  it("skipInferableVarDecls + cstAware combined", () => {
+  it("skipRedundantAnnotations + cstAware combined", () => {
     bothAgree(
       `
 let count = 0;
 function use(a) { return a; }
 use(count);`,
-      { infer: { ...INFER_DEFAULTS, skipInferableVarDecls: true } },
+      { infer: { ...INFER_DEFAULTS, skipRedundantAnnotations: true } },
     );
   });
 

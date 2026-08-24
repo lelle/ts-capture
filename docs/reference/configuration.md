@@ -52,13 +52,13 @@ most users only touch `infer` and `apply`.
 
 ### Scope & existing types
 
-| Flag                    | Default | What it does                                                                                                                                  |
-| ----------------------- | ------- | --------------------------------------------------------------------------------------------------------------------------------------------- |
-| `skipInferableVarDecls` | `false` | Skip var/field annotations TypeScript would already infer from the initializer (e.g. `let count = 0`).                                        |
-| `honorAsCasts`          | `true`  | Honor user-written `as Type` / `<Type>` casts on a varDecl RHS (cast wins over the observed type). Set `false` for observation-wins.          |
-| `preferNamedInScope`    | `true`  | Replace a structural object type with an exact-matching in-scope `interface`/`type` name. Set `false` to always keep the structural form.     |
-| `requireTypeRefInScope` | `true`  | Skip an annotation referencing a name not reachable as a type at the target file (avoids TS2304).                                             |
-| `ignoreExistingTypes`   | `false` | Emit even at already-annotated positions. Produces **syntactically invalid TS** — a measurement tool, not a rewrite; the CLI warns on stderr. |
+| Flag                       | Default | What it does                                                                                                                                                                                                                                                                                                                                                  |
+| -------------------------- | ------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `skipRedundantAnnotations` | `true`  | Skip any annotation TypeScript already infers as well or better — variables, fields, return types, and contextually typed parameters. Uses the TypeChecker when a project is available, falling back to a syntactic check otherwise. On a `const` such an annotation is lossy, not merely redundant: TS infers the literal type and the annotation widens it. |
+| `honorAsCasts`             | `true`  | Honor user-written `as Type` / `<Type>` casts on a varDecl RHS (cast wins over the observed type). Set `false` for observation-wins.                                                                                                                                                                                                                          |
+| `preferNamedInScope`       | `true`  | Replace a structural object type with an exact-matching in-scope `interface`/`type` name. Set `false` to always keep the structural form.                                                                                                                                                                                                                     |
+| `requireTypeRefInScope`    | `true`  | Skip an annotation referencing a name not reachable as a type at the target file (avoids TS2304).                                                                                                                                                                                                                                                             |
+| `ignoreExistingTypes`      | `false` | Emit even at already-annotated positions. Produces **syntactically invalid TS** — a measurement tool, not a rewrite; the CLI warns on stderr.                                                                                                                                                                                                                 |
 
 ### Verification & recognition
 
@@ -117,7 +117,7 @@ With `literal.string` off (the default), the same observations widen to
 | `maxAnnotationChars`                     | `4096`  | Suppress an annotation whose final type string exceeds this cap (TS inference takes over for that position).  |
 
 ```ts title="Input"
-// With infer.skipInferableVarDecls on — TS already infers number here
+// skipRedundantAnnotations is on by default — TS already infers number here
 let count = 0;
 ```
 

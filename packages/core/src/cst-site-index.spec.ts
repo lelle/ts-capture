@@ -65,14 +65,14 @@ describe("buildCstSiteIndex", () => {
       const src = "function f() {}";
       const idx = index(src);
       const closeParen = src.indexOf(")") + 1;
-      expect(idx.returnTypeSites.get(closeParen)).toEqual({ hasReturnType: false });
+      expect(idx.returnTypeSites.get(closeParen)).toMatchObject({ hasReturnType: false });
     });
 
     it("flags hasReturnType when one is already present", () => {
       const src = "function f(): void {}";
       const idx = index(src);
       const closeParen = src.indexOf(")") + 1;
-      expect(idx.returnTypeSites.get(closeParen)).toEqual({ hasReturnType: true });
+      expect(idx.returnTypeSites.get(closeParen)).toMatchObject({ hasReturnType: true });
     });
 
     it("does not index a return-type site for a generator", () => {

@@ -1,0 +1,157 @@
+import ts from "typescript";
+
+import { isParseableTypeString } from "./parseable.js";
+
+// One spelling per type, so that comparing two type-strings answers a question
+// about types rather than about punctuation.
+//
+// The checker's printer and ts-capture's own writer describe the same type
+// differently on every axis that does not matter: the printer joins unions with
+// ` | ` and object members with `; `, ts-capture uses `|` and `, `; neither
+// sorts; the printer quotes no numeric key and ts-capture quotes every one. On
+// nestjs/nest that mismatch let 20 annotations through the redundancy oracle
+// that restate exactly what TypeScript already inferred — 11% of everything the
+// run wrote.
+//
+// What must survive canonicalisation is everything that changes what a reader
+// may do with the value: `readonly`, optionality, literal types, and which
+// members exist at all.
+
+/**
+ * Parse a type-string into a TypeNode, or undefined when it is not one.
+ *
+ * Uses the same parseability guard the appliers use, so a string this module
+ * refuses to compare is exactly a string they refuse to write. An unparseable
+ * one cannot be compared as a type — the checker's printer elides a long type
+ * as `... 8 more ...`, which is not a type at all.
+ */
+function parseType(text: string): ts.TypeNode | undefined {
+  if (!isParseableTypeString(text)) return undefined;
+  const sf = ts.createSourceFile(
+    "__canonical_probe.ts",
+    `type __X = ${text};`,
+    ts.ScriptTarget.Latest,
+    /*setParentNodes*/ true,
+  );
+  const stmt = sf.statements[0];
+  return stmt && ts.isTypeAliasDeclaration(stmt) ? stmt.type : undefined;
+}
+
+const collapse = (s: string): string => s.replace(/\s+/g, " ").trim();
+
+/**
+ * A property name written the one way it can be read.
+ *
+ * `"3"` and `3` name the same property, and so do `"all"` and `all`. The quotes
+ * stay only where dropping them would change which property is meant.
+ */
+function propertyName(node: ts.PropertyName): string {
+  if (ts.isIdentifier(node)) return node.text;
+  if (ts.isNumericLiteral(node)) return String(Number(node.text));
+  if (ts.isStringLiteral(node)) {
+    if (/^[A-Za-z_$][\w$]*$/.test(node.text)) return node.text;
+    if (/^(?:0|[1-9]\d*)$/.test(node.text)) return node.text;
+    return JSON.stringify(node.text);
+  }
+  return collapse(node.getText());
+}
+
+/** Does this type need parentheses to sit inside a union or an array? */
+function needsParens(node: ts.TypeNode): boolean {
+  return (
+    ts.isUnionTypeNode(node) ||
+    ts.isIntersectionTypeNode(node) ||
+    ts.isFunctionTypeNode(node) ||
+    ts.isConstructorTypeNode(node) ||
+    ts.isConditionalTypeNode(node) ||
+    ts.isInferTypeNode(node)
+  );
+}
+
+function deparen(node: ts.TypeNode): ts.TypeNode {
+  let current = node;
+  while (ts.isParenthesizedTypeNode(current)) current = current.type;
+  return current;
+}
+
+function render(node: ts.TypeNode): string {
+  const n = deparen(node);
+
+  if (ts.isUnionTypeNode(n)) return renderList(n.types, " | ");
+  if (ts.isIntersectionTypeNode(n)) return renderList(n.types, " & ");
+  if (ts.isArrayTypeNode(n)) return `${atom(n.elementType)}[]`;
+
+  if (ts.isTypeLiteralNode(n)) {
+    const members = n.members.map(renderMember).sort();
+    return members.length > 0 ? `{ ${members.join("; ")} }` : "{}";
+  }
+
+  if (ts.isTypeReferenceNode(n)) {
+    const name = collapse(n.typeName.getText());
+    const args = n.typeArguments?.map(render);
+    return args && args.length > 0 ? `${name}<${args.join(", ")}>` : name;
+  }
+
+  if (ts.isTupleTypeNode(n)) return `[${n.elements.map(render).join(", ")}]`;
+
+  if (ts.isFunctionTypeNode(n)) {
+    // A parameter's name is not part of the type: `(a: string) => void` and
+    // `(x: string) => void` are one type, and the checker's printer picks
+    // whichever name the declaration used. Position replaces the name. What
+    // does change which calls the type accepts — arity, `?`, `...` — is kept,
+    // and the parameter's own type is canonicalised like any other.
+    const params = n.parameters
+      .map((param, i) => {
+        const rest = param.dotDotDotToken ? "..." : "";
+        const optional = param.questionToken ? "?" : "";
+        const type = param.type ? render(param.type) : "any";
+        return `${rest}p${i}${optional}: ${type}`;
+      })
+      .join(", ");
+    return `(${params}) => ${render(n.type)}`;
+  }
+
+  return collapse(n.getText());
+}
+
+/** Union and intersection members, deduped and in a fixed order. */
+function renderList(nodes: ts.NodeArray<ts.TypeNode>, separator: string): string {
+  return [...new Set(nodes.map(atom))].sort().join(separator);
+}
+
+function atom(node: ts.TypeNode): string {
+  const n = deparen(node);
+  return needsParens(n) ? `(${render(n)})` : render(n);
+}
+
+function renderMember(member: ts.TypeElement): string {
+  if (!ts.isPropertySignature(member)) return collapse(member.getText());
+  const readonly = member.modifiers?.some((m) => m.kind === ts.SyntaxKind.ReadonlyKeyword)
+    ? "readonly "
+    : "";
+  const optional = member.questionToken ? "?" : "";
+  const type = member.type ? render(member.type) : "any";
+  return `${readonly}${propertyName(member.name)}${optional}: ${type}`;
+}
+
+/**
+ * One canonical spelling of a type, or undefined when the text does not parse
+ * as a type at all.
+ */
+export function canonicalTypeString(text: string): string | undefined {
+  const node = parseType(text);
+  return node ? render(node) : undefined;
+}
+
+/**
+ * Do these two type-strings describe the same type?
+ *
+ * Falls back to exact text equality when either side cannot be parsed — the
+ * checker's printer elides a long type as `... 8 more ...`, and a comparison
+ * that cannot be made must not be answered with a guess.
+ */
+export function sameTypeString(a: string, b: string): boolean {
+  const canonicalA = canonicalTypeString(a);
+  if (canonicalA === undefined) return a === b;
+  return canonicalA === canonicalTypeString(b);
+}

@@ -32,13 +32,16 @@ export interface InferOptions {
    * ts-capture from adding them in the first place.
    *
    * Conservative: only suppresses annotations with a strict syntactic
-   * match. Numeric/string/boolean primitives only suppress for `let`
-   * (since `const x = 5` infers literal type `5`, our widened `: number`
-   * annotation is still meaningful). Arrays, object literals, and
-   * `new Identifier(...)` suppress for both `let` and `const` since
-   * those widen identically.
+   * match — the emitted type must equal what the initializer alone
+   * implies.
+   *
+   * On by default. For a `const` the annotation is not merely redundant,
+   * it is lossy: TypeScript infers the literal type (`const x = 5` is
+   * `5`), so writing `: number` widens it and throws information away.
+   * A run against nestjs/nest emitted 105 such widening annotations,
+   * about 8% of the whole diff. Set to `false` to get them back.
    */
-  skipInferableVarDecls: boolean;
+  skipRedundantAnnotations: boolean;
   /**
    * Honor user-written `as Type` and `<Type>` casts on varDecl
    * right-hand-sides. When ON (default), apply skips entries marked
@@ -242,7 +245,7 @@ export const INFER_DEFAULTS: InferOptions = {
   recursiveObjectMerge: true,
   crossSampleArrayMerge: false,
   rewriteCommonBase: false,
-  skipInferableVarDecls: false,
+  skipRedundantAnnotations: true,
   honorAsCasts: true,
   preferNamedInScope: true,
   requireTypeRefInScope: true,
@@ -372,7 +375,8 @@ function deepMergeInfer(
     recursiveObjectMerge: overrides.recursiveObjectMerge ?? defaults.recursiveObjectMerge,
     crossSampleArrayMerge: overrides.crossSampleArrayMerge ?? defaults.crossSampleArrayMerge,
     rewriteCommonBase: overrides.rewriteCommonBase ?? defaults.rewriteCommonBase,
-    skipInferableVarDecls: overrides.skipInferableVarDecls ?? defaults.skipInferableVarDecls,
+    skipRedundantAnnotations:
+      overrides.skipRedundantAnnotations ?? defaults.skipRedundantAnnotations,
     honorAsCasts: overrides.honorAsCasts ?? defaults.honorAsCasts,
     preferNamedInScope: overrides.preferNamedInScope ?? defaults.preferNamedInScope,
     requireTypeRefInScope: overrides.requireTypeRefInScope ?? defaults.requireTypeRefInScope,

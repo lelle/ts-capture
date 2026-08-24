@@ -309,7 +309,11 @@ describe("applyTypesToFile — outer-annotation skip on typed-RHS var declaratio
     const source = "const count = 42;";
     const typeInfo: CollectedTypeInfo = [entry("test.ts", 11, [["number"]], { varDecl: true })];
     const result = applyTypesToFile(source, typeInfo, {
-      infer: { ...INFER_DEFAULTS, requireTypeRefInScope: false },
+      infer: {
+        ...INFER_DEFAULTS,
+        requireTypeRefInScope: false,
+        skipRedundantAnnotations: false,
+      },
     });
     expect(result).toBe("const count: number = 42;");
   });
@@ -458,7 +462,11 @@ describe("applyTypesToFile — class field inference from constructor params", (
       entry("test.ts", initialEnd, [["number"]]),
     ];
     const result = applyTypesToFile(source, typeInfo, {
-      infer: { ...INFER_DEFAULTS, requireTypeRefInScope: false },
+      infer: {
+        ...INFER_DEFAULTS,
+        requireTypeRefInScope: false,
+        skipRedundantAnnotations: false,
+      },
     });
     expect(result).toContain("count: number = 0;");
     // Make sure we didn't get `count: number: number = 0;`
@@ -665,18 +673,22 @@ describe("applyTypesToFile — RewriteMostSpecificCommonBase (applier wiring)", 
   });
 });
 
-describe("applyTypesToFile — skipInferableVarDecls (applier wiring)", () => {
+describe("applyTypesToFile — skipRedundantAnnotations (applier wiring)", () => {
   // The syntactic inference (inferTypeFromInitializer) and the const/let/
   // readonly narrowing flag (buildInferableInfoMap) are unit-tested at the
   // boundary in initializer-inference.spec.ts. These e2e samples prove the
   // applier wiring: the suppression is gated on the flag, fires only on a
   // varDecl whose inferred type equals the emitted one, keeps the annotation
   // when the observation is wider, and never touches params / return types.
-  it("OFF by default — `let x = 5` still gets `: number`", () => {
+  it("OFF (explicit) — `let x = 5` still gets `: number`", () => {
     const source = "let x = 5;";
     const typeInfo: CollectedTypeInfo = [entry("test.ts", 5, [["number"]], { varDecl: true })];
     const result = applyTypesToFile(source, typeInfo, {
-      infer: { ...INFER_DEFAULTS, requireTypeRefInScope: false },
+      infer: {
+        ...INFER_DEFAULTS,
+        requireTypeRefInScope: false,
+        skipRedundantAnnotations: false,
+      },
     });
     expect(result).toBe("let x: number = 5;");
   });
@@ -685,7 +697,7 @@ describe("applyTypesToFile — skipInferableVarDecls (applier wiring)", () => {
     const source = "let x = 5;";
     const typeInfo: CollectedTypeInfo = [entry("test.ts", 5, [["number"]], { varDecl: true })];
     const result = applyTypesToFile(source, typeInfo, {
-      infer: { ...INFER_DEFAULTS, skipInferableVarDecls: true },
+      infer: { ...INFER_DEFAULTS, skipRedundantAnnotations: true },
     });
     expect(result).toBe(source);
   });
@@ -696,7 +708,7 @@ describe("applyTypesToFile — skipInferableVarDecls (applier wiring)", () => {
       entry("test.ts", 5, [["number"], ["string"]], { varDecl: true }),
     ];
     const result = applyTypesToFile(source, typeInfo, {
-      infer: { ...INFER_DEFAULTS, skipInferableVarDecls: true },
+      infer: { ...INFER_DEFAULTS, skipRedundantAnnotations: true },
     });
     expect(result).toBe("let x: number|string = 5;");
   });
@@ -705,7 +717,7 @@ describe("applyTypesToFile — skipInferableVarDecls (applier wiring)", () => {
     const source = "class C { x = 5; }";
     const typeInfo: CollectedTypeInfo = [entry("test.ts", 11, [["number"]], { varDecl: true })];
     const result = applyTypesToFile(source, typeInfo, {
-      infer: { ...INFER_DEFAULTS, skipInferableVarDecls: true },
+      infer: { ...INFER_DEFAULTS, skipRedundantAnnotations: true },
     });
     expect(result).toBe(source);
   });
@@ -714,7 +726,7 @@ describe("applyTypesToFile — skipInferableVarDecls (applier wiring)", () => {
     const source = "function foo(a) { return a; }";
     const typeInfo: CollectedTypeInfo = [entry("test.ts", 14, [["number"]])];
     const result = applyTypesToFile(source, typeInfo, {
-      infer: { ...INFER_DEFAULTS, skipInferableVarDecls: true },
+      infer: { ...INFER_DEFAULTS, skipRedundantAnnotations: true },
     });
     expect(result).toBe("function foo(a: number) { return a; }");
   });
@@ -1070,7 +1082,11 @@ describe("applyTypesToFile — honorAsCasts", () => {
     const source = "const x = 5;";
     const typeInfo: CollectedTypeInfo = [entry("test.ts", 7, [["number"]], { varDecl: true })];
     const result = applyTypesToFile(source, typeInfo, {
-      infer: { ...INFER_DEFAULTS, requireTypeRefInScope: false },
+      infer: {
+        ...INFER_DEFAULTS,
+        requireTypeRefInScope: false,
+        skipRedundantAnnotations: false,
+      },
     });
     expect(result).toBe("const x: number = 5;");
   });
@@ -1782,7 +1798,9 @@ describe("skip annotation when offset falls inside an ImportDeclaration", () => 
     const typeInfo: CollectedTypeInfo = [
       entry("test.ts", declStart, [["boolean"]], { varDecl: true }),
     ];
-    const result = applyTypesToFile(source, typeInfo, {});
+    const result = applyTypesToFile(source, typeInfo, {
+      infer: { ...INFER_DEFAULTS, skipRedundantAnnotations: false },
+    });
     expect(result).toContain("const x: boolean = true;");
   });
 });
@@ -1823,7 +1841,9 @@ describe("skip varDecl annotation when offset is not a valid name-end position",
     const typeInfo: CollectedTypeInfo = [
       entry("test.ts", declEnd, [["number"]], { varDecl: true }),
     ];
-    const result = applyTypesToFile(source, typeInfo, {});
+    const result = applyTypesToFile(source, typeInfo, {
+      infer: { ...INFER_DEFAULTS, skipRedundantAnnotations: false },
+    });
     expect(result).toContain("const taskCount: number = ");
   });
 });
@@ -1906,7 +1926,9 @@ function C() { return <Box display="flex" />; }
     const typeInfo: CollectedTypeInfo = [
       entry("t.tsx", declEnd, [["{ later: number }"]], { varDecl: true }),
     ];
-    const result = applyTypesToFile(source, typeInfo, {});
+    const result = applyTypesToFile(source, typeInfo, {
+      infer: { ...INFER_DEFAULTS, skipRedundantAnnotations: false },
+    });
     expect(result).toContain("const display: { later: number } = ");
     // The JSX attribute must not have been touched.
     expect(result).toContain(`<Box display="flex" />`);

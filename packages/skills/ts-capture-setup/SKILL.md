@@ -229,17 +229,20 @@ Most projects don't need this. Only suggest it if:
   - Class hierarchies → `infer.rewriteCommonBase: true` (requires
     runtime `LiteralOptions.captureClassHierarchy: true` paired in the
     adapter config)
-  - Cleaner output for already-typed varDecls →
-    `infer.skipInferableVarDecls: true`
   - State-machine code with stable string enums →
     `infer.literal.string: true`
+  - A measurement run that wants to see every annotation ts-capture would
+    write, including the ones TypeScript already infers →
+    `infer.skipRedundantAnnotations: false` (on a `const` these are lossy,
+    not merely redundant — do not suggest it for a real rewrite)
 
-Default `ts-capture.config.json` (only if asked):
+`ts-capture.config.json` is only worth writing when one of those applies; the
+defaults are what a normal run should use. Shape:
 
 ```json
 {
   "infer": {
-    "skipInferableVarDecls": true
+    "literal": { "string": true }
   }
 }
 ```

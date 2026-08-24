@@ -3,12 +3,12 @@ import { describe, expect, it } from "vitest";
 import { buildInferableInfoMap, inferTypeFromInitializer } from "./initializer-inference.js";
 
 // Boundary spec for the syntactic initializer-inference behind
-// skipInferableVarDecls. inferTypeFromInitializer computes the type TS would
+// skipRedundantAnnotations. inferTypeFromInitializer computes the type TS would
 // infer from a var-decl / class-field initializer using syntax only (no type
 // checker); buildInferableInfoMap locates those initializers and records the
 // binding's literal-narrowing behaviour. The applier suppresses its own
 // annotation when this inferred type equals the emitted one. Migrated from the
-// "skipInferableVarDecls" block of the 4,604-line apply-types.spec.ts.
+// "skipRedundantAnnotations" block of the 4,604-line apply-types.spec.ts.
 
 // Each fixture has exactly one inferable binding; infer its syntactic type.
 function infer(source: string): string | null {

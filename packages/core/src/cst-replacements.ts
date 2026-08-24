@@ -12,6 +12,7 @@ import { computeAnnotationTypeString } from "./compute-annotation.js";
 import { inferTypeFromInitializer } from "./initializer-inference.js";
 import { type NamedTypeIndex, rewriteToNamedInScope } from "./named-type-rewrite.js";
 import { isParseableTypeString } from "./parseable.js";
+import { inferredReturnType, isRedundantAnnotation, typeAt } from "./redundant-annotation.js";
 import { type AnnotationCandidate, Replacement } from "./replacement.js";
 import { allTypeRefsInScope, expandCtorArity } from "./scope-reachability.js";
 
@@ -31,6 +32,12 @@ export interface CstApplyContext {
   infer: InferOptions;
   prefix: string;
   program?: ts.Program;
+  /**
+   * Site index built over the Program's own SourceFile, keyed identically to
+   * `index`. The checker can only answer about nodes it owns, and `index` is
+   * built from a detached parse of the source string.
+   */
+  checkerIndex?: CstSiteIndex;
   verify?: VerificationContext;
   telemetry?: ApplyTelemetry;
   namedTypeIndex?: NamedTypeIndex;
@@ -59,7 +66,15 @@ export function buildCstReplacements(
     namedTypeIndex,
     scopedTypeNames,
     ctorArityMap,
+    checkerIndex,
   } = ctx;
+
+  // Checker-backed redundancy oracle: is the annotation we are about to write
+  // already implied by TypeScript's own inference? Undefined when apply runs
+  // outside a project (`getProgram` returns undefined with no tsconfig), in
+  // which case each site falls back to its syntactic guard.
+  const checker =
+    infer.skipRedundantAnnotations && checkerIndex ? program?.getTypeChecker() : undefined;
 
   const cstReplacements: Replacement[] = [];
   // When verify is enabled, buffer annotation insertions here and decide
@@ -126,6 +141,18 @@ export function buildCstReplacements(
       }
       // Parse-check — refuse to write an unparseable type.
       if (!isParseableTypeString(emitted)) continue;
+      // Nothing to add when the checker already types this parameter — a
+      // contextually typed callback param, for instance.
+      if (
+        isRedundantAnnotation(
+          checker,
+          typeAt(checker, checkerIndex?.paramSites.get(pos)?.node.name),
+          emitted,
+        )
+      ) {
+        if (telemetry) telemetry.idempotent++;
+        continue;
+      }
       // Paren-less single-param arrow: wrap with `()` separately so the
       // annotation can be gated through verify independently. Wrap
       // pushes unconditionally — if verify rejects the annotation,
@@ -168,6 +195,18 @@ export function buildCstReplacements(
       if (suppressArrayCallbackStructural(arrayCallbackArrowParams.has(pos), emitted)) {
         continue;
       }
+      // Nothing to add when the checker already infers this return type from
+      // the body.
+      if (
+        isRedundantAnnotation(
+          checker,
+          inferredReturnType(checker, checkerIndex?.returnTypeSites.get(pos)?.node),
+          emitted,
+        )
+      ) {
+        if (telemetry) telemetry.idempotent++;
+        continue;
+      }
       // Lower priority than param inserts so the priority-tied
       // collision case from the offset-based path (paren-less arrow:
       // both inserts at same pos) is handled the same way. In this
@@ -188,9 +227,22 @@ export function buildCstReplacements(
       const emitted = ctorArityMap ? expandCtorArity(named, ctorArityMap) : named;
       if (!allTypeRefsInScope(emitted, scopedTypeNames)) continue;
       // Skip when TS would already infer the same type from the
-      // initializer. Only fires when both `infer.skipInferableVarDecls`
+      // initializer. Only fires when both `infer.skipRedundantAnnotations`
       // is on AND the initializer is a shape we can model exactly.
-      if (infer.skipInferableVarDecls && site.initializer) {
+      // Checker first: it answers this exactly and for every initializer
+      // shape. The syntactic table below is the fallback for runs with no
+      // project (`getProgram` returns undefined without a tsconfig).
+      if (
+        isRedundantAnnotation(
+          checker,
+          typeAt(checker, checkerIndex?.varDeclSites.get(pos)?.nameNode),
+          emitted,
+        )
+      ) {
+        if (telemetry) telemetry.idempotent++;
+        continue;
+      }
+      if (infer.skipRedundantAnnotations && site.initializer) {
         const inferredFromSource = inferTypeFromInitializer(site.initializer, site.narrowsLiterals);
         if (inferredFromSource !== null && inferredFromSource === emitted) continue;
       }

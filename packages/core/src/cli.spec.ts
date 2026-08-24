@@ -423,6 +423,147 @@ describe("cli", () => {
     // `it("...", (): Assertion => ...)`) when apply runs on a vitest
     // project. Default-exclude common test glob patterns; honor an
     // opt-back-in flag for users who really want to apply to specs.
+    // Driven through the real CLI, not the applier directly: the CLI routes
+    // entries through two appliers and a pass-through path, and a unit test on
+    // one applier passed today while the path the CLI actually takes was
+    // broken. These fixtures are the only form that would have caught it.
+    describe("does not write annotations weaker than the code already has", () => {
+      function applyFixture(
+        source: string,
+        entries: (dir: string, src: string) => unknown[],
+      ): string {
+        let out = "";
+        withTmpDir((rawDir) => {
+          const dir = fs.realpathSync(rawDir);
+          fs.writeFileSync(
+            path.join(dir, "tsconfig.json"),
+            JSON.stringify({
+              compilerOptions: {
+                noImplicitAny: false,
+                target: "ES2022",
+                module: "ES2022",
+                moduleResolution: "Bundler",
+                skipLibCheck: true,
+                noEmit: true,
+              },
+              include: ["**/*.ts"],
+            }),
+          );
+          const file = path.join(dir, "a.ts");
+          fs.writeFileSync(file, source);
+          const jsonFile = path.join(dir, "types.json");
+          fs.writeFileSync(jsonFile, JSON.stringify(entries(file, source)));
+          const { exitCode } = runInDir(dir, "apply", jsonFile);
+          expect(exitCode).toBe(0);
+          out = fs.readFileSync(file, "utf-8");
+        });
+        return out;
+      }
+
+      // Fixtures deliberately use a pass-through parameter, so the vacuous
+      // annotation is *valid* TypeScript. An earlier version of these tests
+      // annotated a called parameter, which the verify gate rejected as a type
+      // error — they passed without any vacuity rule existing.
+      const PASSTHROUGH = "export function run(x) {\n  return x;\n}\n";
+
+      // `unknown` inside a generic was the single largest group in the nest
+      // diff: 25 `Promise<unknown>`, 7 `Map<unknown, unknown>`, 6 `Set<unknown>`.
+      // Knowing a value is a Promise without knowing what it resolves to is not
+      // worth rewriting a line for.
+      it("skips a function type whose parameters are all `unknown`", () => {
+        const result = applyFixture(PASSTHROUGH, (file, src) => [
+          [file, src.indexOf("(x)") + 2, [["(a: unknown) => unknown", null]], {}],
+        ]);
+        expect(result).toBe(PASSTHROUGH);
+      });
+
+      it("still writes a type that describes the value", () => {
+        const result = applyFixture(PASSTHROUGH, (file, src) => [
+          [file, src.indexOf("(x)") + 2, [["string", null]], {}],
+        ]);
+        expect(result).toContain("x: string");
+      });
+    });
+
+    // 23 `: void` annotations survived the checker oracle in the nest run.
+    // Return-type sites do cover arrow functions and methods, so the oracle
+    // should have recognised them as identical to TypeScript's own inference.
+    describe("does not restate a return type the checker already infers", () => {
+      function applyReturnFixture(
+        source: string,
+        pos: (src: string) => number,
+        extraArgs: string[] = [],
+      ): string {
+        let out = "";
+        withTmpDir((rawDir) => {
+          const dir = fs.realpathSync(rawDir);
+          fs.writeFileSync(
+            path.join(dir, "tsconfig.json"),
+            JSON.stringify({
+              compilerOptions: {
+                noImplicitAny: false,
+                target: "ES2022",
+                module: "ES2022",
+                moduleResolution: "Bundler",
+                skipLibCheck: true,
+                noEmit: true,
+              },
+              include: ["**/*.ts"],
+            }),
+          );
+          const file = path.join(dir, "a.ts");
+          fs.writeFileSync(file, source);
+          const jsonFile = path.join(dir, "types.json");
+          fs.writeFileSync(
+            jsonFile,
+            JSON.stringify([[file, pos(source), [["void", null]], { returnType: true }]]),
+          );
+          const { exitCode } = runInDir(dir, "apply", jsonFile, ...extraArgs);
+          expect(exitCode).toBe(0);
+          out = fs.readFileSync(file, "utf-8");
+        });
+        return out;
+      }
+
+      // The offset-based applier serves pass-through entries even when
+      // `cstAware` is on, and it had no checker check at all — which is where
+      // all 23 redundant `: void` annotations in the nest run came from.
+      it("skips `: void` through the offset-based applier too", () => {
+        const source = "export function run(cb) {\n  cb();\n}\n";
+        expect(
+          applyReturnFixture(source, (s) => s.indexOf("(cb)") + 4, ["--infer.cstAware=false"]),
+        ).toBe(source);
+      });
+
+      it("skips `: void` on a function declaration", () => {
+        const source = "export function run(cb) {\n  cb();\n}\n";
+        expect(applyReturnFixture(source, (s) => s.indexOf("(cb)") + 4)).toBe(source);
+      });
+
+      it("skips `: void` on a class method", () => {
+        const source = "export class A {\n  run(cb) {\n    cb();\n  }\n}\n";
+        expect(applyReturnFixture(source, (s) => s.indexOf("(cb)") + 4)).toBe(source);
+      });
+
+      // The nest case: `public get(...args: any[])` is the *implementation* of
+      // an overloaded method, and the observation is `undefined` rather than
+      // `void`.
+      it("skips `: void` on an overload implementation", () => {
+        const source =
+          "export class A {\n" +
+          "  run(cb: () => void): void;\n" +
+          "  run(p: string, cb: () => void): void;\n" +
+          "  run(...args: any[]) {\n    args;\n  }\n" +
+          "}\n";
+        expect(applyReturnFixture(source, (s) => s.indexOf("(...args: any[])") + 16)).toBe(source);
+      });
+
+      it("skips `: void` on an arrow function", () => {
+        const source = "export const run = (cb) => {\n  cb();\n};\n";
+        expect(applyReturnFixture(source, (s) => s.indexOf("(cb)") + 4)).toBe(source);
+      });
+    });
+
     describe("default test-file exclusion", () => {
       it("skips *.spec.ts files by default", () => {
         withTmpDir((dir) => {

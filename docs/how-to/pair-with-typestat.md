@@ -24,7 +24,7 @@ file-rename + scaffold work ts-capture doesn't touch.
 1. **TypeStat first** — clean up redundant annotations and convert files.
 2. **ts-capture second** — fill in the residual `any` from observed test runs.
 
-ts-capture's own `infer.skipInferableVarDecls` flag (off by default) applies the
+ts-capture's own `infer.skipRedundantAnnotations` flag (off by default) applies the
 same "don't add what TS would already infer" idea prophylactically during
 apply, so iterating between the two tools doesn't reintroduce the noise TypeStat
 just cleaned up. See the
