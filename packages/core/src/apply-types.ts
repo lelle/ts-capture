@@ -23,7 +23,16 @@ import {
   rewriteToNamedInScope,
 } from "./named-type-rewrite.js";
 import { isParseableTypeString } from "./parseable.js";
-import { inferredReturnType, isRedundantAnnotation, typeAt } from "./redundant-annotation.js";
+import {
+  carriesPolymorphicThis,
+  discardsUnionArm,
+  erasesEnum,
+  erasesNamedType,
+  inferredReturnType,
+  isRedundantAnnotation,
+  typeAt,
+  writesOverCallSignature,
+} from "./redundant-annotation.js";
 import { type AnnotationCandidate, applyReplacements, Replacement } from "./replacement.js";
 import {
   allTypeRefsInScope,
@@ -162,7 +171,7 @@ export function applyTypesToFile(
   const checkerSites =
     options.checkerSites ??
     (() => {
-      if (!infer.skipRedundantAnnotations || !program || !options.filename) return undefined;
+      if (!program || !options.filename) return undefined;
       const programSf = program.getSourceFile(options.filename);
       if (!programSf || programSf.text !== source) return undefined;
       return {
@@ -424,7 +433,16 @@ export function applyTypesToFile(
             checkerSites.index.varDeclSites.get(origPos)?.nameNode ??
               checkerSites.index.paramSites.get(origPos)?.node.name,
           );
-      if (isRedundantAnnotation(checker, inferred, emitted)) {
+      // See `carriesPolymorphicThis`: a concrete type where the checker has
+      // `this` costs every subclass its own type. Not just return types —
+      // `const self = this` is inferred `this` as well.
+      if (carriesPolymorphicThis(checker, inferred)) continue;
+      // See `writesOverCallSignature` and `erasesNamedType`.
+      if (writesOverCallSignature(checker, inferred, emitted)) continue;
+      if (erasesNamedType(checker, inferred, emitted)) continue;
+      if (erasesEnum(checker, inferred, emitted)) continue;
+      if (discardsUnionArm(checker, inferred, emitted)) continue;
+      if (infer.skipRedundantAnnotations && isRedundantAnnotation(checker, inferred, emitted)) {
         if (telemetry) telemetry.idempotent++;
         continue;
       }

@@ -1089,6 +1089,126 @@ describe("applyTypesToFileCst — TypeChecker verify integration", () => {
     // source — which it doesn't when all candidates were rejected).
     expect(verifyCtx.currentSource).toBe(proj.targetSource);
   });
+
+  // `skipRedundantAnnotations` reads as a redundancy switch, and its
+  // documentation says nothing more. It used to gate the whole checker, so
+  // turning it off also turned off every guard against a destructive write —
+  // including this one, which refuses a type *narrower* than the inferred one.
+  // That direction does not remove an error, it introduces one.
+  it("refuses a narrowing annotation even with the redundancy flag off", () => {
+    const proj = makeProject({
+      "target.ts":
+        "declare const k: string | symbol;\n" +
+        "export function f() {\n" +
+        "  const key = k;\n" +
+        "  return key;\n" +
+        "}\n",
+    });
+    const program = createProjectVerificationContext(
+      proj.fileNames,
+      proj.compilerOptions,
+      proj.dir,
+    ).service.getProgram();
+    const keyEnd = proj.targetSource.indexOf("const key") + "const key".length;
+    const typeInfo: CollectedTypeInfo = [
+      entry(proj.target, keyEnd, [["string"]], { varDecl: true }),
+    ];
+    const opts = {
+      filename: proj.target,
+      infer: { ...INFER_DEFAULTS, skipRedundantAnnotations: false },
+    };
+    expect(applyTypesToFileCst(proj.targetSource, typeInfo, opts, program)).toBe(proj.targetSource);
+    expect(applyTypesToFile(proj.targetSource, typeInfo, opts, program)).toBe(proj.targetSource);
+  });
+
+  it("never annotates a return type the checker infers as `this`", () => {
+    // A builder that returns `this` keeps working in a subclass. The run only
+    // ever sees the concrete instance, so ts-capture writes the class name and
+    // every subclass caller gets the base class back. Eight nest methods, all
+    // builders, were annotated that way.
+    const proj = makeProject({
+      "target.ts":
+        "export class Builder {\n" +
+        "  addValidator() {\n" +
+        "    return this;\n" +
+        "  }\n" +
+        "}\n",
+    });
+    const projectCtx = createProjectVerificationContext(
+      proj.fileNames,
+      proj.compilerOptions,
+      proj.dir,
+    );
+    const paramsClose = proj.targetSource.indexOf("addValidator()") + "addValidator()".length;
+    const typeInfo: CollectedTypeInfo = [
+      entry(proj.target, paramsClose, [["Builder"]], {
+        returnType: true,
+        fnRetPos: paramsClose,
+      }),
+    ];
+    // The checker index needs `program` + `filename`; without them neither
+    // applier can ask what the return type is inferred as.
+    const program = projectCtx.service.getProgram();
+    const opts = { filename: proj.target };
+    expect(applyTypesToFileCst(proj.targetSource, typeInfo, opts, program)).toBe(proj.targetSource);
+    expect(applyTypesToFile(proj.targetSource, typeInfo, opts, program)).toBe(proj.targetSource);
+  });
+
+  // Found by the eval, not by the tests above: nest aliases `this` into a local
+  // (`const self: Module = this`) so a class expression can close over it. The
+  // checker types that binding `this` too, and writing the class name there
+  // erases exactly what it erases on a return type.
+  it("never annotates a binding the checker infers as `this`", () => {
+    const proj = makeProject({
+      "target.ts":
+        "export class Module {\n" +
+        "  make() {\n" +
+        "    const self = this;\n" +
+        "    return self;\n" +
+        "  }\n" +
+        "}\n",
+    });
+    const program = createProjectVerificationContext(
+      proj.fileNames,
+      proj.compilerOptions,
+      proj.dir,
+    ).service.getProgram();
+    const selfEnd = proj.targetSource.indexOf("const self") + "const self".length;
+    const typeInfo: CollectedTypeInfo = [
+      entry(proj.target, selfEnd, [["Module"]], { varDecl: true }),
+    ];
+    const opts = { filename: proj.target };
+    expect(applyTypesToFileCst(proj.targetSource, typeInfo, opts, program)).toBe(proj.targetSource);
+    expect(applyTypesToFile(proj.targetSource, typeInfo, opts, program)).toBe(proj.targetSource);
+  });
+
+  // Control: same shape, same class name written, but the body does not return
+  // `this` — so the guard must not fire and the annotation must land. Without
+  // this the test above would pass just as well if the applier stopped
+  // annotating return types altogether.
+  it("still annotates a class-typed return the checker cannot infer", () => {
+    const proj = makeProject({
+      "target.ts":
+        "export class Builder {\n" + "  make(f) {\n" + "    return f;\n" + "  }\n" + "}\n",
+    });
+    const projectCtx = createProjectVerificationContext(
+      proj.fileNames,
+      proj.compilerOptions,
+      proj.dir,
+    );
+    const paramsClose = proj.targetSource.indexOf("make(f)") + "make(f)".length;
+    const typeInfo: CollectedTypeInfo = [
+      entry(proj.target, paramsClose, [["Builder"]], { returnType: true, fnRetPos: paramsClose }),
+    ];
+    expect(
+      applyTypesToFileCst(
+        proj.targetSource,
+        typeInfo,
+        { filename: proj.target },
+        projectCtx.service.getProgram(),
+      ),
+    ).toContain("make(f): Builder {");
+  });
 });
 
 describe("applyTypesToFileCst — infer.ignoreExistingTypes", () => {

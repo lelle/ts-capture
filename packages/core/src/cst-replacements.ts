@@ -16,7 +16,16 @@ import {
 } from "./initializer-inference.js";
 import { type NamedTypeIndex, rewriteToNamedInScope } from "./named-type-rewrite.js";
 import { isParseableTypeString } from "./parseable.js";
-import { inferredReturnType, isRedundantAnnotation, typeAt } from "./redundant-annotation.js";
+import {
+  carriesPolymorphicThis,
+  discardsUnionArm,
+  erasesEnum,
+  erasesNamedType,
+  inferredReturnType,
+  isRedundantAnnotation,
+  typeAt,
+  writesOverCallSignature,
+} from "./redundant-annotation.js";
 import { type AnnotationCandidate, Replacement } from "./replacement.js";
 import { allTypeRefsInScope, expandCtorArity } from "./scope-reachability.js";
 
@@ -77,8 +86,13 @@ export function buildCstReplacements(
   // already implied by TypeScript's own inference? Undefined when apply runs
   // outside a project (`getProgram` returns undefined with no tsconfig), in
   // which case each site falls back to its syntactic guard.
-  const checker =
-    infer.skipRedundantAnnotations && checkerIndex ? program?.getTypeChecker() : undefined;
+  // Built whenever a project is available. `skipRedundantAnnotations` says
+  // whether a *restatement* is worth writing; it does not say whether apply may
+  // erase an enum, drop a union arm or overwrite a polymorphic `this`. Gating
+  // the checker itself on it turned every one of those guards off together —
+  // and `discardsUnionArm` guards the direction that introduces an error rather
+  // than removing one.
+  const checker = checkerIndex ? program?.getTypeChecker() : undefined;
 
   const cstReplacements: Replacement[] = [];
   // When verify is enabled, buffer annotation insertions here and decide
@@ -165,12 +179,16 @@ export function buildCstReplacements(
       if (!infer.emitDiagnosticComments && carriesNoInformation(emitted)) continue;
       // Nothing to add when the checker already types this parameter — a
       // contextually typed callback param, for instance.
+      const inferredParam = typeAt(checker, checkerIndex?.paramSites.get(pos)?.node.name);
+      // `Function` over a signature the checker already has replaces an answer
+      // with a shrug.
+      if (writesOverCallSignature(checker, inferredParam, emitted)) continue;
+      if (erasesNamedType(checker, inferredParam, emitted)) continue;
+      if (erasesEnum(checker, inferredParam, emitted)) continue;
+      if (discardsUnionArm(checker, inferredParam, emitted)) continue;
       if (
-        isRedundantAnnotation(
-          checker,
-          typeAt(checker, checkerIndex?.paramSites.get(pos)?.node.name),
-          emitted,
-        )
+        infer.skipRedundantAnnotations &&
+        isRedundantAnnotation(checker, inferredParam, emitted)
       ) {
         if (telemetry) telemetry.idempotent++;
         continue;
@@ -221,14 +239,22 @@ export function buildCstReplacements(
       if (suppressArrayCallbackStructural(arrayCallbackArrowParams.has(pos), emitted)) {
         continue;
       }
+      const inferredReturn = inferredReturnType(
+        checker,
+        checkerIndex?.returnTypeSites.get(pos)?.node,
+      );
+      // `this` has no single value to write down. Any concrete type here —
+      // however well observed — costs every subclass its own return type.
+      if (carriesPolymorphicThis(checker, inferredReturn)) continue;
+      if (writesOverCallSignature(checker, inferredReturn, emitted)) continue;
+      if (erasesNamedType(checker, inferredReturn, emitted)) continue;
+      if (erasesEnum(checker, inferredReturn, emitted)) continue;
+      if (discardsUnionArm(checker, inferredReturn, emitted)) continue;
       // Nothing to add when the checker already infers this return type from
       // the body.
       if (
-        isRedundantAnnotation(
-          checker,
-          inferredReturnType(checker, checkerIndex?.returnTypeSites.get(pos)?.node),
-          emitted,
-        )
+        infer.skipRedundantAnnotations &&
+        isRedundantAnnotation(checker, inferredReturn, emitted)
       ) {
         if (telemetry) telemetry.idempotent++;
         continue;
@@ -266,6 +292,15 @@ export function buildCstReplacements(
       // asked for: widening it to `symbol` is destruction, not
       // restatement, so it does not wait for the flag either.
       if (emitted === "symbol" && site.initializer && isSymbolCall(site.initializer)) continue;
+      const inferredBinding = typeAt(checker, checkerIndex?.varDeclSites.get(pos)?.nameNode);
+      // `const self = this` — the same erasure as on a return type, in a
+      // binding. nest aliases `this` that way so a class expression can close
+      // over it.
+      if (carriesPolymorphicThis(checker, inferredBinding)) continue;
+      if (writesOverCallSignature(checker, inferredBinding, emitted)) continue;
+      if (erasesNamedType(checker, inferredBinding, emitted)) continue;
+      if (erasesEnum(checker, inferredBinding, emitted)) continue;
+      if (discardsUnionArm(checker, inferredBinding, emitted)) continue;
       // Skip when TS would already infer the same type from the
       // initializer. Only fires when both `infer.skipRedundantAnnotations`
       // is on AND the initializer is a shape we can model exactly.
@@ -273,11 +308,8 @@ export function buildCstReplacements(
       // shape. The syntactic table below is the fallback for runs with no
       // project (`getProgram` returns undefined without a tsconfig).
       if (
-        isRedundantAnnotation(
-          checker,
-          typeAt(checker, checkerIndex?.varDeclSites.get(pos)?.nameNode),
-          emitted,
-        )
+        infer.skipRedundantAnnotations &&
+        isRedundantAnnotation(checker, inferredBinding, emitted)
       ) {
         if (telemetry) telemetry.idempotent++;
         continue;

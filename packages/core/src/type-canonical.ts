@@ -144,6 +144,49 @@ export function canonicalTypeString(text: string): string | undefined {
 }
 
 /**
+ * The top-level union arms of a type-string, canonically spelled.
+ *
+ * From the parsed form rather than by splitting on `|`, which would cut a
+ * nested union — `(A | B)[] | C` has two arms, not three.
+ */
+export function canonicalUnionArms(text: string): string[] | undefined {
+  const node = parseType(text);
+  if (!node) return undefined;
+  const top = deparen(node);
+  return ts.isUnionTypeNode(top) ? top.types.map((t) => atom(t)) : [render(top)];
+}
+
+/** Every type name this type-string refers to. */
+export function typeReferenceNames(text: string): Set<string> {
+  const names = new Set<string>();
+  const node = parseType(text);
+  if (!node) return names;
+  const walk = (n: ts.Node): void => {
+    if (ts.isTypeReferenceNode(n)) names.add(collapse(n.typeName.getText()));
+    ts.forEachChild(n, walk);
+  };
+  walk(node);
+  return names;
+}
+
+/** Does this type-string spell out an object shape anywhere in it? */
+export function containsTypeLiteral(text: string): boolean {
+  const node = parseType(text);
+  if (!node) return false;
+  let found = false;
+  const walk = (n: ts.Node): void => {
+    if (found) return;
+    if (ts.isTypeLiteralNode(n)) {
+      found = true;
+      return;
+    }
+    ts.forEachChild(n, walk);
+  };
+  walk(node);
+  return found;
+}
+
+/**
  * Do these two type-strings describe the same type?
  *
  * Falls back to exact text equality when either side cannot be parsed — the
