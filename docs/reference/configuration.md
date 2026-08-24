@@ -110,11 +110,76 @@ With `literal.string` off (the default), the same observations widen to
 
 ### Output shaping
 
-| Flag                                     | Default | What it does                                                                                                  |
-| ---------------------------------------- | ------- | ------------------------------------------------------------------------------------------------------------- |
-| `narrowOptional.preferUndefinedOverNull` | `true`  | Prefer `T \| undefined` over `T \| null` when both are observed.                                              |
-| `emitDiagnosticComments`                 | `false` | Emit `/* @ts-capture:<reason> */` markers next to coarse/fallback annotations (`generic-fn`, `shape-capped`). |
-| `maxAnnotationChars`                     | `4096`  | Suppress an annotation whose final type string exceeds this cap (TS inference takes over for that position).  |
+| Flag                                     | Default         | What it does                                                                                                                                                          |
+| ---------------------------------------- | --------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `narrowOptional.preferUndefinedOverNull` | `true`          | Prefer `T \| undefined` over `T \| null` when both are observed.                                                                                                      |
+| `emitDiagnosticComments`                 | `false`         | Emit `/* @ts-capture:<reason> */` markers next to coarse/fallback annotations (`generic-fn`, `shape-capped`).                                                         |
+| `maxAnnotationChars`                     | `4096`          | Suppress an annotation whose final type string exceeds this cap (TS inference takes over for that position).                                                          |
+| `emitConflictComments`                   | `true`          | Leave a note where the run observed `null` or `undefined` at a position whose type forbids it. The site gets no annotation — see [Notes](#notes).                     |
+| `outputMode`                             | `"annotations"` | `"annotations"` writes the type. `"comments"` writes what it _would_ write and changes no code. `"both"` writes the type with a note saying why. See [Notes](#notes). |
+
+### Notes
+
+Apply writes two kinds of comment, both marked so they can be told apart at a
+glance and found with `grep`.
+
+**`[conflict]` — the run saw what the type forbids.** The position gets no
+annotation:
+
+```ts
+// @ts-capture[conflict]: `renderTemplate` observed `undefined`, TypeScript infers `string`
+const renderTemplate = this.reflectRenderTemplate(callback);
+```
+
+That is from a real run against nestjs/nest. TypeScript believes the value is
+always a `string`; the code produced `undefined`. Whether the fix is to widen the type or to stop
+producing `undefined` is not something an observation can decide, so ts-capture
+reports it and leaves the code alone. On by default, in every `outputMode`.
+
+**`[proposal]` and `[applied]` — what an annotation would be, or was.** Turned
+on with `outputMode`:
+
+```ts
+// @ts-capture[proposal]: `args` would be `number[]`
+// @ts-capture:   observed 374 times; TypeScript infers `any`
+const args = Reflect.getOwnMetadata(OPTIONAL_DEPS_METADATA, target) || [];
+```
+
+`"comments"` is a preview in the editor, where `--dry-run` is one in the
+terminal: read the proposals in place, against their neighbours, then run apply
+for real. `"both"` writes the annotation and keeps only what the annotation
+cannot say.
+
+Where one line carries several notes they move to the positions they describe,
+because a name cannot tell them apart — `const a = (d) => (d) => (d) => null;`
+has three positions and one name between them:
+
+```ts
+const a =
+  (d: string /* @ts-capture[applied]: observed once */) =>
+  (d: number /* @ts-capture[applied]: observed once */) =>
+    null;
+```
+
+#### Apply owns every note
+
+**Every whole line and every block comment carrying `// @ts-capture[…]:` or
+`/* @ts-capture[…]:` belongs to apply, and each run removes the ones it finds
+before writing the ones that hold now — including a note you wrote by hand.**
+
+Nothing checks a comment the way `tsc` checks an annotation, so a note left
+behind would simply lie: about a conflict that has been fixed, or about code
+that has since been deleted. Rewriting them every run is what keeps them true,
+and the price is that the marker is the tool's, not yours.
+
+`@ts-capture-ignore` is **not** affected. It is a directive you write, the
+marker match stops short of it, and apply never removes it.
+
+The count in a note — `observed 374 times`, `observed once` — is context for
+you, not a verdict. A value seen once is as likely a config object read at
+startup as one arbitrary caller's payload, and nothing in the number separates
+those. A person can, by looking at where the value came from, which is why the
+count is in the note and in no rule.
 
 ```ts title="Input"
 // skipRedundantAnnotations is on by default — TS already infers number here

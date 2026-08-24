@@ -56,6 +56,44 @@ npx ts-capture apply types.json --dry-run
 `--dry-run` reports what _would_ change without writing anything. Read the
 preview as you would a PR diff before committing to it.
 
+## Or preview in the editor
+
+`--dry-run` puts the diff in your terminal. On a large run the more useful
+question is often "is _this_ type right, here, next to the code it describes" —
+and for that the proposal wants to be in the file:
+
+```sh
+npx ts-capture apply types.json --comments
+```
+
+Nothing is annotated. Each site that would have been gets a note saying what
+apply would write, how much of it the run saw, and what TypeScript already had:
+
+```ts
+// @ts-capture[proposal]: `args` would be `number[]`
+// @ts-capture:   observed 374 times; TypeScript infers `any`
+const args = Reflect.getOwnMetadata(OPTIONAL_DEPS_METADATA, target) || [];
+```
+
+Read them, decide, and then run apply for real. **The notes clean themselves
+up**: apply owns every line carrying the marker and removes the ones it finds
+before writing anything, so the ordinary run that follows leaves the file with
+annotations and no scaffolding.
+
+A note only appears where an annotation would actually land — candidates the
+type-check gate rejects are not proposed, because a proposal you cannot take is
+not a proposal.
+
+`--both` writes the annotation _and_ the note, for reading an applied diff with
+the reasoning beside the result. Both flags are shorthand for
+`--infer.outputMode`, which the [reference](../reference/configuration.md#notes)
+describes in full.
+
+`observed once` is worth a pause, not a veto. It means the code ran that path
+once, which is as often true of a config object read at startup — a perfectly
+stable shape — as of one caller's incidental payload. The number cannot tell
+those apart; looking at where the value comes from can.
+
 ## What `apply` will and won't do
 
 - **Won't overwrite existing annotations** — only empty (`any`) positions are
@@ -122,6 +160,26 @@ data can end up in places you didn't intend:
 If your tests run against real data — recorded fixtures, a shared staging
 database, production snapshots — review literal annotations specifically before
 committing, and treat `types.json` as data rather than as build output.
+
+## Notes ts-capture leaves behind
+
+Besides annotations, apply writes comments — a `[conflict]` where the run
+observed a value the position's own type forbids, and `[proposal]` /
+`[applied]` in the preview modes above. The reference has
+[the formats](../reference/configuration.md#notes).
+
+One rule is worth knowing before you meet it:
+
+> **Every whole line and every block comment carrying `// @ts-capture[…]:` or
+> `/* @ts-capture[…]:` belongs to apply.** Each run removes the ones it finds
+> and writes the ones that hold now — including a note you wrote by hand.
+
+Nothing checks a comment the way `tsc` checks an annotation, so a note left
+behind would simply lie: about a conflict since fixed, or about code since
+deleted. Rewriting them every run is what keeps them honest.
+
+`@ts-capture-ignore` is **not** touched by this. It is a directive you write,
+and apply never removes it.
 
 ## After apply: format and type-check
 

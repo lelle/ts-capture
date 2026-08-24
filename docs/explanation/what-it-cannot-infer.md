@@ -63,6 +63,70 @@ Nothing warns you that a position was under-observed — it simply gets a type
 derived from the calls that happened, or none at all. See
 [Why runtime observation](why-runtime-observation.md#the-case-for-observing-at-runtime).
 
+## An object shape describes the values the run saw, not the contract
+
+This is the limit with the sharpest edge, and the one no check can catch for
+you.
+
+When ts-capture writes an object shape it is describing the objects that
+actually flowed through that position. Where the position has a real contract,
+that is the contract. Where it does not, it is whatever the caller happened to
+pass — and if the caller was a test, the test's fixture ends up in your source.
+
+Both of the following came from one run against a real codebase.
+
+```ts title="The shape is the contract — correct"
+protected publish(partialPacket: ReadPacket, callback) {
+  // Every packet this client builds has these three fields.
+  const packet: { data: string, id: string, pattern: string } =
+    this.assignPacketId(partialPacket);
+```
+
+```ts title="The shape is the fixture — wrong"
+for (const packageName of packageNames) {
+  // `lookupPackage` returns whatever packages the user's .proto declares.
+  // `test` and `test2` are the package names in the project's own test
+  // .proto files, now written into the source as if they were the type.
+  const grpcPkg: null | { test: { service: boolean }, test2?: { service: boolean } } =
+    this.lookupPackage(grpcContext, packageName);
+```
+
+**Nothing distinguishes them automatically.** Both compile, both leave the test
+suite green, both fill a position TypeScript had as `any`, and both rest on the
+same amount of evidence. They have to: a suite stays green precisely because
+the annotation describes what the suite does. An annotation that overfits is a
+perfect description of the run — that is what makes it invisible to running the
+code.
+
+Two things that look like they would help, and do not:
+
+- **`skipFiles`** (and its built-in `*.spec.*` / `*.test.*` default) controls
+  which files get _annotated_. It does not control where the observed values
+  come _from_, and this problem is the other direction: a value built in a test
+  flows into a position in the source, and the annotation lands in the source.
+- **Counting observations.** Requiring a shape to be seen more than once looks
+  principled and is not: a value is seen once either because one arbitrary
+  caller supplied it, or because the code path runs once — a config object read
+  at startup, a singleton, a bootstrap payload. Those shapes are perfectly
+  stable. How often code runs says nothing about whether its shape is right.
+
+**What to do about it.** Read object shapes in the diff and ask "is this the
+contract, or is this one caller's payload?" — a field named `foo`, or a key
+that matches a fixture, answers itself. `apply --dry-run` first; see
+[Review & apply safely](../how-to/review-and-apply-safely.md).
+
+If you would rather not have the judgement call at all, the conservative
+setting is to keep named types and primitives and drop shapes entirely. On the
+codebase these examples come from that removed 28 of 133 annotations — including
+the correct ones.
+
+Deciding this automatically would need to know **where each observed value was
+constructed**, not just what it looked like: a shape built inside a test file
+has no business being written into the source. That is provenance the collector
+does not record today. It would narrow the problem considerably without closing
+it — a test can construct a perfectly realistic object, and a fixture is
+sometimes genuinely the contract.
+
 ## Observation cost on large codebases
 
 Instrumenting every file in a large suite can consume substantial time and
