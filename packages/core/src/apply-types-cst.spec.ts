@@ -1151,7 +1151,7 @@ describe("applyTypesToFileCst — TypeChecker verify integration", () => {
       infer: { ...INFER_DEFAULTS, outputMode: "comments" },
       filename: "t.ts",
     });
-    expect(out).toContain("// @ts-capture: would write `string`");
+    expect(out).toContain("// @ts-capture[proposal]: `first` would be `string`");
   });
 
   // The checker's view is held in one variable shared by every branch, and the
@@ -1187,8 +1187,95 @@ describe("applyTypesToFileCst — TypeChecker verify integration", () => {
       { filename: proj.target, infer: { ...INFER_DEFAULTS, outputMode: "comments" } },
       program,
     );
-    expect(out).toContain("would write `string`");
+    expect(out).toContain("`this` would be `string`");
     expect(out).not.toContain("TypeScript infers `number`");
+  });
+
+  // The CST applier hands its pass-through entries to the offset applier along
+  // with the source it has already rewritten — notes included. If the second
+  // pass stripped as well, it would delete what the first one just wrote.
+  // A note cannot be written on a line whose start is inside template text —
+  // the comment would become part of the string. The contradiction is still
+  // real, so the annotation is still refused: apply reports rather than fixes,
+  // and a contradiction it cannot report is not a licence to write.
+  it("writes neither note nor annotation when the note cannot be placed", () => {
+    const proj = makeProject({
+      "target.ts":
+        "export function f(): string {\n" +
+        "  return 'x';\n" +
+        "}\n" +
+        "export const t = `\n" +
+        "head ${(() => { const p = f(); return p; })()} tail\n" +
+        "`;\n",
+    });
+    const program = createProjectVerificationContext(
+      proj.fileNames,
+      proj.compilerOptions,
+      proj.dir,
+    ).service.getProgram();
+    const pEnd = proj.targetSource.indexOf("const p") + "const p".length;
+    const typeInfo: CollectedTypeInfo = [
+      entry(proj.target, pEnd, [["string|undefined"]], { varDecl: true }),
+    ];
+    const opts = { filename: proj.target };
+    expect(applyTypesToFileCst(proj.targetSource, typeInfo, opts, program)).toBe(proj.targetSource);
+    expect(applyTypesToFile(proj.targetSource, typeInfo, opts, program)).toBe(proj.targetSource);
+  });
+
+  // Regression: the offset applier used `break` where it meant "skip this
+  // site", so one unplaceable note abandoned the entry loop and every later
+  // annotation in the file was lost silently.
+  it("keeps annotating later sites after a note it could not place", () => {
+    const proj = makeProject({
+      "target.ts":
+        "export function f(): string {\n" +
+        "  return 'x';\n" +
+        "}\n" +
+        "export const t = `\n" +
+        "head ${(() => { const p = f(); return p; })()} tail\n" +
+        "`;\n" +
+        "export function later(a) {\n" +
+        "  return a;\n" +
+        "}\n",
+    });
+    const program = createProjectVerificationContext(
+      proj.fileNames,
+      proj.compilerOptions,
+      proj.dir,
+    ).service.getProgram();
+    const pEnd = proj.targetSource.indexOf("const p") + "const p".length;
+    const aPos = proj.targetSource.indexOf("later(a)") + "later(a".length;
+    const typeInfo: CollectedTypeInfo = [
+      entry(proj.target, pEnd, [["string|undefined"]], { varDecl: true }),
+      entry(proj.target, aPos, [["number"]]),
+    ];
+    const opts = { filename: proj.target };
+    expect(applyTypesToFile(proj.targetSource, typeInfo, opts, program)).toContain(
+      "export function later(a: number) {",
+    );
+    expect(applyTypesToFileCst(proj.targetSource, typeInfo, opts, program)).toContain(
+      "export function later(a: number) {",
+    );
+  });
+
+  // Both appliers place notes by one rule, and that rule lives in
+  // `noteReplacements` — the only place that knows whether a line is crowded
+  // and the note therefore goes at the site rather than above it. An early
+  // check in one applier answered the leading-line question for notes that
+  // never became leading lines, and dropped them.
+  it("places the same notes from either applier on a crowded line inside a template", () => {
+    const src = "const t = `\nhead ${[1].map((a) => [2].map((b) => a + b))} tail\n`;\n";
+    const typeInfo: CollectedTypeInfo = [
+      entry("t.ts", src.indexOf("(a)") + 2, [["number"]]),
+      entry("t.ts", src.indexOf("(b)") + 2, [["number"]]),
+    ];
+    const opts = {
+      filename: "t.ts",
+      infer: { ...INFER_DEFAULTS, outputMode: "comments" as const },
+    };
+    const count = (out: string) => (out.match(/@ts-capture/g) ?? []).length;
+    expect(count(applyTypesToFileCst(src, typeInfo, opts))).toBe(2);
+    expect(count(applyTypesToFile(src, typeInfo, opts))).toBe(2);
   });
 
   it("never annotates a return type the checker infers as `this`", () => {
@@ -1255,7 +1342,7 @@ describe("applyTypesToFileCst — TypeChecker verify integration", () => {
       program,
     );
     expect(result).toContain(
-      "  // @ts-capture: `p` observed `undefined`, TypeScript infers `string`\n  const p = f();",
+      "  // @ts-capture[conflict]: `p` observed `undefined`, TypeScript infers `string`\n  const p = f();",
     );
     expect(result).not.toContain("const p: string|undefined");
   });
@@ -1287,7 +1374,7 @@ describe("applyTypesToFileCst — TypeChecker verify integration", () => {
       program,
     );
     expect(result).toContain(
-      "  // @ts-capture: `p` observed `undefined`, TypeScript infers `string`\n  const p = f();",
+      "  // @ts-capture[conflict]: `p` observed `undefined`, TypeScript infers `string`\n  const p = f();",
     );
     expect(result).not.toContain("const p: string|undefined");
   });
@@ -1324,7 +1411,7 @@ describe("applyTypesToFileCst — TypeChecker verify integration", () => {
       { filename: proj.target },
       program,
     );
-    expect(result).toContain("// @ts-capture: `p` observed `undefined`");
+    expect(result).toContain("// @ts-capture[conflict]: `p` observed `undefined`");
   });
 
   describe("outputMode", () => {
@@ -1363,7 +1450,7 @@ describe("applyTypesToFileCst — TypeChecker verify integration", () => {
         { filename: proj.target, infer: { ...INFER_DEFAULTS, outputMode: "comments" } },
         program,
       );
-      expect(out).toContain("// @ts-capture: would write `string`");
+      expect(out).toContain("// @ts-capture[proposal]: `x` would be `string`");
       expect(out).toContain("// @ts-capture:   observed 2 times; TypeScript infers `any`");
       expect(out).toContain("function f(x)");
       expect(out).not.toContain("x: string");
@@ -1380,9 +1467,249 @@ describe("applyTypesToFileCst — TypeChecker verify integration", () => {
         { filename: proj.target, infer: { ...INFER_DEFAULTS, outputMode: "both" } },
         program,
       );
-      expect(out).toContain("// @ts-capture: observed 2 times; TypeScript infers `any`");
+      expect(out).toContain(
+        "// @ts-capture[applied]: `x` observed 2 times; TypeScript infers `any`",
+      );
       expect(out).not.toContain("would write");
       expect(out).toContain("function f(x: string)");
+    });
+
+    // One line, several sites: a leading note has to name its position, and in
+    // `const a = (d) => (d) => (d) => null;` there is one name for four of
+    // them. At the site the position is the identifier and the question does
+    // not arise.
+    it("puts the notes at the sites when a line holds several", () => {
+      const src = "const make = (s) => (d) => (e) => e;\n";
+      const typeInfo: CollectedTypeInfo = [
+        entry("t.ts", src.indexOf("(s)") + 2, [["string"]]),
+        entry("t.ts", src.indexOf("(d)") + 2, [["number"]]),
+      ];
+      const out = applyTypesToFileCst(src, typeInfo, {
+        infer: { ...INFER_DEFAULTS, outputMode: "both" },
+        filename: "t.ts",
+      });
+      expect(out).toBe(
+        "const make = (s: string /* @ts-capture[applied]: observed once */) => " +
+          "(d: number /* @ts-capture[applied]: observed once */) => (e) => e;\n",
+      );
+    });
+
+    it("keeps the leading note when the line holds one site", () => {
+      const src = "const a = 1;\nconst b = f();\n";
+      const typeInfo: CollectedTypeInfo = [
+        entry("t.ts", src.indexOf("const b") + "const b".length, [["string"]], { varDecl: true }),
+      ];
+      const out = applyTypesToFileCst(src, typeInfo, {
+        infer: { ...INFER_DEFAULTS, outputMode: "both" },
+        filename: "t.ts",
+      });
+      expect(out).toContain("// @ts-capture[applied]: `b` observed once\nconst b: string = f();");
+    });
+
+    // Rewriting a line and annotating it inline happen at the same positions,
+    // and the ordering is not obvious: a paren-less arrow also inserts `(` and
+    // `)` around the parameter. These pin the combinations, and each asserts
+    // the result still parses — a misplaced insertion corrupts syntax rather
+    // than merely reading badly.
+    // `isParseableTypeString`'s guard, one level up: the applier refuses to
+    // write an unparseable *type*, and these assert it does not produce an
+    // unparseable *file* either.
+    const parses = (text: string): boolean => {
+      const sf = ts.createSourceFile("t.ts", text, ts.ScriptTarget.Latest, true);
+      const diags = (sf as unknown as { parseDiagnostics?: readonly ts.Diagnostic[] })
+        .parseDiagnostics;
+      return !diags || diags.length === 0;
+    };
+
+    it("wraps a paren-less arrow, annotates it, and notes it, twice on one line", () => {
+      const src = "const h = a.map(x => x.id).filter(y => y);\n";
+      const xAt = src.indexOf("x =>");
+      const yAt = src.indexOf("y =>");
+      const typeInfo: CollectedTypeInfo = [
+        entry("t.ts", xAt + 1, [["string"]], { parens: [xAt, xAt + 1] }),
+        entry("t.ts", yAt + 1, [["boolean"]], { parens: [yAt, yAt + 1] }),
+      ];
+      const out = applyTypesToFileCst(src, typeInfo, {
+        infer: { ...INFER_DEFAULTS, outputMode: "both" },
+        filename: "t.ts",
+      });
+      // The note lands outside the closing paren, where the annotation ends.
+      expect(out).toBe(
+        "const h = a.map((x: string) /* @ts-capture[applied]: observed once */ => x.id)" +
+          ".filter((y: boolean) /* @ts-capture[applied]: observed once */ => y);\n",
+      );
+      expect(parses(out)).toBe(true);
+    });
+
+    it("annotates a parameter and a return type on one line, noting both", () => {
+      const src = "const k = (a) => a.length;\n";
+      const at = src.indexOf("(a)");
+      const typeInfo: CollectedTypeInfo = [
+        entry("t.ts", at + 2, [["string"]]),
+        entry("t.ts", at + 3, [["number"]], { returnType: true, fnRetPos: at + 3 }),
+      ];
+      const out = applyTypesToFileCst(src, typeInfo, {
+        infer: { ...INFER_DEFAULTS, outputMode: "both" },
+        filename: "t.ts",
+      });
+      expect(out).toBe(
+        "const k = (a: string /* @ts-capture[applied]: observed once */)" +
+          ": number /* @ts-capture[applied]: observed once */ => a.length;\n",
+      );
+      expect(parses(out)).toBe(true);
+    });
+
+    // Strip and write in one pass, against the original source, so the two
+    // cannot shift each other's offsets.
+    it("removes last run's inline notes while writing this run's", () => {
+      const src =
+        "const h = a.map((x: string) /* @ts-capture[applied]: observed once */ => x.id)" +
+        ".filter((y: boolean) /* @ts-capture[applied]: observed once */ => y);\n";
+      const out = applyTypesToFileCst(src, [], {
+        infer: { ...INFER_DEFAULTS, outputMode: "both" },
+        filename: "t.ts",
+      });
+      expect(out).toBe("const h = a.map((x: string) => x.id).filter((y: boolean) => y);\n");
+      expect(parses(out)).toBe(true);
+    });
+
+    // A line is crowded by the notes that survive, not by the candidates that
+    // start out. Both declarations here are on one line and both are
+    // candidates, but `a: string` cannot annotate `1`, so verify drops it — and
+    // the one note left belongs above the line, not inside it.
+    it("puts the survivor above the line when verify rejects its neighbour", () => {
+      const proj = makeProject({
+        "target.ts": 'const a = 1, b = JSON.parse("2");\nexport { a, b };\n',
+      });
+      const projectCtx = createProjectVerificationContext(
+        proj.fileNames,
+        proj.compilerOptions,
+        proj.dir,
+      );
+      const verifyCtx = createVerificationContext(projectCtx, proj.target, proj.targetSource);
+      const typeInfo: CollectedTypeInfo = [
+        entry(proj.target, proj.targetSource.indexOf("a =") + 1, [["string"]], { varDecl: true }),
+        entry(proj.target, proj.targetSource.indexOf("b =") + 1, [["number"]], { varDecl: true }),
+      ];
+      const out = applyTypesToFileCst(proj.targetSource, typeInfo, {
+        verify: verifyCtx,
+        infer: { ...INFER_DEFAULTS, outputMode: "both" },
+      });
+      expect(out).not.toContain("a: string");
+      expect(out).not.toContain("/* @ts-capture");
+      expect(out).toContain(
+        '// @ts-capture[applied]: `b` observed once\nconst a = 1, b: number = JSON.parse("2");',
+      );
+      expect(parses(out)).toBe(true);
+    });
+
+    // Conflict notes are notes too. They were left out of the crowding rule,
+    // which put two formats on one line — and left them with the naming
+    // collision the previews had fixed: two `d`s in a chain, two notes both
+    // saying `d`.
+    // `secondType` decides whether the inner `d` contradicts or gets annotated:
+    // against `any` there is nothing to contradict.
+    const chain = (secondType: string) => {
+      const proj = makeProject({
+        "target.ts":
+          `declare function run(f: (d: string) => (d: ${secondType}) => unknown): void;\n` +
+          "run(d => d => d);\n",
+      });
+      const program = createProjectVerificationContext(
+        proj.fileNames,
+        proj.compilerOptions,
+        proj.dir,
+      ).service.getProgram();
+      const first = proj.targetSource.indexOf("d =>") + 1;
+      const second = proj.targetSource.indexOf("d =>", first) + 1;
+      return { proj, program, first, second };
+    };
+
+    it("puts two conflicts at their sites rather than above the line", () => {
+      const { proj, program, first, second } = chain("number");
+      const typeInfo: CollectedTypeInfo = [
+        entry(proj.target, first, [["undefined"], ["string"]], { parens: [first - 1, first] }),
+        entry(proj.target, second, [["undefined"], ["number"]], { parens: [second - 1, second] }),
+      ];
+      const out = applyTypesToFileCst(
+        proj.targetSource,
+        typeInfo,
+        { filename: proj.target },
+        program,
+      );
+      expect(out).toContain(
+        "run(d /* @ts-capture[conflict]: observed `undefined`, TypeScript infers `string` */ " +
+          "=> d /* @ts-capture[conflict]: observed `undefined`, TypeScript infers `number` */ => d);",
+      );
+      expect(parses(out)).toBe(true);
+    });
+
+    it("uses one format when a conflict and an annotation share a line", () => {
+      const { proj, program, first, second } = chain("any");
+      const typeInfo: CollectedTypeInfo = [
+        entry(proj.target, first, [["undefined"], ["string"]], { parens: [first - 1, first] }),
+        entry(proj.target, second, [["number"]], { parens: [second - 1, second] }),
+      ];
+      const out = applyTypesToFileCst(
+        proj.targetSource,
+        typeInfo,
+        { filename: proj.target, infer: { ...INFER_DEFAULTS, outputMode: "both" } },
+        program,
+      );
+      expect(out).not.toContain("// @ts-capture");
+      expect(out).toContain("[conflict]: observed `undefined`");
+      expect(out).toContain("[applied]: observed once");
+      expect(parses(out)).toBe(true);
+    });
+
+    it("keeps a lone conflict above the line", () => {
+      const { proj, program, first } = chain("any");
+      const typeInfo: CollectedTypeInfo = [
+        entry(proj.target, first, [["undefined"], ["string"]], { parens: [first - 1, first] }),
+      ];
+      const out = applyTypesToFileCst(
+        proj.targetSource,
+        typeInfo,
+        { filename: proj.target },
+        program,
+      );
+      expect(out).toContain(
+        "// @ts-capture[conflict]: `d` observed `undefined`, TypeScript infers `string`\nrun(d =>",
+      );
+    });
+
+    // The rule lives in one place because both appliers need it. Driven
+    // directly, the offset applier has to reach the same answer — a rule added
+    // to one path and not the other stays invisible until a project routes
+    // through the second, and nest does not.
+    it("the offset applier puts a crowded line's notes at the sites too", () => {
+      const src = "const k = (a) => a.length;\n";
+      const at = src.indexOf("(a)");
+      const typeInfo: CollectedTypeInfo = [
+        entry("t.ts", at + 2, [["string"]]),
+        entry("t.ts", at + 3, [["number"]], { returnType: true, fnRetPos: at + 3 }),
+      ];
+      const out = applyTypesToFile(src, typeInfo, {
+        infer: { ...INFER_DEFAULTS, outputMode: "both" },
+        filename: "t.ts",
+      });
+      expect(out).toBe(
+        "const k = (a: string /* @ts-capture[applied]: observed once */)" +
+          ": number /* @ts-capture[applied]: observed once */ => a.length;\n",
+      );
+      expect(parses(out)).toBe(true);
+    });
+
+    it("the offset applier keeps a lone note above the line", () => {
+      const src = "const a = 1;\nconst b = f();\n";
+      const typeInfo: CollectedTypeInfo = [
+        entry("t.ts", src.indexOf("const b") + "const b".length, [["string"]], { varDecl: true }),
+      ];
+      const out = applyTypesToFile(src, typeInfo, {
+        infer: { ...INFER_DEFAULTS, outputMode: "both" },
+        filename: "t.ts",
+      });
+      expect(out).toContain("// @ts-capture[applied]: `b` observed once\nconst b: string = f();");
     });
 
     // A preview that names an annotation apply would not actually write is not

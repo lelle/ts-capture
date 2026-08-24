@@ -4,9 +4,12 @@ import { describe, expect, it } from "vitest";
 import {
   CONFLICT_MARKER,
   conflictCommentText,
+  inlineNoteText,
   isInsideTextRun,
   lineStartAndIndent,
   markerLineRanges,
+  markerSpanRanges,
+  noteReplacements,
   parseForNoteSafety,
   previewCommentText,
   siteName,
@@ -38,13 +41,13 @@ describe("conflictCommentText", () => {
 
   it("names the position, what the run saw, and what TypeScript infers", () => {
     expect(conflictCommentText([note("pattern", ["undefined"])], "")).toBe(
-      "// @ts-capture: `pattern` observed `undefined`, TypeScript infers `string`\n",
+      "// @ts-capture[conflict]: `pattern` observed `undefined`, TypeScript infers `string`\n",
     );
   });
 
   it("carries the indentation of the line it precedes", () => {
     expect(conflictCommentText([note("pattern", ["undefined"])], "    ")).toBe(
-      "    // @ts-capture: `pattern` observed `undefined`, TypeScript infers `string`\n",
+      "    // @ts-capture[conflict]: `pattern` observed `undefined`, TypeScript infers `string`\n",
     );
   });
 
@@ -52,14 +55,14 @@ describe("conflictCommentText", () => {
   // order, so the comments read left to right like the code beneath them.
   it("writes one line per conflict on the same source line", () => {
     expect(conflictCommentText([note("req", ["undefined"]), note("res", ["string[]"])], "")).toBe(
-      "// @ts-capture: `req` observed `undefined`, TypeScript infers `string`\n" +
-        "// @ts-capture: `res` observed `string[]`, TypeScript infers `string`\n",
+      "// @ts-capture[conflict]: `req` observed `undefined`, TypeScript infers `string`\n" +
+        "// @ts-capture[conflict]: `res` observed `string[]`, TypeScript infers `string`\n",
     );
   });
 
   it("joins several unseen arms into one type", () => {
     expect(conflictCommentText([note("v", ["undefined", "string[]"])], "")).toBe(
-      "// @ts-capture: `v` observed `undefined | string[]`, TypeScript infers `string`\n",
+      "// @ts-capture[conflict]: `v` observed `undefined | string[]`, TypeScript infers `string`\n",
     );
   });
 });
@@ -165,6 +168,35 @@ describe("CONFLICT_MARKER", () => {
   });
 });
 
+describe("previewCommentText — naming the position", () => {
+  // One line can hold several sites: `const a = (s) => (d) => (e) => e;` has
+  // three. Without a name the notes above it are indistinguishable — in `both`
+  // mode they were literally identical strings.
+  it("names each position", () => {
+    const notes = [
+      { name: "s", suggestion: "string", observations: 1, inferred: "any" },
+      { name: "d", suggestion: "number", observations: 1, inferred: "any" },
+    ];
+    expect(previewCommentText(notes, "", "comments")).toBe(
+      "// @ts-capture[proposal]: `s` would be `string`\n" +
+        "// @ts-capture:   observed once; TypeScript infers `any`\n" +
+        "// @ts-capture[proposal]: `d` would be `number`\n" +
+        "// @ts-capture:   observed once; TypeScript infers `any`\n",
+    );
+  });
+
+  it("names each position beside the annotation too", () => {
+    const notes = [
+      { name: "s", suggestion: "string", observations: 1, inferred: "any" },
+      { name: "d", suggestion: "number", observations: 2, inferred: "any" },
+    ];
+    expect(previewCommentText(notes, "", "both")).toBe(
+      "// @ts-capture[applied]: `s` observed once; TypeScript infers `any`\n" +
+        "// @ts-capture[applied]: `d` observed 2 times; TypeScript infers `any`\n",
+    );
+  });
+});
+
 describe("previewCommentText — alongside an annotation", () => {
   // In `both` mode the annotation is written, so "would write" is a claim
   // about something that did happen — and the type it names is repeated
@@ -173,14 +205,18 @@ describe("previewCommentText — alongside an annotation", () => {
   // left.
   it("says what the annotation cannot, and not what it already says", () => {
     expect(
-      previewCommentText([{ suggestion: "string", observations: 5, inferred: "any" }], "", "both"),
-    ).toBe("// @ts-capture: observed 5 times; TypeScript infers `any`\n");
+      previewCommentText(
+        [{ name: "v", suggestion: "string", observations: 5, inferred: "any" }],
+        "",
+        "both",
+      ),
+    ).toBe("// @ts-capture[applied]: `v` observed 5 times; TypeScript infers `any`\n");
   });
 
   it("still carries the indentation", () => {
-    expect(previewCommentText([{ suggestion: "string", observations: 1 }], "  ", "both")).toBe(
-      "  // @ts-capture: observed once\n",
-    );
+    expect(
+      previewCommentText([{ name: "v", suggestion: "string", observations: 1 }], "  ", "both"),
+    ).toBe("  // @ts-capture[applied]: `v` observed once\n");
   });
 });
 
@@ -189,9 +225,12 @@ describe("previewCommentText", () => {
   // context a reader needs to judge it without looking anything up.
   it("names the suggestion, the evidence, and what TypeScript has", () => {
     expect(
-      previewCommentText([{ suggestion: "string", observations: 14, inferred: "any" }], ""),
+      previewCommentText(
+        [{ name: "v", suggestion: "string", observations: 14, inferred: "any" }],
+        "",
+      ),
     ).toBe(
-      "// @ts-capture: would write `string`\n" +
+      "// @ts-capture[proposal]: `v` would be `string`\n" +
         "// @ts-capture:   observed 14 times; TypeScript infers `any`\n",
     );
   });
@@ -201,31 +240,37 @@ describe("previewCommentText", () => {
   // where looking at *where* the value came from is worth the minute.
   it("says `once` rather than `1 times`", () => {
     expect(
-      previewCommentText([{ suggestion: "string", observations: 1, inferred: "any" }], ""),
+      previewCommentText(
+        [{ name: "v", suggestion: "string", observations: 1, inferred: "any" }],
+        "",
+      ),
     ).toContain("observed once;");
   });
 
   it("carries the indentation onto both lines", () => {
     expect(
-      previewCommentText([{ suggestion: "string", observations: 2, inferred: "any" }], "  "),
+      previewCommentText(
+        [{ name: "v", suggestion: "string", observations: 2, inferred: "any" }],
+        "  ",
+      ),
     ).toBe(
-      "  // @ts-capture: would write `string`\n" +
+      "  // @ts-capture[proposal]: `v` would be `string`\n" +
         "  // @ts-capture:   observed 2 times; TypeScript infers `any`\n",
     );
   });
 
   // No project, no checker, nothing to say about what TypeScript holds.
   it("drops the checker clause when there is no checker", () => {
-    expect(previewCommentText([{ suggestion: "string", observations: 3 }], "")).toBe(
-      "// @ts-capture: would write `string`\n// @ts-capture:   observed 3 times\n",
+    expect(previewCommentText([{ name: "v", suggestion: "string", observations: 3 }], "")).toBe(
+      "// @ts-capture[proposal]: `v` would be `string`\n// @ts-capture:   observed 3 times\n",
     );
   });
 
   it("writes a block per suggestion on the same line", () => {
     const text = previewCommentText(
       [
-        { suggestion: "string", observations: 1, inferred: "any" },
-        { suggestion: "number", observations: 2, inferred: "any" },
+        { name: "v", suggestion: "string", observations: 1, inferred: "any" },
+        { name: "w", suggestion: "number", observations: 2, inferred: "any" },
       ],
       "",
     );
@@ -233,7 +278,7 @@ describe("previewCommentText", () => {
   });
 
   it("is stripped by the same mechanism that owns every note", () => {
-    const text = previewCommentText([{ suggestion: "string", observations: 1 }], "");
+    const text = previewCommentText([{ name: "v", suggestion: "string", observations: 1 }], "");
     expect(markerLineRanges(text + "const a = f();\n")).toHaveLength(2);
   });
 });
@@ -271,6 +316,213 @@ describe("isInsideTextRun", () => {
   it("is false inside a template's interpolation, which is real code", () => {
     const src = "const s = `${\n  items.map(x => x.id)\n}`;\n";
     expect(isInsideTextRun(parse(src), src.indexOf("  items"))).toBe(false);
+  });
+});
+
+describe("inlineNoteText", () => {
+  // A note at the site needs no name: the position identifies it. That is the
+  // whole reason to put it there — `const a = (d) => (d) => (d) => null;` has
+  // four positions and no way to tell them apart by name.
+  it("names the type when nothing else will", () => {
+    expect(
+      inlineNoteText({ name: "return", suggestion: "void", observations: 1 }, "comments"),
+    ).toBe("/* @ts-capture[proposal]: would be `void`; observed once */");
+  });
+
+  it("says only what the annotation cannot, beside one", () => {
+    expect(
+      inlineNoteText(
+        { name: "return", suggestion: "void", observations: 3, inferred: "any" },
+        "both",
+      ),
+    ).toBe("/* @ts-capture[applied]: observed 3 times; TypeScript infers `any` */");
+  });
+
+  it("carries the checker's view in comments mode too", () => {
+    expect(
+      inlineNoteText(
+        { name: "x", suggestion: "string", observations: 2, inferred: "any" },
+        "comments",
+      ),
+    ).toBe(
+      "/* @ts-capture[proposal]: would be `string`; observed 2 times; TypeScript infers `any` */",
+    );
+  });
+});
+
+describe("markerSpanRanges", () => {
+  // Inline notes are block comments, so their start and end are explicit and
+  // removal takes exactly the comment. Whole-line notes stay the job of
+  // `markerLineRanges`; this is the second path inline costs.
+  it("finds an inline note", () => {
+    const src = "const a = (d): void /* @ts-capture: observed once */ => d;\n";
+    const [[start, end]] = markerSpanRanges(src);
+    expect(src.slice(start, end)).toBe(" /* @ts-capture: observed once */");
+  });
+
+  it("finds several on one line", () => {
+    const src = "const a = (d) /* @ts-capture: a */ => (e) /* @ts-capture: b */ => e;\n";
+    expect(markerSpanRanges(src)).toHaveLength(2);
+  });
+
+  it("leaves a block comment that is not ours alone", () => {
+    expect(markerSpanRanges("const a = 1; /* just a comment */\n")).toEqual([]);
+  });
+
+  it("round-trips: removing the spans restores the source", () => {
+    const bare = "const a = (d): void => d;\n";
+    const noted = "const a = (d): void /* @ts-capture: observed once */ => d;\n";
+    let out = noted;
+    for (const [start, end] of [...markerSpanRanges(noted)].reverse()) {
+      out = out.slice(0, start) + out.slice(end);
+    }
+    expect(out).toBe(bare);
+  });
+});
+
+describe("the note's state tag", () => {
+  // Reading a diff, the `+` on the code line says whether an annotation was
+  // written. Reading the file it is gone, and the signal becomes an annotation
+  // that is *missing* — which is not something a reader spots. The tag says it,
+  // and makes the findings greppable: 10 of nest's 135 notes are the ones to
+  // act on.
+  it("marks a contradiction", () => {
+    const text = conflictCommentText(
+      [{ name: "pattern", observed: ["undefined"], inferred: "string" }],
+      "",
+    );
+    expect(text).toBe(
+      "// @ts-capture[conflict]: `pattern` observed `undefined`, TypeScript infers `string`\n",
+    );
+  });
+
+  it("marks a proposal", () => {
+    expect(
+      previewCommentText([{ name: "x", suggestion: "string", observations: 1 }], "", "comments"),
+    ).toBe(
+      "// @ts-capture[proposal]: `x` would be `string`\n" + "// @ts-capture:   observed once\n",
+    );
+  });
+
+  it("marks what was written", () => {
+    expect(
+      previewCommentText([{ name: "x", suggestion: "string", observations: 1 }], "", "both"),
+    ).toBe("// @ts-capture[applied]: `x` observed once\n");
+  });
+
+  it("marks an inline note too", () => {
+    expect(inlineNoteText({ name: "return", suggestion: "void", observations: 1 }, "both")).toBe(
+      "/* @ts-capture[applied]: observed once */",
+    );
+  });
+
+  it("removes a tagged line like any other", () => {
+    const src = "// @ts-capture[conflict]: `a` observed `undefined`\nconst a = f();\n";
+    expect(markerLineRanges(src)).toEqual([[0, 51]]);
+  });
+
+  it("removes a tagged inline note like any other", () => {
+    const src = "const a = (d) /* @ts-capture[applied]: observed once */ => d;\n";
+    const [[start, end]] = markerSpanRanges(src);
+    expect(src.slice(start, end)).toBe(" /* @ts-capture[applied]: observed once */");
+  });
+});
+
+describe("the marker's boundary", () => {
+  // `@ts-capture-ignore` is a directive the user writes. Matching the bare
+  // prefix would have apply delete it — which the ignore-comment tests caught
+  // the moment the tag loosened the marker.
+  it("leaves an ignore directive alone", () => {
+    expect(markerLineRanges("// @ts-capture-ignore\nconst a = f();\n")).toEqual([]);
+  });
+
+  it("leaves an inline ignore directive alone", () => {
+    expect(markerSpanRanges("const a = f(); /* @ts-capture-ignore */\n")).toEqual([]);
+  });
+
+  it("still takes a bare note line, written before the tag existed", () => {
+    expect(
+      markerLineRanges("// @ts-capture: `a` observed `undefined`\nconst a = f();\n"),
+    ).toHaveLength(1);
+  });
+});
+
+describe("noteReplacements", () => {
+  // The placement rule, in one place because two appliers need it. It lived in
+  // the CST applier alone, so a pass-through entry on a crowded line came out
+  // in the old ambiguous form — invisible until a project routes through the
+  // second path, which nestjs/nest does not.
+  const conflict = (pos: number, name: string) => ({
+    pos,
+    name,
+    observed: ["undefined"],
+    inferred: "string",
+  });
+  const preview = (pos: number, name: string) => ({
+    pos,
+    name,
+    suggestion: "string",
+    observations: 1,
+  });
+  const anywhere = () => true;
+
+  it("puts a lone note above the line", () => {
+    const out = noteReplacements({
+      conflictNotes: new Map([[0, { indent: "", notes: [conflict(4, "a")] }]]),
+      previewNotes: new Map(),
+      outputMode: "annotations",
+      canPlaceNoteAt: anywhere,
+    });
+    expect(out).toHaveLength(1);
+    expect(out[0].start).toBe(0);
+    expect(out[0].text).toContain("[conflict]: `a` observed");
+  });
+
+  it("puts two notes at their sites", () => {
+    const out = noteReplacements({
+      conflictNotes: new Map([[0, { indent: "", notes: [conflict(4, "a"), conflict(9, "b")] }]]),
+      previewNotes: new Map(),
+      outputMode: "annotations",
+      canPlaceNoteAt: anywhere,
+    });
+    expect(out.map((r) => r.start)).toEqual([4, 9]);
+    expect(out[0].text).toContain("/* @ts-capture[conflict]:");
+  });
+
+  // The case that put two formats on one line before contradictions joined the
+  // count.
+  it("counts a contradiction and an annotation together", () => {
+    const out = noteReplacements({
+      conflictNotes: new Map([[0, { indent: "", notes: [conflict(4, "a")] }]]),
+      previewNotes: new Map([[0, { indent: "", notes: [preview(9, "b")] }]]),
+      outputMode: "both",
+      canPlaceNoteAt: anywhere,
+    });
+    expect(out.map((r) => r.start)).toEqual([4, 9]);
+    for (const r of out) expect(r.text).toContain("/* @ts-capture[");
+  });
+
+  it("ignores previews when no preview mode is on", () => {
+    const out = noteReplacements({
+      conflictNotes: new Map([[0, { indent: "", notes: [conflict(4, "a")] }]]),
+      previewNotes: new Map([[0, { indent: "", notes: [preview(9, "b")] }]]),
+      outputMode: "annotations",
+      canPlaceNoteAt: anywhere,
+    });
+    expect(out).toHaveLength(1);
+    expect(out[0].start).toBe(0);
+  });
+
+  // Only the leading form needs the check: at a site the note sits where the
+  // annotation would, which is code by definition.
+  it("drops a lone note the line cannot carry", () => {
+    const out = noteReplacements({
+      conflictNotes: new Map([[0, { indent: "", notes: [conflict(4, "a")] }]]),
+      previewNotes: new Map(),
+      outputMode: "annotations",
+      canPlaceNoteAt: () => false,
+    });
+    expect(out).toEqual([]);
   });
 });
 

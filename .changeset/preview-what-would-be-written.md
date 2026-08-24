@@ -10,7 +10,7 @@ an annotation would have been; in `both` the annotation lands and the note
 records the evidence beside it:
 
 ```ts
-// @ts-capture: would write `string`
+// @ts-capture[proposal]: `pattern` would be `string`
 // @ts-capture:   observed once; TypeScript infers `number | undefined`
 const pattern = this.getPattern(packet);
 ```

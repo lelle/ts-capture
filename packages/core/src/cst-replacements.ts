@@ -10,13 +10,13 @@ import { buildDiagnosticMarkerSuffix } from "./apply-diagnostics.js";
 import { filterAcceptedReplacements, type VerificationContext } from "./apply-types-verify.js";
 import { carriesNoInformation, computeAnnotationTypeString } from "./compute-annotation.js";
 import {
-  conflictCommentText,
   type ConflictNote,
   isInsideTextRun,
   lineStartAndIndent,
   markerLineRanges,
+  markerSpanRanges,
+  noteReplacements,
   parseForNoteSafety,
-  previewCommentText,
   type PreviewNote,
   siteName,
 } from "./conflict-comment.js";
@@ -116,17 +116,27 @@ export function buildCstReplacements(
   const cstReplacements: Replacement[] = [];
   // Contradictions between the run and the checker, grouped by the line they
   // sit on: one line can hold several sites, and their notes stack above it.
-  const conflictNotes = new Map<number, { indent: string; notes: ConflictNote[] }>();
+  const conflictNotes = new Map<
+    number,
+    { indent: string; notes: Array<ConflictNote & { pos: number }> }
+  >();
   // What apply would have written, for the preview modes.
-  const previewNotes = new Map<number, { indent: string; notes: PreviewNote[] }>();
+  const previewNotes = new Map<
+    number,
+    { indent: string; notes: Array<PreviewNote & { pos: number }> }
+  >();
   const pendingPreviews = new Map<number, PreviewNote>();
   // The checker's view at the site currently being decided, so the preview can
   // report it without every branch threading it through.
   let lastInferredString: string | undefined;
 
   /**
-   * Record a contradiction and report that this site is spoken for. The site
-   * gets a note instead of an annotation — see `conflict-comment.ts` for why
+   * Record a contradiction and report that this site is spoken for.
+   *
+   * True means the site is settled: nothing is written there. That holds
+   * whether or not the note itself landed — a line whose start is inside
+   * template or JSX text cannot carry a comment, and a contradiction apply
+   * cannot report is still a contradiction. See `conflict-comment.ts` for why
    * apply reports rather than fixes.
    */
   function noteConflict(
@@ -140,9 +150,10 @@ export function buildCstReplacements(
     const observed = observedBeyondInferred(checker, inferred, emitted);
     if (!observed) return false;
     const { lineStart, indent } = lineStartAndIndent(source, pos);
-    if (!canPlaceNoteAt(lineStart)) return false;
+    if (!canPlaceNoteAt(lineStart)) return true;
     const bucket = conflictNotes.get(lineStart) ?? { indent, notes: [] };
     bucket.notes.push({
+      pos,
       name: siteName(kind, node, node.getSourceFile()),
       observed,
       inferred: checker.typeToString(inferred!, undefined, ts.TypeFormatFlags.NoTruncation),
@@ -181,6 +192,19 @@ export function buildCstReplacements(
     if (!pendingWraps.has(closePos)) pendingWraps.set(closePos, openPos);
   }
 
+  // Names come from the detached index, which exists whether or not a project
+  // does — a note that cannot say which position it means is a note a reader
+  // cannot follow.
+  const nameOf = (node: ts.Node | undefined, fallback: string): string =>
+    node ? siteName("param", node, node.getSourceFile()) : fallback;
+  const paramName = (pos: number): string => nameOf(paramSites.get(pos)?.node, "parameter");
+  const varDeclName = (pos: number): string =>
+    nameOf(varDeclSites.get(pos)?.nameNode?.parent, "binding");
+  const returnName = (pos: number): string => {
+    const node = index.returnTypeSites.get(pos)?.node;
+    return node ? siteName("returnType", node, node.getSourceFile()) : "return";
+  };
+
   /**
    * Note what would be written here, pending acceptance.
    *
@@ -189,19 +213,26 @@ export function buildCstReplacements(
    * annotation that would never land is not a preview. `settlePreview` moves
    * it across once the annotation is accepted.
    */
-  function recordPreview(pos: number, suggestion: string, observations: number): void {
+  function recordPreview(
+    pos: number,
+    name: string,
+    suggestion: string,
+    observations: number,
+  ): void {
     if (infer.outputMode === "annotations" || source === undefined) return;
-    pendingPreviews.set(pos, { suggestion, observations, inferred: lastInferredString });
+    pendingPreviews.set(pos, { name, suggestion, observations, inferred: lastInferredString });
   }
 
-  /** Move an accepted site's preview into the per-line blocks. */
+  /**
+   * Move an accepted site's preview into place — above the line, or at the site
+   * when the line holds more than one.
+   */
   function settlePreview(pos: number): void {
     const note = pendingPreviews.get(pos);
     if (!note || source === undefined) return;
     const { lineStart, indent } = lineStartAndIndent(source, pos);
-    if (!canPlaceNoteAt(lineStart)) return;
     const bucket = previewNotes.get(lineStart) ?? { indent, notes: [] };
-    bucket.notes.push(note);
+    bucket.notes.push({ ...note, pos });
     previewNotes.set(lineStart, bucket);
   }
 
@@ -306,10 +337,10 @@ export function buildCstReplacements(
       // `(x: T) => body`. Mirrors the offset-based path.
       if (site.parensOpenPos !== undefined) {
         requestParenWrap(site.parensOpenPos, pos);
-        recordPreview(pos, emitted, types.length);
+        recordPreview(pos, paramName(pos), emitted, types.length);
         pushOrBufferAnnotation(pos, ": " + prefix + emitted + markerSuffix, 1);
       } else {
-        recordPreview(pos, emitted, types.length);
+        recordPreview(pos, paramName(pos), emitted, types.length);
         pushOrBufferAnnotation(pos, ": " + prefix + emitted + markerSuffix);
       }
     } else if (kind === "thisType") {
@@ -331,7 +362,7 @@ export function buildCstReplacements(
       // Mirrors the offset-based path's opts.thisNeedsComma flag —
       // here read directly from the AST.
       const suffix = site.hasOtherParams ? ", " : "";
-      recordPreview(pos, emitted, types.length);
+      recordPreview(pos, "this", emitted, types.length);
       pushOrBufferAnnotation(pos, "this: " + prefix + emitted + markerSuffix + suffix);
     } else if (kind === "returnType") {
       const computed = computeAnnotationTypeString(types, opts, infer, false, program);
@@ -391,7 +422,7 @@ export function buildCstReplacements(
       // expansion in particular turns a keepable bare `Container` into
       // `Container<unknown>`, which describes no payload.
       if (!infer.emitDiagnosticComments && carriesNoInformation(emitted)) continue;
-      recordPreview(pos, emitted, types.length);
+      recordPreview(pos, returnName(pos), emitted, types.length);
       pushOrBufferAnnotation(pos, ": " + prefix + emitted + markerSuffix, -1);
     } else {
       // varDecl: user-written `as Type` / `<Type>` cast on RHS — defer
@@ -456,7 +487,7 @@ export function buildCstReplacements(
       // expansion in particular turns a keepable bare `Container` into
       // `Container<unknown>`, which describes no payload.
       if (!infer.emitDiagnosticComments && carriesNoInformation(emitted)) continue;
-      recordPreview(pos, emitted, types.length);
+      recordPreview(pos, varDeclName(pos), emitted, types.length);
       pushOrBufferAnnotation(pos, ": " + prefix + emitted + markerSuffix);
     }
   }
@@ -506,19 +537,19 @@ export function buildCstReplacements(
     for (const [start, end] of markerLineRanges(source)) {
       cstReplacements.push(Replacement.delete(start, end));
     }
-    for (const [lineStart, { indent, notes }] of conflictNotes) {
-      cstReplacements.push(Replacement.insert(lineStart, conflictCommentText(notes, indent), -2));
+    for (const [start, end] of markerSpanRanges(source)) {
+      cstReplacements.push(Replacement.delete(start, end));
     }
   }
-  // Preview blocks sort above a conflict note on the same line: the note is
-  // about the code, the preview is about what apply would do to it.
-  if (infer.outputMode !== "annotations") {
-    for (const [lineStart, { indent, notes }] of previewNotes) {
-      cstReplacements.push(
-        Replacement.insert(lineStart, previewCommentText(notes, indent, infer.outputMode), -3),
-      );
-    }
-  }
+
+  cstReplacements.push(
+    ...noteReplacements({
+      conflictNotes,
+      previewNotes,
+      outputMode: infer.outputMode,
+      canPlaceNoteAt,
+    }),
+  );
 
   return cstReplacements;
 }

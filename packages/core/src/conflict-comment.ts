@@ -1,5 +1,7 @@
 import ts from "typescript";
 
+import { Replacement } from "./replacement.js";
+
 // Notes ts-capture leaves where the run contradicts the project's own types.
 //
 // Every other output of apply is an annotation, checked by the TypeChecker and
@@ -13,8 +15,24 @@ import ts from "typescript";
 // removes the notes it finds and writes the ones that hold now. See
 // `markerLineRanges`.
 
-/** The prefix every note carries. Anything on a line with it belongs to apply. */
-export const CONFLICT_MARKER = "// @ts-capture:";
+/** The prefix every note carries. Anything carrying it belongs to apply. */
+export const CONFLICT_MARKER = "// @ts-capture";
+
+/**
+ * What the note is telling you, in a word.
+ *
+ * Reading a diff, the `+` on the code line says whether an annotation was
+ * written. Reading the file it is gone, and the signal becomes an annotation
+ * that is *missing* — which is not something a reader spots. It also makes the
+ * findings greppable: on nestjs/nest 10 notes of 135 are the ones to act on,
+ * and separating them otherwise means matching on wording.
+ */
+export type NoteState =
+  | "conflict" // the run saw what the type forbids; nothing was written
+  | "proposal" // what an annotation would have been; nothing was written
+  | "applied"; // what was written, and why
+
+const line = (state: NoteState): string => `${CONFLICT_MARKER}[${state}]:`;
 
 /** One contradiction, at one annotation site. */
 export interface ConflictNote {
@@ -100,7 +118,7 @@ export function conflictCommentText(notes: readonly ConflictNote[], indent: stri
   return notes
     .map(
       (n) =>
-        `${indent}${CONFLICT_MARKER} \`${n.name}\` observed \`${n.observed.join(" | ")}\`, ` +
+        `${indent}${line("conflict")} \`${n.name}\` observed \`${n.observed.join(" | ")}\`, ` +
         `TypeScript infers \`${n.inferred}\`\n`,
     )
     .join("");
@@ -108,6 +126,8 @@ export function conflictCommentText(notes: readonly ConflictNote[], indent: stri
 
 /** One suggestion, at one annotation site, for the preview mode. */
 export interface PreviewNote {
+  /** What the site is called — `req`, `{ name, age }`, `getUrl return`. */
+  name: string;
   /** The annotation that would have been written. */
   suggestion: string;
   /** How many times the run saw a value here. */
@@ -118,6 +138,10 @@ export interface PreviewNote {
 
 /**
  * The preview block for one source line.
+ *
+ * Every note names its position, because one line can hold several sites:
+ * `const a = (s) => (d) => (e) => e;` has three, and unnamed notes above it are
+ * indistinguishable — beside the annotation they were literally identical.
  *
  * What it says depends on whether the annotation is being written beside it.
  * Alone, the note has to name the type, because nothing else does. Next to the
@@ -141,16 +165,151 @@ export function previewCommentText(
     .map((n) => {
       const seen = n.observations === 1 ? "observed once" : `observed ${n.observations} times`;
       const known = n.inferred === undefined ? "" : `; TypeScript infers \`${n.inferred}\``;
-      if (mode === "both") return `${indent}${CONFLICT_MARKER} ${seen}${known}\n`;
+      if (mode === "both") return `${indent}${line("applied")} \`${n.name}\` ${seen}${known}\n`;
       // The marker on both lines, not just the first: removal matches the
       // marker, so a continuation line without it would be orphaned in the
       // file the moment the note it belongs to was rewritten.
+      // The tag sits on the first line only; the continuation carries the bare
+      // marker, which is enough for removal and quieter to read.
       return (
-        `${indent}${CONFLICT_MARKER} would write \`${n.suggestion}\`\n` +
-        `${indent}${CONFLICT_MARKER}   ${seen}${known}\n`
+        `${indent}${line("proposal")} \`${n.name}\` would be \`${n.suggestion}\`\n` +
+        `${indent}${CONFLICT_MARKER}:   ${seen}${known}\n`
       );
     })
     .join("");
+}
+
+/** The marker as it reads inside a block comment. */
+const INLINE_MARKER = "/* @ts-capture";
+const inline = (state: NoteState): string => `${INLINE_MARKER}[${state}]:`;
+
+/** A whole-line note, tagged or bare — but never `@ts-capture-ignore`. */
+const NOTE_LINE_RE = /^\/\/ @ts-capture(?:\[[a-z]+\])?:/;
+/** An inline note, tagged or bare. */
+const NOTE_SPAN_RE = /\/\* @ts-capture(?:\[[a-z]+\])?:/g;
+
+/**
+ * A note that sits at the site instead of above it.
+ *
+ * Used where one line holds several sites. A leading note has to name its
+ * position, and no name survives the hard case: `const a = (d) => (d) => (d)
+ * => null;` has four positions with one name between them, and a qualifier
+ * taken from the source is unbounded — a parameter list can be longer than the
+ * type it introduces. At the site there is nothing to name, because the
+ * position is the identifier.
+ */
+/** A note with the position it belongs to. */
+type Placed<T> = T & { pos: number };
+
+/** Notes for one line, and the indentation the line opens with. */
+export interface NoteBucket<T> {
+  indent: string;
+  notes: Array<Placed<T>>;
+}
+
+/**
+ * Where every note goes, as replacements.
+ *
+ * One place because both appliers need the same answer. It lived in the CST
+ * applier alone, so a pass-through entry on a crowded line came out in the old
+ * ambiguous form — invisible until a project routes through the second path,
+ * and nestjs/nest does not.
+ *
+ * A line is crowded by every note it carries, contradictions included: left
+ * out of the count they put two formats on one line, and kept a naming
+ * collision that `(d) => (d)` produces on its own.
+ */
+export function noteReplacements(args: {
+  conflictNotes: Map<number, NoteBucket<ConflictNote>>;
+  previewNotes: Map<number, NoteBucket<PreviewNote>>;
+  outputMode: "annotations" | "comments" | "both";
+  /** False where a leading line would land inside a string or JSX text. */
+  canPlaceNoteAt: (lineStart: number) => boolean;
+}): Replacement[] {
+  const { conflictNotes, previewNotes, outputMode, canPlaceNoteAt } = args;
+  const mode = outputMode === "both" ? "both" : "comments";
+  const out: Replacement[] = [];
+
+  for (const lineStart of new Set([...conflictNotes.keys(), ...previewNotes.keys()])) {
+    const conflicts = conflictNotes.get(lineStart);
+    const previews = outputMode === "annotations" ? undefined : previewNotes.get(lineStart);
+    const total = (conflicts?.notes.length ?? 0) + (previews?.notes.length ?? 0);
+    if (total === 0) continue;
+
+    if (total > 1) {
+      // Priority below every annotation's: at one position the insert applied
+      // first ends up rightmost, so the note lands after the type.
+      //
+      // No `canPlaceNoteAt` here — at a site the note sits where the
+      // annotation would, which is code by definition.
+      for (const note of conflicts?.notes ?? []) {
+        out.push(Replacement.insert(note.pos, ` ${inlineConflictText(note)}`, -10));
+      }
+      for (const note of previews?.notes ?? []) {
+        out.push(Replacement.insert(note.pos, ` ${inlineNoteText(note, mode)}`, -10));
+      }
+      continue;
+    }
+
+    if (!canPlaceNoteAt(lineStart)) continue;
+    if (conflicts) {
+      out.push(
+        Replacement.insert(lineStart, conflictCommentText(conflicts.notes, conflicts.indent), -2),
+      );
+    } else if (previews) {
+      out.push(
+        Replacement.insert(
+          lineStart,
+          previewCommentText(previews.notes, previews.indent, mode),
+          -3,
+        ),
+      );
+    }
+  }
+  return out;
+}
+
+/**
+ * A contradiction, written at the site rather than above the line.
+ *
+ * Internal to `noteReplacements`, which is the one place that decides between
+ * the two placements — asserted through it rather than directly.
+ */
+function inlineConflictText(note: ConflictNote): string {
+  return (
+    `${inline("conflict")} observed \`${note.observed.join(" | ")}\`, ` +
+    `TypeScript infers \`${note.inferred}\` */`
+  );
+}
+
+export function inlineNoteText(note: PreviewNote, mode: "comments" | "both"): string {
+  const seen = note.observations === 1 ? "observed once" : `observed ${note.observations} times`;
+  const known = note.inferred === undefined ? "" : `; TypeScript infers \`${note.inferred}\``;
+  const what = mode === "both" ? "" : `would be \`${note.suggestion}\`; `;
+  return `${inline(mode === "both" ? "applied" : "proposal")} ${what}${seen}${known} */`;
+}
+
+/**
+ * Ranges of every inline note, with the space that precedes it.
+ *
+ * A block comment delimits itself, so removal takes exactly the note and
+ * nothing of the code around it — which is what made the inline form
+ * affordable at all. Whole-line notes remain {@link markerLineRanges}'s job.
+ */
+export function markerSpanRanges(source: string): Array<[number, number]> {
+  const ranges: Array<[number, number]> = [];
+  NOTE_SPAN_RE.lastIndex = 0;
+  for (;;) {
+    const match = NOTE_SPAN_RE.exec(source);
+    if (!match) break;
+    const start = match.index;
+    const end = source.indexOf("*/", start);
+    if (end === -1) break;
+    const withSpace = start > 0 && source[start - 1] === " " ? start - 1 : start;
+    ranges.push([withSpace, end + 2]);
+    NOTE_SPAN_RE.lastIndex = end + 2;
+  }
+  return ranges;
 }
 
 /**
@@ -165,7 +324,14 @@ export function markerLineRanges(source: string): Array<[number, number]> {
   while (lineStart <= source.length) {
     const newline = source.indexOf("\n", lineStart);
     const lineEnd = newline === -1 ? source.length : newline;
-    if (source.slice(lineStart, lineEnd).trimStart().startsWith(CONFLICT_MARKER)) {
+    if (NOTE_LINE_RE.test(source.slice(lineStart, lineEnd).trimStart())) {
+      // Tagged or bare: `// @ts-capture[conflict]:` and `// @ts-capture:` are
+      // both apply's, and a human who writes either loses it — the decision
+      // that the marker is the tool's namespace.
+      //
+      // The marker has to end in `[` or `:`, though. `@ts-capture-ignore` is a
+      // directive the user writes, and matching the bare prefix would have
+      // apply delete it.
       ranges.push([lineStart, newline === -1 ? lineEnd : newline + 1]);
     }
     if (newline === -1) break;

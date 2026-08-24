@@ -1,7 +1,7 @@
 import ts from "typescript";
 
 import type { ApplyTypesOptions } from "./contract.js";
-import type { CollectedTypeInfo } from "./type-collector.js";
+import type { CollectedTypeInfo, ExtraOptions } from "./type-collector.js";
 
 import { decideVarDeclSite, suppressArrayCallbackStructural } from "./annotation-eligibility.js";
 import { buildDiagnosticMarkerSuffix } from "./apply-diagnostics.js";
@@ -10,13 +10,14 @@ import { inferClassFieldTypes } from "./class-field-inference.js";
 import { carriesNoInformation, computeAnnotationTypeString } from "./compute-annotation.js";
 import { INFER_DEFAULTS } from "./configuration.js";
 import {
-  conflictCommentText,
   type ConflictNote,
   isInsideTextRun,
   lineStartAndIndent,
   markerLineRanges,
+  markerSpanRanges,
+  type NoteBucket,
+  noteReplacements,
   parseForNoteSafety,
-  previewCommentText,
   type PreviewNote,
   siteName,
 } from "./conflict-comment.js";
@@ -80,7 +81,35 @@ export function applyTypesToFile(
   const replacements: Replacement[] = [];
   // Contradictions between the run and the checker, grouped by the line they
   // sit on. See `conflict-comment.ts`.
-  const conflictNotes = new Map<number, { indent: string; notes: ConflictNote[] }>();
+  const conflictNotes = new Map<number, NoteBucket<ConflictNote>>();
+  // What apply would have written, for the preview modes.
+  const previewNotes = new Map<number, NoteBucket<PreviewNote>>();
+  let lastInferredString: string | undefined;
+  const pendingPreviews = new Map<number, PreviewNote>();
+  /**
+   * What to call the site in a note. Sites come from the checker index when
+   * there is one; without a project the note falls back to the kind, which is
+   * still enough to tell two positions on a line apart in order.
+   */
+  function previewName(pos: number, opts: ExtraOptions | undefined): string {
+    const index = checkerSites?.index;
+    const origPos = checkerSites ? checkerSites.toOriginalPos(pos) : pos;
+    if (opts?.thisType) return "this";
+    if (opts?.returnType) {
+      const node = index?.returnTypeSites.get(origPos)?.node;
+      return node ? siteName("returnType", node, node.getSourceFile()) : "return";
+    }
+    const node = opts?.varDecl
+      ? index?.varDeclSites.get(origPos)?.nameNode?.parent
+      : index?.paramSites.get(origPos)?.node;
+    if (node) return siteName(opts?.varDecl ? "varDecl" : "param", node, node.getSourceFile());
+    // No project, so no index — but a binding site is keyed on `name.end`, so
+    // the identifier is the run of name characters ending right here. Reading
+    // it back beats naming the note `binding`, which tells a reader nothing.
+    const identifier = /[A-Za-z_$][\w$]*$/.exec(source.slice(0, pos))?.[0];
+    return identifier ?? (opts?.varDecl ? "binding" : "parameter");
+  }
+
   // See `canPlaceNoteAt` in cst-replacements.ts.
   let noteSafetySf: ts.SourceFile | undefined;
   function canPlaceNoteAt(lineStart: number): boolean {
@@ -88,15 +117,15 @@ export function applyTypesToFile(
     return !isInsideTextRun(noteSafetySf, lineStart);
   }
 
-  // What apply would have written, for the preview modes.
-  const previewNotes = new Map<number, { indent: string; notes: PreviewNote[] }>();
-  let lastInferredString: string | undefined;
-  const pendingPreviews = new Map<number, PreviewNote>();
-
   /** See `recordPreview` in cst-replacements.ts — same job, same shape. */
-  function recordPreview(pos: number, suggestion: string, observations: number): void {
+  function recordPreview(
+    pos: number,
+    name: string,
+    suggestion: string,
+    observations: number,
+  ): void {
     if (infer.outputMode === "annotations") return;
-    pendingPreviews.set(pos, { suggestion, observations, inferred: lastInferredString });
+    pendingPreviews.set(pos, { name, suggestion, observations, inferred: lastInferredString });
   }
 
   /** See `settlePreview` in cst-replacements.ts — a preview is only true once
@@ -104,10 +133,12 @@ export function applyTypesToFile(
   function settlePreview(pos: number): void {
     const note = pendingPreviews.get(pos);
     if (!note) return;
+    // No check here: `noteReplacements` is the one place that knows whether
+    // this note ends up above the line or at the site, and only the first of
+    // those cares what the line starts inside.
     const { lineStart, indent } = lineStartAndIndent(source, pos);
-    if (!canPlaceNoteAt(lineStart)) return;
     const bucket = previewNotes.get(lineStart) ?? { indent, notes: [] };
-    bucket.notes.push(note);
+    bucket.notes.push({ ...note, pos });
     previewNotes.set(lineStart, bucket);
   }
   const prefix = options.prefix ?? "";
@@ -508,14 +539,20 @@ export function applyTypesToFile(
         if (site) {
           const kind = opts?.returnType ? "returnType" : opts?.varDecl ? "varDecl" : "param";
           const { lineStart, indent } = lineStartAndIndent(source, pos);
-          if (!canPlaceNoteAt(lineStart)) break;
-          const bucket = conflictNotes.get(lineStart) ?? { indent, notes: [] };
-          bucket.notes.push({
-            name: siteName(kind, site, site.getSourceFile()),
-            observed,
-            inferred: checker.typeToString(inferred!, undefined, ts.TypeFormatFlags.NoTruncation),
-          });
-          conflictNotes.set(lineStart, bucket);
+          // Placement can fail, and the site is settled either way: the same
+          // rule `noteConflict` follows in the CST applier. This used to
+          // `break`, which abandoned the loop and dropped every remaining
+          // annotation in the file.
+          if (canPlaceNoteAt(lineStart)) {
+            const bucket = conflictNotes.get(lineStart) ?? { indent, notes: [] };
+            bucket.notes.push({
+              pos,
+              name: siteName(kind, site, site.getSourceFile()),
+              observed,
+              inferred: checker.typeToString(inferred!, undefined, ts.TypeFormatFlags.NoTruncation),
+            });
+            conflictNotes.set(lineStart, bucket);
+          }
           continue;
         }
       }
@@ -527,7 +564,7 @@ export function applyTypesToFile(
 
     const annotationText = thisPrefix + ": " + prefix + emitted + suffix + markerSuffix;
 
-    recordPreview(pos, emitted, types.length);
+    recordPreview(pos, previewName(pos, opts), emitted, types.length);
 
     // Defer verify to a batch pass at the end of
     // the entry loop. Per-candidate probing was 30× slower than
@@ -582,18 +619,22 @@ export function applyTypesToFile(
       for (const [start, end] of markerLineRanges(source)) {
         replacements.push(Replacement.delete(start, end));
       }
-    }
-    for (const [lineStart, { indent, notes }] of conflictNotes) {
-      replacements.push(Replacement.insert(lineStart, conflictCommentText(notes, indent), -2));
-    }
-  }
-  if (infer.outputMode !== "annotations") {
-    for (const [lineStart, { indent, notes }] of previewNotes) {
-      replacements.push(
-        Replacement.insert(lineStart, previewCommentText(notes, indent, infer.outputMode), -3),
-      );
+      for (const [start, end] of markerSpanRanges(source)) {
+        replacements.push(Replacement.delete(start, end));
+      }
     }
   }
+
+  // Same rule as the CST path, and the same code: a rule added to one applier
+  // and not the other is invisible until a project routes through the second.
+  replacements.push(
+    ...noteReplacements({
+      conflictNotes,
+      previewNotes,
+      outputMode: infer.outputMode,
+      canPlaceNoteAt,
+    }),
+  );
 
   return applyReplacements(source, replacements);
 }
