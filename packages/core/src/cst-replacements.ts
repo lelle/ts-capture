@@ -8,6 +8,7 @@ import type { CstSiteIndex } from "./cst-site-index.js";
 import { suppressArrayCallbackStructural } from "./annotation-eligibility.js";
 import { buildDiagnosticMarkerSuffix } from "./apply-diagnostics.js";
 import { filterAcceptedReplacements, type VerificationContext } from "./apply-types-verify.js";
+import { checkerGate } from "./checker-gate.js";
 import { carriesNoInformation, computeAnnotationTypeString } from "./compute-annotation.js";
 import {
   type ConflictNote,
@@ -27,18 +28,7 @@ import {
 } from "./initializer-inference.js";
 import { type NamedTypeIndex, rewriteToNamedInScope } from "./named-type-rewrite.js";
 import { isParseableTypeString } from "./parseable.js";
-import {
-  carriesPolymorphicThis,
-  describeInferred,
-  discardsUnionArm,
-  erasesEnum,
-  erasesNamedType,
-  inferredReturnType,
-  isRedundantAnnotation,
-  observedBeyondInferred,
-  typeAt,
-  writesOverCallSignature,
-} from "./redundant-annotation.js";
+import { describeInferred, inferredReturnType, typeAt } from "./redundant-annotation.js";
 import { type AnnotationCandidate, Replacement } from "./replacement.js";
 import { allTypeRefsInScope, expandCtorArity } from "./scope-reachability.js";
 
@@ -131,26 +121,24 @@ export function buildCstReplacements(
   let lastInferredString: string | undefined;
 
   /**
-   * Record a contradiction and report that this site is spoken for.
+   * Write down a contradiction `checkerGate` found — see `conflict-comment.ts`
+   * for why apply reports rather than fixes.
    *
-   * True means the site is settled: nothing is written there. That holds
-   * whether or not the note itself landed — a line whose start is inside
-   * template or JSX text cannot carry a comment, and a contradiction apply
-   * cannot report is still a contradiction. See `conflict-comment.ts` for why
-   * apply reports rather than fixes.
+   * Placement can still fail, and the caller skips the site either way: a
+   * contradiction apply cannot report is still a contradiction.
    */
-  function noteConflict(
+  function placeNote(
     pos: number,
     kind: "param" | "varDecl" | "returnType",
     node: ts.Node | undefined,
     inferred: ts.Type | undefined,
-    emitted: string,
-  ): boolean {
-    if (!infer.emitConflictComments || !checker || !node || source === undefined) return false;
-    const observed = observedBeyondInferred(checker, inferred, emitted);
-    if (!observed) return false;
+    observed: string[],
+  ): void {
+    if (!checker || !node || source === undefined) return;
+    // No leading-line check here: `noteReplacements` is the one place that
+    // knows whether this note ends up above the line or at the site, and only
+    // the first of those cares what the line starts inside.
     const { lineStart, indent } = lineStartAndIndent(source, pos);
-    if (!canPlaceNoteAt(lineStart)) return true;
     const bucket = conflictNotes.get(lineStart) ?? { indent, notes: [] };
     bucket.notes.push({
       pos,
@@ -159,7 +147,6 @@ export function buildCstReplacements(
       inferred: checker.typeToString(inferred!, undefined, ts.TypeFormatFlags.NoTruncation),
     });
     conflictNotes.set(lineStart, bucket);
-    return true;
   }
   // When verify is enabled, buffer annotation insertions here and decide
   // acceptance in a single batch pass at the end of the loop.
@@ -308,26 +295,22 @@ export function buildCstReplacements(
       // contextually typed callback param, for instance.
       const inferredParam = typeAt(checker, checkerIndex?.paramSites.get(pos)?.node.name);
       lastInferredString = describeInferred(checker, inferredParam);
-      // `Function` over a signature the checker already has replaces an answer
-      // with a shrug.
-      if (writesOverCallSignature(checker, inferredParam, emitted)) continue;
-      if (erasesNamedType(checker, inferredParam, emitted)) continue;
-      if (erasesEnum(checker, inferredParam, emitted)) continue;
-      if (discardsUnionArm(checker, inferredParam, emitted)) continue;
-      // Asked last. The rules above name the ways an annotation can differ
-      // because the run knows *less*; a contradiction is what is left when
-      // none of them explains the difference.
-      if (
-        noteConflict(pos, "param", checkerIndex?.paramSites.get(pos)?.node, inferredParam, emitted)
-      )
+      const paramVerdict = checkerGate(checker, inferredParam, emitted, infer);
+      if (paramVerdict.kind === "contradiction") {
+        placeNote(
+          pos,
+          "param",
+          checkerIndex?.paramSites.get(pos)?.node,
+          inferredParam,
+          paramVerdict.observed,
+        );
         continue;
-      if (
-        infer.skipRedundantAnnotations &&
-        isRedundantAnnotation(checker, inferredParam, emitted)
-      ) {
+      }
+      if (paramVerdict.kind === "redundant") {
         if (telemetry) telemetry.idempotent++;
         continue;
       }
+      if (paramVerdict.kind === "suppress") continue;
       // Paren-less single-param arrow: wrap with `()` separately so the
       // annotation can be gated through verify independently. Wrap
       // pushes unconditionally — if verify rejects the annotation,
@@ -385,30 +368,22 @@ export function buildCstReplacements(
 
       // `this` has no single value to write down. Any concrete type here —
       // however well observed — costs every subclass its own return type.
-      if (carriesPolymorphicThis(checker, inferredReturn)) continue;
-      if (writesOverCallSignature(checker, inferredReturn, emitted)) continue;
-      if (erasesNamedType(checker, inferredReturn, emitted)) continue;
-      if (erasesEnum(checker, inferredReturn, emitted)) continue;
-      if (discardsUnionArm(checker, inferredReturn, emitted)) continue;
-      if (
-        noteConflict(
+      const returnVerdict = checkerGate(checker, inferredReturn, emitted, infer);
+      if (returnVerdict.kind === "contradiction") {
+        placeNote(
           pos,
           "returnType",
           checkerIndex?.returnTypeSites.get(pos)?.node,
           inferredReturn,
-          emitted,
-        )
-      )
+          returnVerdict.observed,
+        );
         continue;
-      // Nothing to add when the checker already infers this return type from
-      // the body.
-      if (
-        infer.skipRedundantAnnotations &&
-        isRedundantAnnotation(checker, inferredReturn, emitted)
-      ) {
+      }
+      if (returnVerdict.kind === "redundant") {
         if (telemetry) telemetry.idempotent++;
         continue;
       }
+      if (returnVerdict.kind === "suppress") continue;
       // Lower priority than param inserts so the priority-tied
       // collision case from the offset-based path (paren-less arrow:
       // both inserts at same pos) is handled the same way. In this
@@ -448,34 +423,25 @@ export function buildCstReplacements(
       // `const self = this` — the same erasure as on a return type, in a
       // binding. nest aliases `this` that way so a class expression can close
       // over it.
-      if (carriesPolymorphicThis(checker, inferredBinding)) continue;
-      if (writesOverCallSignature(checker, inferredBinding, emitted)) continue;
-      if (erasesNamedType(checker, inferredBinding, emitted)) continue;
-      if (erasesEnum(checker, inferredBinding, emitted)) continue;
-      if (discardsUnionArm(checker, inferredBinding, emitted)) continue;
-      if (
-        noteConflict(
+      const bindingVerdict = checkerGate(checker, inferredBinding, emitted, infer);
+      if (bindingVerdict.kind === "contradiction") {
+        placeNote(
           pos,
           "varDecl",
           checkerIndex?.varDeclSites.get(pos)?.nameNode?.parent,
           inferredBinding,
-          emitted,
-        )
-      )
+          bindingVerdict.observed,
+        );
         continue;
-      // Skip when TS would already infer the same type from the
-      // initializer. Only fires when both `infer.skipRedundantAnnotations`
-      // is on AND the initializer is a shape we can model exactly.
-      // Checker first: it answers this exactly and for every initializer
-      // shape. The syntactic table below is the fallback for runs with no
-      // project (`getProgram` returns undefined without a tsconfig).
-      if (
-        infer.skipRedundantAnnotations &&
-        isRedundantAnnotation(checker, inferredBinding, emitted)
-      ) {
+      }
+      // The checker answers redundancy exactly and for every initializer shape.
+      // The syntactic table below is the fallback for runs with no project
+      // (`getProgram` returns undefined without a tsconfig).
+      if (bindingVerdict.kind === "redundant") {
         if (telemetry) telemetry.idempotent++;
         continue;
       }
+      if (bindingVerdict.kind === "suppress") continue;
       if (infer.skipRedundantAnnotations && site.initializer) {
         const inferredFromSource = inferTypeFromInitializer(site.initializer, site.narrowsLiterals);
         if (inferredFromSource !== null && inferredFromSource === emitted) continue;

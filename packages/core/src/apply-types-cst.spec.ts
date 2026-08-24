@@ -1278,6 +1278,34 @@ describe("applyTypesToFileCst — TypeChecker verify integration", () => {
     expect(count(applyTypesToFile(src, typeInfo, opts))).toBe(2);
   });
 
+  // `this` has no single value to write down — the same loss the return-type
+  // rule above refuses, arriving through a contextually typed parameter. The
+  // offset applier already refused it; the CST applier, which is the default,
+  // did not.
+  it("never annotates a param the checker infers as `this`", () => {
+    const proj = makeProject({
+      "target.ts":
+        "export class Box {\n" +
+        "  each(fn: (self: this) => void) {\n" +
+        "    fn(this);\n" +
+        "  }\n" +
+        "  go() {\n" +
+        "    this.each((s) => s.go());\n" +
+        "  }\n" +
+        "}\n",
+    });
+    const program = createProjectVerificationContext(
+      proj.fileNames,
+      proj.compilerOptions,
+      proj.dir,
+    ).service.getProgram();
+    const sPos = proj.targetSource.indexOf("((s)") + "((s".length;
+    const typeInfo: CollectedTypeInfo = [entry(proj.target, sPos, [["Box"]], { arrow: true })];
+    const opts = { filename: proj.target };
+    expect(applyTypesToFileCst(proj.targetSource, typeInfo, opts, program)).toBe(proj.targetSource);
+    expect(applyTypesToFile(proj.targetSource, typeInfo, opts, program)).toBe(proj.targetSource);
+  });
+
   it("never annotates a return type the checker infers as `this`", () => {
     // A builder that returns `this` keeps working in a subclass. The run only
     // ever sees the concrete instance, so ts-capture writes the class name and

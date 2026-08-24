@@ -6,6 +6,7 @@ import type { CollectedTypeInfo, ExtraOptions } from "./type-collector.js";
 import { decideVarDeclSite, suppressArrayCallbackStructural } from "./annotation-eligibility.js";
 import { buildDiagnosticMarkerSuffix } from "./apply-diagnostics.js";
 import { filterAcceptedReplacements } from "./apply-types-verify.js";
+import { checkerGate } from "./checker-gate.js";
 import { inferClassFieldTypes } from "./class-field-inference.js";
 import { carriesNoInformation, computeAnnotationTypeString } from "./compute-annotation.js";
 import { INFER_DEFAULTS } from "./configuration.js";
@@ -35,18 +36,7 @@ import {
   rewriteToNamedInScope,
 } from "./named-type-rewrite.js";
 import { isParseableTypeString } from "./parseable.js";
-import {
-  carriesPolymorphicThis,
-  describeInferred,
-  discardsUnionArm,
-  erasesEnum,
-  erasesNamedType,
-  inferredReturnType,
-  isRedundantAnnotation,
-  observedBeyondInferred,
-  typeAt,
-  writesOverCallSignature,
-} from "./redundant-annotation.js";
+import { describeInferred, inferredReturnType, typeAt } from "./redundant-annotation.js";
 import { type AnnotationCandidate, applyReplacements, Replacement } from "./replacement.js";
 import {
   allTypeRefsInScope,
@@ -513,24 +503,10 @@ export function applyTypesToFile(
             checkerSites.index.varDeclSites.get(origPos)?.nameNode ??
               checkerSites.index.paramSites.get(origPos)?.node.name,
           );
-      // Asked before the suppression rules read, after them in effect: a
-      // contradiction is what is left when none of them explains the
-      // difference, so the check sits at the end of this block.
-      // See `carriesPolymorphicThis`: a concrete type where the checker has
-      // `this` costs every subclass its own type. Not just return types —
-      // `const self = this` is inferred `this` as well.
-      if (carriesPolymorphicThis(checker, inferred)) continue;
-      // See `writesOverCallSignature` and `erasesNamedType`.
-      if (writesOverCallSignature(checker, inferred, emitted)) continue;
-      if (erasesNamedType(checker, inferred, emitted)) continue;
-      if (erasesEnum(checker, inferred, emitted)) continue;
-      if (discardsUnionArm(checker, inferred, emitted)) continue;
-
       lastInferredString = describeInferred(checker, inferred);
-      const observed = infer.emitConflictComments
-        ? observedBeyondInferred(checker, inferred, emitted)
-        : null;
-      if (observed) {
+
+      const verdict = checkerGate(checker, inferred, emitted, infer);
+      if (verdict.kind === "contradiction") {
         const site = opts?.returnType
           ? checkerSites.index.returnTypeSites.get(origPos)?.node
           : opts?.varDecl
@@ -538,28 +514,27 @@ export function applyTypesToFile(
             : checkerSites.index.paramSites.get(origPos)?.node;
         if (site) {
           const kind = opts?.returnType ? "returnType" : opts?.varDecl ? "varDecl" : "param";
+          // No leading-line check: `noteReplacements` is the one place that
+          // knows whether this note goes above the line or at the site. The
+          // site is settled either way — a contradiction apply cannot report
+          // is still a contradiction.
           const { lineStart, indent } = lineStartAndIndent(source, pos);
-          // Placement can fail, and the site is settled either way: the same
-          // rule `noteConflict` follows in the CST applier. This used to
-          // `break`, which abandoned the loop and dropped every remaining
-          // annotation in the file.
-          if (canPlaceNoteAt(lineStart)) {
-            const bucket = conflictNotes.get(lineStart) ?? { indent, notes: [] };
-            bucket.notes.push({
-              pos,
-              name: siteName(kind, site, site.getSourceFile()),
-              observed,
-              inferred: checker.typeToString(inferred!, undefined, ts.TypeFormatFlags.NoTruncation),
-            });
-            conflictNotes.set(lineStart, bucket);
-          }
-          continue;
+          const bucket = conflictNotes.get(lineStart) ?? { indent, notes: [] };
+          bucket.notes.push({
+            pos,
+            name: siteName(kind, site, site.getSourceFile()),
+            observed: verdict.observed,
+            inferred: checker.typeToString(inferred!, undefined, ts.TypeFormatFlags.NoTruncation),
+          });
+          conflictNotes.set(lineStart, bucket);
         }
+        continue;
       }
-      if (infer.skipRedundantAnnotations && isRedundantAnnotation(checker, inferred, emitted)) {
+      if (verdict.kind === "redundant") {
         if (telemetry) telemetry.idempotent++;
         continue;
       }
+      if (verdict.kind === "suppress") continue;
     }
 
     const annotationText = thisPrefix + ": " + prefix + emitted + suffix + markerSuffix;

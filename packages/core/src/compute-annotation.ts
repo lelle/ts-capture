@@ -149,31 +149,12 @@ export function computeAnnotationTypeString(
     sortedTypes = [`Promise<${inner}>`];
   }
 
-  // Suppress annotation when the SOLE observed type is a "useless"
-  // arrow — every parameter typed `unknown` (or rest `unknown[]`) AND
-  // return `unknown`. These accumulate when a callback varDecl is
-  // observed but the callback is never invoked during the run; the
-  // emitted shape locks the param count without adding type information.
-  // Skip rather than annotate so apply produces no noise.
-  //
-  // Gated by `emitDiagnosticComments`: in diagnostic mode, users
-  // explicitly want to see where ts-capture's coverage has gaps, so
-  // we preserve the annotation (and downstream marker emission) instead
-  // of dropping it silently.
-  if (
-    !infer.emitDiagnosticComments &&
-    sortedTypes.length === 1 &&
-    isUselessArrow(sortedTypes[0]!)
-  ) {
-    return null;
-  }
-
   const finalType = stripAllChainMarkers(joinUnion(sortedTypes));
 
   // Refuse to write a type that does not describe the value.
   //
-  // Generalises `isUselessArrow` above: `unknown` or `any` anywhere in the
-  // annotation means the run saw the value but could not say what it was.
+  // `unknown` or `any` anywhere in the annotation means the run saw the value
+  // but could not say what it was.
   // `Promise<unknown>` reports that something is a Promise while discarding
   // the part a reader needs, and where the checker already had a real type it
   // is a downgrade. On nestjs/nest this was the largest single group in the
@@ -181,9 +162,8 @@ export function computeAnnotationTypeString(
   // 7 `Map<unknown, unknown>` and 6 each of `Set<unknown>` and
   // `Observable<unknown>`.
   //
-  // Same diagnostic-mode escape as `isUselessArrow`: with
-  // `emitDiagnosticComments` on, the user is asking to see where coverage is
-  // thin, so the gaps stay visible.
+  // Gated by `emitDiagnosticComments`: with it on, the user is asking to see
+  // where coverage is thin, so the gaps stay visible.
   if (!infer.emitDiagnosticComments && carriesNoInformation(finalType)) {
     return null;
   }
@@ -429,13 +409,4 @@ function isNullishType(node: ts.TypeNode): boolean {
   if (node.kind === ts.SyntaxKind.UndefinedKeyword) return true;
   if (node.kind === ts.SyntaxKind.VoidKeyword) return true;
   return ts.isLiteralTypeNode(node) && node.literal.kind === ts.SyntaxKind.NullKeyword;
-}
-
-function isUselessArrow(t: string): boolean {
-  const m = t.match(/^\(([^)]*)\) => unknown$/);
-  if (!m) return false;
-  const inner = (m[1] ?? "").trim();
-  if (inner === "") return false;
-  const params = inner.split(",").map((p) => p.trim());
-  return params.every((p) => /^\.\.\.\w+: unknown\[\]$/.test(p) || /^\w+: unknown$/.test(p));
 }
