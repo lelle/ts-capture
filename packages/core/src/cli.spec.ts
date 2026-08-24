@@ -578,6 +578,36 @@ describe("cli", () => {
       });
     });
 
+    // `apply` rewrites source files, and the flags that stop it from doing so
+    // are exactly the ones a typo turns off. Unknown flags still pass — a
+    // script sending a flag a newer version understands must keep working —
+    // but they no longer pass in silence.
+    describe("unrecognised flags", () => {
+      it("warns instead of silently applying when a safety flag is misspelled", () => {
+        withTmpDir((dir) => {
+          const file = path.join(dir, "a.ts");
+          fs.writeFileSync(file, "function foo(a) { return a; }");
+          const jsonFile = path.join(dir, "types.json");
+          fs.writeFileSync(jsonFile, JSON.stringify([[file, 14, [["string", undefined]], {}]]));
+          const { exitCode, stderr } = runInDir(dir, "apply", jsonFile, "--comment");
+          expect(exitCode).toBe(0);
+          expect(stderr).toContain("--comment");
+          expect(stderr).toContain("--comments");
+        });
+      });
+
+      it("says nothing about the flags it knows", () => {
+        withTmpDir((dir) => {
+          const file = path.join(dir, "a.ts");
+          fs.writeFileSync(file, "function foo(a) { return a; }");
+          const jsonFile = path.join(dir, "types.json");
+          fs.writeFileSync(jsonFile, JSON.stringify([[file, 14, [["string", undefined]], {}]]));
+          const { stderr } = runInDir(dir, "apply", jsonFile, "--dry-run", "--comments");
+          expect(stderr).not.toContain("unrecognised");
+        });
+      });
+    });
+
     describe("default test-file exclusion", () => {
       it("skips *.spec.ts files by default", () => {
         withTmpDir((dir) => {
@@ -835,6 +865,98 @@ describe("cli", () => {
           const after2 = fs.readFileSync(file, "utf-8");
           expect(after2).toBe(after1);
           expect(stdout.toLowerCase()).toMatch(/already applied|skip/);
+        });
+      });
+
+      // `--infer.outputMode=comments` worked from the day the mode existed,
+      // through the generic override — which is to say it was findable by
+      // people who already knew it was there.
+      it("--comments is the preview mode", () => {
+        withTmpDir((dir) => {
+          const file = path.join(dir, "lib.ts");
+          fs.writeFileSync(file, "function foo(a) { return a; }");
+          const jsonFile = path.join(dir, "types.json");
+          fs.writeFileSync(jsonFile, JSON.stringify([[file, 14, [["number", undefined]], {}]]));
+
+          expect(run("apply", jsonFile, "--comments").exitCode).toBe(0);
+          const after = fs.readFileSync(file, "utf-8");
+          expect(after).toContain("@ts-capture[proposal]: `a` would be `number`");
+          expect(after).not.toContain("a: number");
+        });
+      });
+
+      it("--both writes the annotation and the note", () => {
+        withTmpDir((dir) => {
+          const file = path.join(dir, "lib.ts");
+          fs.writeFileSync(file, "function foo(a) { return a; }");
+          const jsonFile = path.join(dir, "types.json");
+          fs.writeFileSync(jsonFile, JSON.stringify([[file, 14, [["number", undefined]], {}]]));
+
+          expect(run("apply", jsonFile, "--both").exitCode).toBe(0);
+          const after = fs.readFileSync(file, "utf-8");
+          expect(after).toContain("@ts-capture[applied]: `a` observed once");
+          expect(after).toContain("a: number");
+        });
+      });
+
+      // The explicit option is the one that wins: a flag is a shorthand for it,
+      // not a second source of truth.
+      it("--infer.outputMode overrides the shorthand", () => {
+        withTmpDir((dir) => {
+          const file = path.join(dir, "lib.ts");
+          fs.writeFileSync(file, "function foo(a) { return a; }");
+          const jsonFile = path.join(dir, "types.json");
+          fs.writeFileSync(jsonFile, JSON.stringify([[file, 14, [["number", undefined]], {}]]));
+
+          run("apply", jsonFile, "--comments", "--infer.outputMode=annotations");
+          const after = fs.readFileSync(file, "utf-8");
+          expect(after).toContain("a: number");
+          expect(after).not.toContain("@ts-capture");
+        });
+      });
+
+      // The preview writes the file but annotates nothing, so it is neither a
+      // dry run nor an apply — and the manifest had no third case. It claimed
+      // the types.json was applied, which closed the one workflow the mode
+      // exists for: look at the proposals, then take them.
+      it("a preview does not claim the types.json was applied", () => {
+        withTmpDir((dir) => {
+          const file = path.join(dir, "lib.ts");
+          fs.writeFileSync(file, "function foo(a) { return a; }");
+          const jsonFile = path.join(dir, "types.json");
+          fs.writeFileSync(jsonFile, JSON.stringify([[file, 14, [["number", undefined]], {}]]));
+
+          const preview = run("apply", jsonFile, "--infer.outputMode=comments");
+          expect(preview.exitCode).toBe(0);
+          expect(fs.readFileSync(file, "utf-8")).toContain("@ts-capture[proposal]");
+          expect(fs.existsSync(jsonFile + ".applied")).toBe(false);
+
+          // The point of the whole thing: the apply that follows lands.
+          const { exitCode } = run("apply", jsonFile);
+          expect(exitCode).toBe(0);
+          const after = fs.readFileSync(file, "utf-8");
+          expect(after).toContain("a: number");
+          expect(after).not.toContain("@ts-capture");
+        });
+      });
+
+      // A run that annotates nothing has nothing to short-circuit on a second
+      // pass either, and saying otherwise is the same untruth.
+      it("an apply that writes no annotation writes no manifest", () => {
+        withTmpDir((dir) => {
+          const file = path.join(dir, "lib.ts");
+          fs.writeFileSync(file, "const a = 1;\n");
+          const jsonFile = path.join(dir, "types.json");
+          // `number` is what TypeScript already infers — suppressed.
+          fs.writeFileSync(
+            jsonFile,
+            JSON.stringify([[file, 7, [["number", undefined]], { varDecl: true }]]),
+          );
+
+          const { exitCode } = run("apply", jsonFile);
+          expect(exitCode).toBe(0);
+          expect(fs.readFileSync(file, "utf-8")).toBe("const a = 1;\n");
+          expect(fs.existsSync(jsonFile + ".applied")).toBe(false);
         });
       });
 

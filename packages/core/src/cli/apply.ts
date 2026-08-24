@@ -64,8 +64,13 @@ function hashTypeInfoContent(jsonContent: string): string {
  * if it exists, deep-merge --infer.X.Y=value overrides on top, return the
  * fully resolved InferOptions object.
  */
-function resolveInferConfig(config: TsCaptureConfig, args: string[]) {
+function resolveInferConfig(config: TsCaptureConfig, args: string[], flags: Set<string>) {
   const cliOverrides = parseInferFlagOverrides(args);
+  // Shorthands for the mode most worth reaching for. `--infer.outputMode=` is
+  // the option; these are a way to find it. The explicit form wins, so a flag
+  // never becomes a second source of truth.
+  const shorthand = flags.has("--comments") ? "comments" : flags.has("--both") ? "both" : undefined;
+  if (shorthand && cliOverrides.outputMode === undefined) cliOverrides.outputMode = shorthand;
   const merged: TsCaptureConfig = {
     ...config,
     infer: { ...config.infer, ...cliOverrides },
@@ -92,6 +97,37 @@ function resolveInferConfig(config: TsCaptureConfig, args: string[]) {
 }
 
 /** `ts-capture apply <types.json> [--dry-run] [--include-tests] [--force] [--telemetry]`. */
+// Flags `apply` acts on. Unknown ones still run — a script sending a flag a
+// newer version understands should not stop — but `apply` rewrites source
+// files, and the flags that hold it back are exactly the ones a typo turns
+// off. `--comment` is not `--comments`, and the difference is a preview
+// against a rewrite. `--infer.*` is parsed separately and not listed here.
+const APPLY_FLAGS = [
+  "--dry-run",
+  "--comments",
+  "--both",
+  "--include-tests",
+  "--force",
+  "--telemetry",
+];
+
+/** The known flag a mistyped one is nearest to, when it is near enough to name. */
+function nearestFlag(given: string): string | undefined {
+  return APPLY_FLAGS.find((known) => known.startsWith(given) || given.startsWith(known));
+}
+
+function warnUnrecognisedFlags(flags: Set<string>): void {
+  for (const flag of flags) {
+    if (APPLY_FLAGS.includes(flag) || flag.startsWith("--infer.")) continue;
+    const near = nearestFlag(flag);
+    process.stderr.write(
+      `[ts-capture apply] unrecognised flag: ${flag}` +
+        (near ? ` — did you mean ${near}?` : "") +
+        `\n[ts-capture apply] apply rewrites source files; it is running without it.\n`,
+    );
+  }
+}
+
 export async function cmdApply(args: string[], flags: Set<string>) {
   const jsonPath = args.find((a) => !a.startsWith("-") && a !== "apply");
   if (!jsonPath) {
@@ -111,13 +147,17 @@ export async function cmdApply(args: string[], flags: Set<string>) {
   const configDir = configPath ? path.dirname(configPath) : process.cwd();
 
   // Resolve inference options: config + any --infer.X.Y=value CLI overrides.
-  let infer = resolveInferConfig(config, args);
+  let infer = resolveInferConfig(config, args, flags);
 
+  warnUnrecognisedFlags(flags);
   const dryRun = flags.has("--dry-run");
   const includeTests = flags.has("--include-tests");
   const force = flags.has("--force");
   const telemetryEnabled = flags.has("--telemetry");
-  const telemetry: ApplyTelemetry | undefined = telemetryEnabled ? newApplyTelemetry() : undefined;
+  // Always counted, printed only on request. `emitted` is what decides whether
+  // the manifest is written, and a counter is cheaper than the alternative:
+  // asking each applier afterwards what it did.
+  const telemetry: ApplyTelemetry = newApplyTelemetry();
 
   // Idempotency manifest: <types.json>.applied. Covers the
   // multi-entry case (the in-source pos-based check in applyTypesToFile
@@ -354,6 +394,16 @@ export async function cmdApply(args: string[], flags: Set<string>) {
     // Real (non-dry-run) apply: write the manifest so subsequent runs
     // with the same types.json short-circuit. Skip on --force so users
     // can repeatedly re-apply without leaving stale manifests.
+    //
+    // Only when an annotation was actually written. A preview writes the file
+    // but annotates nothing, so it is neither a dry run nor an apply, and the
+    // manifest had no third case: it claimed the types.json was applied and
+    // closed the one workflow the mode exists for — read the proposals, then
+    // take them. The same holds for a real apply every one of whose candidates
+    // was suppressed: there is nothing for a second pass to short-circuit, and
+    // saying otherwise is the same untruth.
+    if (telemetry.emitted === 0) return;
+
     const manifest: ApplyManifest = {
       version: 1,
       typeInfoHash: currentHash,
@@ -368,7 +418,7 @@ export async function cmdApply(args: string[], flags: Set<string>) {
     }
   }
 
-  if (telemetry) printTelemetrySummary(telemetry);
+  if (telemetryEnabled) printTelemetrySummary(telemetry);
 }
 
 function printTelemetrySummary(t: ApplyTelemetry): void {
