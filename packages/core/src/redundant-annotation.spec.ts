@@ -7,6 +7,7 @@ import {
   erasesEnum,
   erasesNamedType,
   isRedundantAnnotation,
+  observedBeyondInferred,
   widenedTypeString,
   writesOverCallSignature,
 } from "./redundant-annotation.js";
@@ -504,5 +505,72 @@ describe("discardsUnionArm", () => {
 
   it("returns false with no checker, so callers fall back", () => {
     expect(discardsUnionArm(undefined, undefined, "string")).toBe(false);
+  });
+});
+
+describe("observedBeyondInferred", () => {
+  // The run saw a value the position's own type says cannot occur. That is not
+  // ts-capture being wrong — it is evidence that the project's types are, and
+  // it is the one thing here worth telling the maintainer rather than fixing
+  // for them.
+  it("reports an arm the checker does not have", () => {
+    const source = "declare const s: string;\nconst a = s;";
+    const { checker, type } = typeOf(source, "a");
+    expect(observedBeyondInferred(checker, type, "string|undefined")).toEqual(["undefined"]);
+  });
+
+  // Only nullish arms. Comparing arms as text calls every difference a
+  // contradiction, and on nestjs/nest 427 of 437 such notes were the run
+  // knowing *less* — `Map<unknown, unknown>` against a real `Map<K, V>`, or
+  // `string` against the literal `"host"`. Those are what the other rules are
+  // for. Seeing `undefined` where the type says `string` is different in kind:
+  // it is a claim about reachability, and text settles it.
+  it("is silent about a payload arm the checker does not have", () => {
+    const source = "declare const s: string;\nconst a = s;";
+    const { checker, type } = typeOf(source, "a");
+    expect(observedBeyondInferred(checker, type, "string|{ foo: string }")).toBeNull();
+  });
+
+  it("is silent when the run merely reports a literal's base type", () => {
+    const source = 'declare const s: "host";\nconst a = s;';
+    const { checker, type } = typeOf(source, "a");
+    expect(observedBeyondInferred(checker, type, "string")).toBeNull();
+  });
+
+  it("is silent when only the type arguments differ", () => {
+    const source = "declare const m: Map<string, number>;\nconst a = m;";
+    const { checker, type } = typeOf(source, "a");
+    expect(observedBeyondInferred(checker, type, "Map<unknown, unknown>")).toBeNull();
+  });
+
+  it("is silent when the annotation matches", () => {
+    const source = "declare const s: string;\nconst a = s;";
+    const { checker, type } = typeOf(source, "a");
+    expect(observedBeyondInferred(checker, type, "string")).toBeNull();
+  });
+
+  // The mirror case belongs to `discardsUnionArm`, not here.
+  it("is silent when the annotation is narrower", () => {
+    const source = "declare const k: string | symbol;\nconst a = k;";
+    const { checker, type } = typeOf(source, "a");
+    expect(observedBeyondInferred(checker, type, "string")).toBeNull();
+  });
+
+  // `void` and `undefined` are the same claim about a value that isn't there.
+  // Without this, the very first run on nest reports a conflict nobody should
+  // act on.
+  it("treats void and undefined as the same claim", () => {
+    const source = "declare const u: undefined;\nconst a = u;";
+    const { checker, type } = typeOf(source, "a");
+    expect(observedBeyondInferred(checker, type, "void")).toBeNull();
+  });
+
+  it("is silent when the checker knows nothing", () => {
+    const { checker, type } = typeOf("function f(p) { return p; }\nf(1);", "p");
+    expect(observedBeyondInferred(checker, type, "string|undefined")).toBeNull();
+  });
+
+  it("returns null with no checker, so callers fall back", () => {
+    expect(observedBeyondInferred(undefined, undefined, "string")).toBeNull();
   });
 });

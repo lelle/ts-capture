@@ -239,6 +239,21 @@ export interface InferOptions {
    * fallback used by `getTypeName`.
    */
   maxAnnotationChars: number;
+
+  /**
+   * Leave a note in the source where the run observed a value the position's
+   * own type says cannot occur.
+   *
+   * The site gets no annotation: an `undefined` where TypeScript infers
+   * `string` is as likely a bug in the code as a wrong type, and writing
+   * `string | undefined` cements one reading of it. The note reports the
+   * finding and leaves the decision to a person.
+   *
+   * Apply owns these notes and rewrites them on every run — nothing else
+   * checks a comment, so a stale one would simply lie. Every whole line
+   * carrying `// @ts-capture:` is removed before the current set is written.
+   */
+  emitConflictComments: boolean;
 }
 
 export const INFER_DEFAULTS: InferOptions = {
@@ -270,6 +285,7 @@ export const INFER_DEFAULTS: InferOptions = {
   },
   emitDiagnosticComments: false,
   maxAnnotationChars: 4096,
+  emitConflictComments: true,
 };
 
 /**
@@ -403,6 +419,7 @@ function deepMergeInfer(
     },
     emitDiagnosticComments: overrides.emitDiagnosticComments ?? defaults.emitDiagnosticComments,
     maxAnnotationChars: overrides.maxAnnotationChars ?? defaults.maxAnnotationChars,
+    emitConflictComments: overrides.emitConflictComments ?? defaults.emitConflictComments,
   };
 }
 

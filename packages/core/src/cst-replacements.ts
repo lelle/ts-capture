@@ -10,6 +10,15 @@ import { buildDiagnosticMarkerSuffix } from "./apply-diagnostics.js";
 import { filterAcceptedReplacements, type VerificationContext } from "./apply-types-verify.js";
 import { carriesNoInformation, computeAnnotationTypeString } from "./compute-annotation.js";
 import {
+  conflictCommentText,
+  type ConflictNote,
+  isInsideTextRun,
+  lineStartAndIndent,
+  markerLineRanges,
+  parseForNoteSafety,
+  siteName,
+} from "./conflict-comment.js";
+import {
   hasConstAssertion,
   inferTypeFromInitializer,
   isSymbolCall,
@@ -23,6 +32,7 @@ import {
   erasesNamedType,
   inferredReturnType,
   isRedundantAnnotation,
+  observedBeyondInferred,
   typeAt,
   writesOverCallSignature,
 } from "./redundant-annotation.js";
@@ -56,6 +66,10 @@ export interface CstApplyContext {
   namedTypeIndex?: NamedTypeIndex;
   scopedTypeNames?: Set<string>;
   ctorArityMap?: Map<string, number>;
+  /** The file's text, for line starts and for finding apply's own notes. */
+  source?: string;
+  /** The file's name, which decides the dialect the note-safety parse uses. */
+  filename?: string;
 }
 
 /**
@@ -80,6 +94,8 @@ export function buildCstReplacements(
     scopedTypeNames,
     ctorArityMap,
     checkerIndex,
+    source,
+    filename,
   } = ctx;
 
   // Checker-backed redundancy oracle: is the annotation we are about to write
@@ -95,8 +111,47 @@ export function buildCstReplacements(
   const checker = checkerIndex ? program?.getTypeChecker() : undefined;
 
   const cstReplacements: Replacement[] = [];
+  // Contradictions between the run and the checker, grouped by the line they
+  // sit on: one line can hold several sites, and their notes stack above it.
+  const conflictNotes = new Map<number, { indent: string; notes: ConflictNote[] }>();
+
+  /**
+   * Record a contradiction and report that this site is spoken for. The site
+   * gets a note instead of an annotation — see `conflict-comment.ts` for why
+   * apply reports rather than fixes.
+   */
+  function noteConflict(
+    pos: number,
+    kind: "param" | "varDecl" | "returnType",
+    node: ts.Node | undefined,
+    inferred: ts.Type | undefined,
+    emitted: string,
+  ): boolean {
+    if (!infer.emitConflictComments || !checker || !node || source === undefined) return false;
+    const observed = observedBeyondInferred(checker, inferred, emitted);
+    if (!observed) return false;
+    const { lineStart, indent } = lineStartAndIndent(source, pos);
+    if (!canPlaceNoteAt(lineStart)) return false;
+    const bucket = conflictNotes.get(lineStart) ?? { indent, notes: [] };
+    bucket.notes.push({
+      name: siteName(kind, node, node.getSourceFile()),
+      observed,
+      inferred: checker.typeToString(inferred!, undefined, ts.TypeFormatFlags.NoTruncation),
+    });
+    conflictNotes.set(lineStart, bucket);
+    return true;
+  }
   // When verify is enabled, buffer annotation insertions here and decide
   // acceptance in a single batch pass at the end of the loop.
+  // Parsed once, and only when a note is actually about to be placed: a line
+  // start inside a template literal or JSX text is inside *text*, and a comment
+  // written there becomes part of it.
+  let noteSafetySf: ts.SourceFile | undefined;
+  function canPlaceNoteAt(lineStart: number): boolean {
+    if (source === undefined) return false;
+    noteSafetySf ??= parseForNoteSafety(filename, source);
+    return !isInsideTextRun(noteSafetySf, lineStart);
+  }
   const annotationCandidates: AnnotationCandidate[] = [];
 
   // Paren wraps for paren-less arrows (`x => …` needs `(x) => …` before an
@@ -186,6 +241,13 @@ export function buildCstReplacements(
       if (erasesNamedType(checker, inferredParam, emitted)) continue;
       if (erasesEnum(checker, inferredParam, emitted)) continue;
       if (discardsUnionArm(checker, inferredParam, emitted)) continue;
+      // Asked last. The rules above name the ways an annotation can differ
+      // because the run knows *less*; a contradiction is what is left when
+      // none of them explains the difference.
+      if (
+        noteConflict(pos, "param", checkerIndex?.paramSites.get(pos)?.node, inferredParam, emitted)
+      )
+        continue;
       if (
         infer.skipRedundantAnnotations &&
         isRedundantAnnotation(checker, inferredParam, emitted)
@@ -243,6 +305,7 @@ export function buildCstReplacements(
         checker,
         checkerIndex?.returnTypeSites.get(pos)?.node,
       );
+
       // `this` has no single value to write down. Any concrete type here —
       // however well observed — costs every subclass its own return type.
       if (carriesPolymorphicThis(checker, inferredReturn)) continue;
@@ -250,6 +313,16 @@ export function buildCstReplacements(
       if (erasesNamedType(checker, inferredReturn, emitted)) continue;
       if (erasesEnum(checker, inferredReturn, emitted)) continue;
       if (discardsUnionArm(checker, inferredReturn, emitted)) continue;
+      if (
+        noteConflict(
+          pos,
+          "returnType",
+          checkerIndex?.returnTypeSites.get(pos)?.node,
+          inferredReturn,
+          emitted,
+        )
+      )
+        continue;
       // Nothing to add when the checker already infers this return type from
       // the body.
       if (
@@ -301,6 +374,16 @@ export function buildCstReplacements(
       if (erasesNamedType(checker, inferredBinding, emitted)) continue;
       if (erasesEnum(checker, inferredBinding, emitted)) continue;
       if (discardsUnionArm(checker, inferredBinding, emitted)) continue;
+      if (
+        noteConflict(
+          pos,
+          "varDecl",
+          checkerIndex?.varDeclSites.get(pos)?.nameNode?.parent,
+          inferredBinding,
+          emitted,
+        )
+      )
+        continue;
       // Skip when TS would already infer the same type from the
       // initializer. Only fires when both `infer.skipRedundantAnnotations`
       // is on AND the initializer is a shape we can model exactly.
@@ -363,6 +446,18 @@ export function buildCstReplacements(
     if (!annotatedPositions.has(closePos)) continue;
     cstReplacements.push(Replacement.insert(openPos, "("));
     cstReplacements.push(Replacement.insert(closePos, ")", 0));
+  }
+
+  // Apply owns every note in the file: the ones it finds go, and the ones that
+  // hold now are written. Both are replacements against the original source, so
+  // removing and inserting cannot shift each other's offsets.
+  if (infer.emitConflictComments && source !== undefined) {
+    for (const [start, end] of markerLineRanges(source)) {
+      cstReplacements.push(Replacement.delete(start, end));
+    }
+    for (const [lineStart, { indent, notes }] of conflictNotes) {
+      cstReplacements.push(Replacement.insert(lineStart, conflictCommentText(notes, indent), -2));
+    }
   }
 
   return cstReplacements;

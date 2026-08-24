@@ -67,6 +67,15 @@ export interface ApplyTypesOptions extends CompilerOptions {
     index: CstSiteIndex;
     toOriginalPos: (pos: number) => number;
   };
+  /**
+   * Whether this pass owns removing ts-capture's own conflict notes.
+   *
+   * True when the offset applier is the entry point. False when the CST
+   * applier delegates its pass-through entries: it has already stripped, and
+   * the source handed over holds the notes it just wrote — stripping again
+   * would delete them.
+   */
+  stripConflictNotes?: boolean;
   prefix?: string;
   /** Inference behavior flags. Defaults match INFER_DEFAULTS (today's behavior). */
   infer?: InferOptions;

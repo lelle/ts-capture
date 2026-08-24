@@ -1154,6 +1154,132 @@ describe("applyTypesToFileCst — TypeChecker verify integration", () => {
     expect(applyTypesToFile(proj.targetSource, typeInfo, opts, program)).toBe(proj.targetSource);
   });
 
+  // The run saw a value the position's own type says cannot occur. Apply
+  // reports it and leaves the code alone: whether the right fix is to widen the
+  // type or to stop producing `undefined` is not something an observation can
+  // decide.
+  it("writes a note instead of an annotation when the run contradicts the checker", () => {
+    const proj = makeProject({
+      "target.ts":
+        "export function f(): string {\n" +
+        "  return 'x';\n" +
+        "}\n" +
+        "export function g() {\n" +
+        "  const p = f();\n" +
+        "  return p;\n" +
+        "}\n",
+    });
+    const program = createProjectVerificationContext(
+      proj.fileNames,
+      proj.compilerOptions,
+      proj.dir,
+    ).service.getProgram();
+    const pEnd = proj.targetSource.indexOf("const p") + "const p".length;
+    const typeInfo: CollectedTypeInfo = [
+      entry(proj.target, pEnd, [["string|undefined"]], { varDecl: true }),
+    ];
+    const result = applyTypesToFileCst(
+      proj.targetSource,
+      typeInfo,
+      { filename: proj.target },
+      program,
+    );
+    expect(result).toContain(
+      "  // @ts-capture: `p` observed `undefined`, TypeScript infers `string`\n  const p = f();",
+    );
+    expect(result).not.toContain("const p: string|undefined");
+  });
+
+  it("writes a note from the offset applier too, driven directly", () => {
+    const proj = makeProject({
+      "target.ts":
+        "export function f(): string {\n" +
+        "  return 'x';\n" +
+        "}\n" +
+        "export function g() {\n" +
+        "  const p = f();\n" +
+        "  return p;\n" +
+        "}\n",
+    });
+    const program = createProjectVerificationContext(
+      proj.fileNames,
+      proj.compilerOptions,
+      proj.dir,
+    ).service.getProgram();
+    const pEnd = proj.targetSource.indexOf("const p") + "const p".length;
+    const typeInfo: CollectedTypeInfo = [
+      entry(proj.target, pEnd, [["string|undefined"]], { varDecl: true }),
+    ];
+    const result = applyTypesToFile(
+      proj.targetSource,
+      typeInfo,
+      { filename: proj.target },
+      program,
+    );
+    expect(result).toContain(
+      "  // @ts-capture: `p` observed `undefined`, TypeScript infers `string`\n  const p = f();",
+    );
+    expect(result).not.toContain("const p: string|undefined");
+  });
+
+  // The CST applier hands its pass-through entries to the offset applier along
+  // with the source it has already rewritten — notes included. If the second
+  // pass stripped as well, it would delete what the first one just wrote.
+  it("does not strip the notes the CST pass just wrote", () => {
+    const proj = makeProject({
+      "target.ts":
+        "export function f(): string {\n" +
+        "  return 'x';\n" +
+        "}\n" +
+        "export function g() {\n" +
+        "  const p = f();\n" +
+        "  return p;\n" +
+        "}\n",
+    });
+    const program = createProjectVerificationContext(
+      proj.fileNames,
+      proj.compilerOptions,
+      proj.dir,
+    ).service.getProgram();
+    const pEnd = proj.targetSource.indexOf("const p") + "const p".length;
+    const typeInfo: CollectedTypeInfo = [
+      entry(proj.target, pEnd, [["string|undefined"]], { varDecl: true }),
+      // A pass-through entry: no CST site owns this offset, so it is handed to
+      // the offset applier in a second pass.
+      entry(proj.target, 1, [["string"]], {}),
+    ];
+    const result = applyTypesToFileCst(
+      proj.targetSource,
+      typeInfo,
+      { filename: proj.target },
+      program,
+    );
+    expect(result).toContain("// @ts-capture: `p` observed `undefined`");
+  });
+
+  it("removes a note whose conflict is gone", () => {
+    const proj = makeProject({
+      "target.ts":
+        "export function f(): string {\n" +
+        "  return 'x';\n" +
+        "}\n" +
+        "export function g() {\n" +
+        "  // @ts-capture: `p` observed `undefined`, TypeScript infers `string`\n" +
+        "  const p = f();\n" +
+        "  return p;\n" +
+        "}\n",
+    });
+    const program = createProjectVerificationContext(
+      proj.fileNames,
+      proj.compilerOptions,
+      proj.dir,
+    ).service.getProgram();
+    // No entry contradicts anything this time.
+    const result = applyTypesToFileCst(proj.targetSource, [], { filename: proj.target }, program);
+    expect(result).not.toContain("@ts-capture");
+    expect(result).toContain("const p = f();");
+  });
+
   // Found by the eval, not by the tests above: nest aliases `this` into a local
   // (`const self: Module = this`) so a class expression can close over it. The
   // checker types that binding `this` too, and writing the class name there

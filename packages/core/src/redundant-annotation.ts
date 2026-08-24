@@ -148,6 +148,57 @@ export function erasesNamedType(
 }
 
 /**
+ * What did the run see that the checker's type does not allow?
+ *
+ * The other rules here all ask whether the annotation is worth writing. This
+ * one asks the opposite question: the run observed a value the position's own
+ * type says cannot occur. That is not ts-capture being wrong — it is evidence
+ * that the project's types are, and on nestjs/nest it finds eight positions
+ * TypeScript infers as `string` where the code produced `undefined` during a
+ * real test run.
+ *
+ * Returns the nullish arms the run saw and the checker does not have, or null
+ * when there is nothing to report. The narrower mirror — an annotation that
+ * drops an arm — belongs to {@link discardsUnionArm}.
+ *
+ * **Nullish arms only, and the first run on nestjs/nest is why.** Comparing
+ * arms as text calls every difference a contradiction, and almost none of them
+ * are: 437 notes, of which 10 were real. `Map<unknown, unknown>` against
+ * `Map<InjectionToken, InstanceWrapper<unknown>>` is not the run seeing
+ * something impossible, it is the run seeing less (211 of those); `string`
+ * against `"host"` is the run reporting the widened base of a literal (152).
+ * Both are what the rules above this one already describe.
+ *
+ * Seeing `undefined` where the checker says the value is always a `string` is
+ * different in kind: it is a claim about *reachability* that the type forbids,
+ * and text is enough to establish it. Anything wider needs real assignability,
+ * which needs the emitted string resolved in the file's scope — the wall this
+ * was supposed to avoid.
+ *
+ * `void` and `undefined` are one claim about a value that is not there, and
+ * are treated as the same arm.
+ */
+export function observedBeyondInferred(
+  checker: ts.TypeChecker | undefined,
+  inferred: ts.Type | undefined,
+  emitted: string,
+): string[] | null {
+  if (!checker || !inferred) return null;
+  if (inferred.flags & (ts.TypeFlags.Any | ts.TypeFlags.Unknown)) return null;
+  const known = canonicalUnionArms(
+    checker.typeToString(inferred, undefined, ts.TypeFormatFlags.NoTruncation),
+  );
+  const written = canonicalUnionArms(emitted);
+  if (!known || !written) return null;
+  const settle = (arm: string): string => (arm === "void" ? "undefined" : arm);
+  const knownArms = new Set(known.map(settle));
+  const extra = written.filter((arm) => !knownArms.has(settle(arm)));
+  if (extra.length === 0) return null;
+  const nullish = (arm: string): boolean => arm === "undefined" || arm === "null";
+  return extra.every(nullish) ? extra : null;
+}
+
+/**
  * Would this annotation reject values the checker accepts?
  *
  * Every other rule here refuses an annotation that says *less* than TypeScript

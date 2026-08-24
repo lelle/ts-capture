@@ -9,6 +9,15 @@ import { filterAcceptedReplacements } from "./apply-types-verify.js";
 import { inferClassFieldTypes } from "./class-field-inference.js";
 import { carriesNoInformation, computeAnnotationTypeString } from "./compute-annotation.js";
 import { INFER_DEFAULTS } from "./configuration.js";
+import {
+  conflictCommentText,
+  type ConflictNote,
+  isInsideTextRun,
+  lineStartAndIndent,
+  markerLineRanges,
+  parseForNoteSafety,
+  siteName,
+} from "./conflict-comment.js";
 import { buildCstSiteIndex } from "./cst-site-index.js";
 import {
   buildInferableInfoMap,
@@ -30,6 +39,7 @@ import {
   erasesNamedType,
   inferredReturnType,
   isRedundantAnnotation,
+  observedBeyondInferred,
   typeAt,
   writesOverCallSignature,
 } from "./redundant-annotation.js";
@@ -65,6 +75,15 @@ export function applyTypesToFile(
   }
 
   const replacements: Replacement[] = [];
+  // Contradictions between the run and the checker, grouped by the line they
+  // sit on. See `conflict-comment.ts`.
+  const conflictNotes = new Map<number, { indent: string; notes: ConflictNote[] }>();
+  // See `canPlaceNoteAt` in cst-replacements.ts.
+  let noteSafetySf: ts.SourceFile | undefined;
+  function canPlaceNoteAt(lineStart: number): boolean {
+    noteSafetySf ??= parseForNoteSafety(options.filename, source);
+    return !isInsideTextRun(noteSafetySf, lineStart);
+  }
   const prefix = options.prefix ?? "";
   const infer = options.infer ?? INFER_DEFAULTS;
   const {
@@ -433,6 +452,9 @@ export function applyTypesToFile(
             checkerSites.index.varDeclSites.get(origPos)?.nameNode ??
               checkerSites.index.paramSites.get(origPos)?.node.name,
           );
+      // Asked before the suppression rules read, after them in effect: a
+      // contradiction is what is left when none of them explains the
+      // difference, so the check sits at the end of this block.
       // See `carriesPolymorphicThis`: a concrete type where the checker has
       // `this` costs every subclass its own type. Not just return types —
       // `const self = this` is inferred `this` as well.
@@ -442,6 +464,30 @@ export function applyTypesToFile(
       if (erasesNamedType(checker, inferred, emitted)) continue;
       if (erasesEnum(checker, inferred, emitted)) continue;
       if (discardsUnionArm(checker, inferred, emitted)) continue;
+
+      const observed = infer.emitConflictComments
+        ? observedBeyondInferred(checker, inferred, emitted)
+        : null;
+      if (observed) {
+        const site = opts?.returnType
+          ? checkerSites.index.returnTypeSites.get(origPos)?.node
+          : opts?.varDecl
+            ? checkerSites.index.varDeclSites.get(origPos)?.nameNode?.parent
+            : checkerSites.index.paramSites.get(origPos)?.node;
+        if (site) {
+          const kind = opts?.returnType ? "returnType" : opts?.varDecl ? "varDecl" : "param";
+          const { lineStart, indent } = lineStartAndIndent(source, pos);
+          if (!canPlaceNoteAt(lineStart)) break;
+          const bucket = conflictNotes.get(lineStart) ?? { indent, notes: [] };
+          bucket.notes.push({
+            name: siteName(kind, site, site.getSourceFile()),
+            observed,
+            inferred: checker.typeToString(inferred!, undefined, ts.TypeFormatFlags.NoTruncation),
+          });
+          conflictNotes.set(lineStart, bucket);
+          continue;
+        }
+      }
       if (infer.skipRedundantAnnotations && isRedundantAnnotation(checker, inferred, emitted)) {
         if (telemetry) telemetry.idempotent++;
         continue;
@@ -489,6 +535,19 @@ export function applyTypesToFile(
     if (telemetry) {
       // Candidates not in the accepted set were rejected by the oracle.
       telemetry.verifyReject += annotationCandidates.length - acceptedSet.size;
+    }
+  }
+
+  if (infer.emitConflictComments) {
+    // Only the entry point strips: when the CST applier delegates, the source
+    // handed over already carries the notes it wrote.
+    if (options.stripConflictNotes !== false) {
+      for (const [start, end] of markerLineRanges(source)) {
+        replacements.push(Replacement.delete(start, end));
+      }
+    }
+    for (const [lineStart, { indent, notes }] of conflictNotes) {
+      replacements.push(Replacement.insert(lineStart, conflictCommentText(notes, indent), -2));
     }
   }
 

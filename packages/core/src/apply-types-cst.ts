@@ -183,6 +183,8 @@ export function applyTypesToFileCst(
     scopedTypeNames,
     ctorArityMap,
     checkerIndex,
+    source,
+    filename: options.filename,
   });
 
   const afterCst = applyReplacements(source, cstReplacements);
@@ -263,6 +265,8 @@ export function applyTypesToFileCst(
           },
         }
       : {}),
+    // This pass already stripped, and `afterCst` holds the notes it wrote.
+    stripConflictNotes: false,
   };
   const result = applyTypesToFile(afterCst, rebasedPassThrough, innerOptions, program);
   if (telemetry && sub) {
