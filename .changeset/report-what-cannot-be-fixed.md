@@ -29,7 +29,8 @@ impossible, it is the run seeing less (211 of those); `string` against `"host"`
 is the run reporting the widened base of a literal (152). Both are what the
 suppression rules already describe. Seeing `undefined` where the checker says the
 value is always a `string` is different in kind: a claim about reachability that
-the type forbids, and text is enough to establish it.
+the type forbids, and text is enough to establish it. `void` and `undefined` are
+one claim about a value that is not there, and count as the same arm.
 
 **Both appliers write notes.** The offset-based applier serves pass-through
 entries even on the default path, so contradictions found there went unreported.

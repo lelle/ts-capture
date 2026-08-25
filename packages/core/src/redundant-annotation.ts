@@ -197,8 +197,11 @@ export function observedBeyondInferred(
   const knownArms = new Set(known.map(settle));
   const extra = written.filter((arm) => !knownArms.has(settle(arm)));
   if (extra.length === 0) return null;
+  // Settled here too: `settle` already folded `void` into `undefined` for the
+  // membership test, and an arm that survived it has to be judged in the same
+  // spelling it was compared in.
   const nullish = (arm: string): boolean => arm === "undefined" || arm === "null";
-  return extra.every(nullish) ? extra : null;
+  return extra.every((arm) => nullish(settle(arm))) ? extra : null;
 }
 
 /**
@@ -338,6 +341,40 @@ export function typeAt(
 ): ts.Type | undefined {
   if (!checker || !node) return undefined;
   return checker.getTypeAtLocation(node);
+}
+
+/**
+ * What the checker already thinks `this` is inside a function.
+ *
+ * Read off the first `this` in the body rather than the signature: an implicit
+ * `this` has no `thisParameter` symbol to ask, and the keyword is the only
+ * place the checker states its answer. In a class method that answer is the
+ * polymorphic `this`; in a loose function it is `any`, which is the hole
+ * ts-capture exists to fill and no rule should refuse.
+ *
+ * Undefined when the body never mentions `this` — there is then nothing the
+ * checker can be wrong about, and the site keeps its existing verdict.
+ */
+export function inferredThisType(
+  checker: ts.TypeChecker | undefined,
+  node: ts.SignatureDeclaration | undefined,
+): ts.Type | undefined {
+  if (!checker || !node) return undefined;
+  const body = (node as ts.FunctionLikeDeclaration).body;
+  if (!body) return undefined;
+  let found: ts.Node | undefined;
+  const walk = (n: ts.Node): void => {
+    if (found) return;
+    if (n.kind === ts.SyntaxKind.ThisKeyword) {
+      found = n;
+      return;
+    }
+    // A nested function rebinds `this`, so its body answers for itself.
+    if (ts.isFunctionDeclaration(n) || ts.isFunctionExpression(n) || ts.isClassLike(n)) return;
+    ts.forEachChild(n, walk);
+  };
+  ts.forEachChild(body, walk);
+  return found ? checker.getTypeAtLocation(found) : undefined;
 }
 
 /**

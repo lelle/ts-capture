@@ -519,6 +519,17 @@ describe("observedBeyondInferred", () => {
     expect(observedBeyondInferred(checker, type, "string|undefined")).toEqual(["undefined"]);
   });
 
+  // `void` and `undefined` are one claim about a value that is not there, and
+  // the arms are settled together for the membership test. The nullish test
+  // ran on the raw arm, so an emitted `void` was compared against a set that
+  // only ever holds `undefined` — the contradiction went unreported and the
+  // annotation was written instead.
+  it("treats an extra `void` arm as the absent value it is", () => {
+    const source = "declare const s: string;\nconst a = s;";
+    const { checker, type } = typeOf(source, "a");
+    expect(observedBeyondInferred(checker, type, "string|void")).toEqual(["void"]);
+  });
+
   // Only nullish arms. Comparing arms as text calls every difference a
   // contradiction, and on nestjs/nest 427 of 437 such notes were the run
   // knowing *less* — `Map<unknown, unknown>` against a real `Map<K, V>`, or
