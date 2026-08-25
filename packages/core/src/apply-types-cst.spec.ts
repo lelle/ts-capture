@@ -182,6 +182,36 @@ describe("applyTypesToFileCst — param annotations via AST lookup", () => {
     expect(cst).toContain("let x: number = 5");
   });
 
+  // The offsets in a types.json are pristine: they describe the source as it
+  // was when the run observed it, before any note a previous apply wrote above
+  // a line. Stripping those notes is what restores those coordinates, so a
+  // removal must NOT shift a pass-through entry — only the insertions this run
+  // makes do. `rebaseOffset` filters replacements down to insertions for that
+  // reason, and a rebase that also subtracted the removals would drop the
+  // annotation instead (the `--comments` → review → `apply` workflow is the
+  // path that has notes in the file to begin with).
+  it("a note left by a previous run does not move a pass-through offset", () => {
+    const pristine = "function f(a) {}\nexport function* gen() {}\n";
+    const aPos = pristine.indexOf("a)") + 1;
+    const genRet = pristine.indexOf("gen()") + "gen()".length;
+    // `a` is a CST site and inserts; a generator's return type is not indexed,
+    // so it routes to passThrough and its offset goes through the rebase.
+    const typeInfo: CollectedTypeInfo = [
+      entry("test.ts", aPos, [["string"]]),
+      entry("test.ts", genRet, [["Generator<number>"]], { returnType: true }),
+    ];
+    const expected = "function f(a: string) {}\nexport function* gen(): Generator<number> {}\n";
+    expect(applyTypesToFileCst(pristine, typeInfo, {})).toBe(expected);
+
+    // Same entries, same offsets — but a stale note now sits between the two
+    // sites, so the removal and the insertion straddle the pass-through entry.
+    const noted =
+      "function f(a) {}\n" +
+      "// @ts-capture[proposal]: `gen` return would be `Generator<number>`\n" +
+      "export function* gen() {}\n";
+    expect(applyTypesToFileCst(noted, typeInfo, {})).toBe(expected);
+  });
+
   it("mixed: varDecl BEFORE param in source — param pos unaffected by varDecl going first", () => {
     // varDecl is in passThrough; CST runs first (params), then offset-
     // based applies varDecl on the modified source. varDecl's pos was
