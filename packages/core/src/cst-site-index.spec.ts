@@ -84,8 +84,10 @@ describe("buildCstSiteIndex", () => {
       const src = "function f(a) {}";
       const idx = index(src);
       const paramsPos = src.indexOf("(") + 1;
-      expect(idx.thisTypeSites.get(paramsPos)).toEqual({ hasOtherParams: true });
-      expect(index("function g() {}").thisTypeSites.get(src.indexOf("(") + 1)).toEqual({
+      // `toMatchObject`, as the return-type sites above: the site also carries
+      // the function node, which the checker gate reads `this` off.
+      expect(idx.thisTypeSites.get(paramsPos)).toMatchObject({ hasOtherParams: true });
+      expect(index("function g() {}").thisTypeSites.get(src.indexOf("(") + 1)).toMatchObject({
         hasOtherParams: false,
       });
     });

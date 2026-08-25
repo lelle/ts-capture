@@ -33,7 +33,15 @@ export type ParamSite = {
 // the opening `(`). The transformer emits one of these when a function
 // body uses `this` implicitly and TS would otherwise complain. Apply
 // inserts `this: T` (or `this: T, ` if other params follow).
-export type ThisTypeSite = { hasOtherParams: boolean };
+export type ThisTypeSite = {
+  hasOtherParams: boolean;
+  /**
+   * The function the slot belongs to, so the checker can be asked what `this`
+   * already is here. Read lazily — `this` entries are rare, and finding the
+   * keyword costs a walk of the body.
+   */
+  node: ts.SignatureDeclaration;
+};
 
 // Return-type sites: indexed by the same pos the transformer emits
 // for returnType entries — `findCloseParenPos` in transformer.ts.
@@ -261,6 +269,7 @@ export function buildCstSiteIndex(
       // arrive simply don't trigger insertion.
       thisTypeSites.set(node.parameters.pos, {
         hasOtherParams: node.parameters.length > 0,
+        node: node as ts.SignatureDeclaration,
       });
     }
     if (ts.isVariableDeclaration(node) && ts.isIdentifier(node.name)) {

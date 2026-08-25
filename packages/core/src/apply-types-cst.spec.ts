@@ -662,6 +662,30 @@ describe("applyTypesToFileCst — TypeChecker verify integration", () => {
     expect(result).toBe('function g(): string {\n  return "x";\n}\nexport const v = g();\n');
   });
 
+  // The gate covered params, return types and bindings, and `this` sites got
+  // none of it — the one site kind whose whole subject is `this`. Inside a
+  // class method TypeScript already types `this` polymorphically, so writing
+  // the class the run happened to see is the exact trade the polymorphic-this
+  // rule exists to refuse: every subclass caller gets the base back.
+  it("drops a `this` annotation where the checker has polymorphic `this`", () => {
+    const src = "export class Builder {\n  x = 1;\n  run() {\n    return this.x;\n  }\n}\n";
+    const result = applyWithProgram({ "target.ts": src }, (source, target) => [
+      entry(target, source.indexOf("run(") + "run(".length, [["Builder"]], { thisType: true }),
+    ]);
+    expect(result).not.toContain("this: Builder");
+    expect(result).toBe(src);
+  });
+
+  // The mirror: a loose function has no polymorphic `this` to lose — the
+  // checker types it `any`, which is the hole ts-capture exists to fill.
+  it("keeps a `this` annotation the checker has nothing better for", () => {
+    const src = "export function greet() {\n  return this.text;\n}\n";
+    const result = applyWithProgram({ "target.ts": src }, (source, target) => [
+      entry(target, source.indexOf("greet(") + "greet(".length, [["Date"]], { thisType: true }),
+    ]);
+    expect(result).toContain("greet(this: Date)");
+  });
+
   it("drops a contextually typed Array.prototype callback param", () => {
     const result = applyWithProgram(
       {

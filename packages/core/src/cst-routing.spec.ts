@@ -70,7 +70,7 @@ describe("routeEntries", () => {
 
   it("routes thisType entries by thisTypeSites presence", () => {
     const idx = emptyIndex();
-    idx.thisTypeSites.set(10, { hasOtherParams: false });
+    idx.thisTypeSites.set(10, { hasOtherParams: false, node: {} as any });
     expect([...route([entry(10, { thisType: true })], idx).eligible.values()][0].kind).toBe(
       "thisType",
     );

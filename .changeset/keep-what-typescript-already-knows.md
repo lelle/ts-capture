@@ -15,7 +15,9 @@ subclass caller the base class back. Eight nest methods were annotated that way,
 all builders. It is refused wherever it hides: bare, in a union, as an array
 element, and inside a type argument — `Promise<this>` is the ordinary shape of an
 async fluent API, since a builder that awaits cannot return `this` bare. The same
-erasure in a binding, `const self = this`, is refused too.
+erasure in a binding, `const self = this`, is refused too — and in a `this:`
+parameter, where inside a class method the checker's own answer _is_ the
+polymorphic `this`.
 
 **No `Function` over a signature TypeScript has.** `Function` is a fair answer
 when the run saw a callable it could not describe; it says nothing about arity,

@@ -31,7 +31,12 @@ import {
 } from "./initializer-inference.js";
 import { type NamedTypeIndex, rewriteToNamedInScope } from "./named-type-rewrite.js";
 import { isParseableTypeString } from "./parseable.js";
-import { describeInferred, inferredReturnType, typeAt } from "./redundant-annotation.js";
+import {
+  describeInferred,
+  inferredReturnType,
+  inferredThisType,
+  typeAt,
+} from "./redundant-annotation.js";
 import { type AnnotationCandidate, Replacement } from "./replacement.js";
 import { allTypeRefsInScope, expandCtorArity } from "./scope-reachability.js";
 
@@ -74,6 +79,9 @@ export interface CstApplyContext {
  * annotation text is buffered and gated through a single batch verify pass when
  * `ctx.verify` is set.
  */
+/** The site kinds the checker gate is asked about. */
+type GateKind = SiteKind | "thisType";
+
 export function buildCstReplacements(
   eligible: Map<string, RoutedEntry>,
   index: CstSiteIndex,
@@ -143,9 +151,10 @@ export function buildCstReplacements(
   }
 
   /** The node the checker resolved for a site, by the index its kind lives in. */
-  function checkerNodeAt(kind: SiteKind, pos: number): ts.Node | undefined {
+  function checkerNodeAt(kind: GateKind, pos: number): ts.Node | undefined {
     if (kind === "param") return checkerIndex?.paramSites.get(pos)?.node;
     if (kind === "returnType") return checkerIndex?.returnTypeSites.get(pos)?.node;
+    if (kind === "thisType") return checkerIndex?.thisTypeSites.get(pos)?.node;
     return checkerIndex?.varDeclSites.get(pos)?.nameNode?.parent;
   }
 
@@ -159,13 +168,16 @@ export function buildCstReplacements(
    */
   function gateAllows(
     pos: number,
-    kind: SiteKind,
+    kind: GateKind,
     inferred: ts.Type | undefined,
     emitted: string,
   ): boolean {
     const verdict = checkerGate(checker, inferred, emitted, infer);
     if (verdict.kind === "contradiction") {
-      placeNote(pos, kind, checkerNodeAt(kind, pos), lastInferredString, verdict.observed);
+      // A `this` slot has no identifier to name, so its note is placed under
+      // the name `siteNameAt` gives it rather than a declaration's own.
+      const named = kind === "thisType" ? "param" : kind;
+      placeNote(pos, named, checkerNodeAt(kind, pos), lastInferredString, verdict.observed);
       return false;
     }
     if (verdict.kind === "redundant") {
@@ -346,6 +358,13 @@ export function buildCstReplacements(
       // Mirrors the offset-based path's opts.thisNeedsComma flag —
       // here read directly from the AST.
       const suffix = site.hasOtherParams ? ", " : "";
+      // `this` was the one site kind the gate never covered — and the only one
+      // whose whole subject is `this`. In a class method the checker already
+      // types it polymorphically, so writing the class the run saw costs every
+      // subclass its own.
+      const inferredThis = inferredThisType(checker, checkerIndex?.thisTypeSites.get(pos)?.node);
+      lastInferredString = describeInferred(checker, inferredThis);
+      if (!gateAllows(pos, "thisType", inferredThis, emitted)) continue;
       recordPreview(pos, "this", emitted, types.length);
       pushOrBufferAnnotation(pos, "this: " + prefix + emitted + markerSuffix + suffix);
     } else if (kind === "returnType") {
