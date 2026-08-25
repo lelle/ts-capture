@@ -139,6 +139,7 @@ export function buildCstReplacements(
     inferred: string | undefined,
     observed: string[],
   ): void {
+    if (!infer.emitConflictComments) return;
     if (!node || inferred === undefined || source === undefined) return;
     // No leading-line check here: `noteReplacements` is the one place that
     // knows whether this note ends up above the line or at the site, and only
@@ -481,7 +482,12 @@ export function buildCstReplacements(
   // Apply owns every note in the file: the ones it finds go, and the ones that
   // hold now are written. Both are replacements against the original source, so
   // removing and inserting cannot shift each other's offsets.
-  if (infer.emitConflictComments && source !== undefined) {
+  //
+  // Unconditional, because the marker namespace is apply's whichever flag put
+  // a note there. Gated on `emitConflictComments`, a run writing preview notes
+  // under `outputMode` with conflict notes off took nothing away and stacked a
+  // fresh copy above the line on every pass.
+  if (source !== undefined) {
     for (const [start, end] of markerLineRanges(source)) {
       cstReplacements.push(Replacement.delete(start, end));
     }

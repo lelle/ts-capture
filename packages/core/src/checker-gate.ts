@@ -63,10 +63,13 @@ export function checkerGate(
   if (erasesEnum(checker, inferred, emitted)) return SUPPRESS;
   if (discardsUnionArm(checker, inferred, emitted)) return SUPPRESS;
 
-  if (infer.emitConflictComments) {
-    const observed = observedBeyondInferred(checker, inferred, emitted);
-    if (observed) return { kind: "contradiction", observed };
-  }
+  // Asked unconditionally. Whether a note is *written* is a question about
+  // output, settled by the caller; whether the run contradicts the type is a
+  // question about types. Gating the second on the first meant that turning
+  // notes off stopped apply asking, and the site then fell through to the
+  // rules below and got the very annotation this verdict refuses.
+  const observed = observedBeyondInferred(checker, inferred, emitted);
+  if (observed) return { kind: "contradiction", observed };
 
   // Asking for redundant annotations is asking for restatement, not for
   // destruction — so this one rule waits on the flag and the rest do not.

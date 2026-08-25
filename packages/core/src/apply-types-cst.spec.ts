@@ -636,13 +636,14 @@ describe("applyTypesToFileCst — TypeChecker verify integration", () => {
   function applyWithProgram(
     files: Record<string, string>,
     typeInfoFor: (src: string, target: string) => CollectedTypeInfo,
+    infer?: Partial<typeof INFER_DEFAULTS>,
   ): string {
     const proj = makeProject(files);
     const program = ts.createProgram(proj.fileNames, proj.compilerOptions);
     return applyTypesToFileCst(
       proj.targetSource,
       typeInfoFor(proj.targetSource, proj.target),
-      { filename: proj.target },
+      { filename: proj.target, ...(infer ? { infer: { ...INFER_DEFAULTS, ...infer } } : {}) },
       program,
     );
   }
@@ -684,6 +685,49 @@ describe("applyTypesToFileCst — TypeChecker verify integration", () => {
       entry(target, source.indexOf("greet(") + "greet(".length, [["Date"]], { thisType: true }),
     ]);
     expect(result).toContain("greet(this: Date)");
+  });
+
+  // `emitConflictComments` is documented as a flag about *notes* — the site
+  // gets no annotation either way. It gated the question instead of the
+  // answer, so turning notes off stopped the gate asking, the site fell
+  // through to the rules below, and apply wrote the very annotation it had
+  // determined contradicts the project's own types. Quieting the output must
+  // not change the code.
+  it("suppresses a contradicted annotation even with notes turned off", () => {
+    const files = { "target.ts": "declare const s: string;\nexport const a = s;\n" };
+    const pos = (src: string): number => src.indexOf("const a") + "const a".length;
+    const info = (src: string, target: string): CollectedTypeInfo => [
+      entry(target, pos(src), [["string|undefined"]], { varDecl: true }),
+    ];
+
+    const withNotes = applyWithProgram(files, info);
+    expect(withNotes).toContain("@ts-capture[conflict]");
+    expect(withNotes).not.toContain("a: string|undefined");
+
+    const quiet = applyWithProgram(files, info, { emitConflictComments: false });
+    expect(quiet).not.toContain("@ts-capture");
+    expect(quiet).not.toContain("a: string|undefined");
+  });
+
+  // Apply owns every line carrying the marker: it removes the ones it finds
+  // and writes the ones that hold now. Removal was gated on
+  // `emitConflictComments` while preview notes are written on `outputMode`,
+  // so a supported combination wrote notes nothing ever took away — each run
+  // stacking a fresh copy above the line, forever.
+  it("rewrites its notes rather than stacking them, whatever gates them", () => {
+    const src = "function foo(a) { return a; }";
+    const typeInfo: CollectedTypeInfo = [entry("test.ts", src.indexOf("(a)") + 2, [["number"]])];
+    const markers = (text: string): number => (text.match(/@ts-capture/g) ?? []).length;
+
+    for (const emitConflictComments of [true, false]) {
+      const infer = { ...INFER_DEFAULTS, outputMode: "comments" as const, emitConflictComments };
+      let out = applyTypesToFileCst(src, typeInfo, { infer });
+      const first = markers(out);
+      expect(first).toBeGreaterThan(0);
+      out = applyTypesToFileCst(out, typeInfo, { infer });
+      out = applyTypesToFileCst(out, typeInfo, { infer });
+      expect(markers(out)).toBe(first);
+    }
   });
 
   it("drops a contextually typed Array.prototype callback param", () => {

@@ -494,7 +494,7 @@ export function applyTypesToFile(
           : opts?.varDecl
             ? checkerSites.index.varDeclSites.get(origPos)?.nameNode?.parent
             : checkerSites.index.paramSites.get(origPos)?.node;
-        if (site && lastInferredString !== undefined) {
+        if (infer.emitConflictComments && site && lastInferredString !== undefined) {
           // No leading-line check: `noteReplacements` is the one place that
           // knows whether this note goes above the line or at the site. The
           // site is settled either way — a contradiction apply cannot report
@@ -564,9 +564,10 @@ export function applyTypesToFile(
     }
   }
 
-  if (infer.emitConflictComments) {
+  {
     // Only the entry point strips: when the CST applier delegates, the source
-    // handed over already carries the notes it wrote.
+    // handed over already carries the notes it wrote. Unconditional otherwise —
+    // see the same step in `cst-replacements.ts`.
     if (options.stripConflictNotes !== false) {
       for (const [start, end] of markerLineRanges(source)) {
         replacements.push(Replacement.delete(start, end));

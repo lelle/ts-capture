@@ -249,9 +249,14 @@ export interface InferOptions {
    * `string | undefined` cements one reading of it. The note reports the
    * finding and leaves the decision to a person.
    *
+   * The flag governs the note, not the verdict. With it off the site is still
+   * left alone; apply simply says nothing about why. Quieting the output must
+   * not change the code.
+   *
    * Apply owns these notes and rewrites them on every run — nothing else
    * checks a comment, so a stale one would simply lie. Every whole line
-   * carrying `// @ts-capture:` is removed before the current set is written.
+   * carrying `// @ts-capture:` is removed before the current set is written,
+   * whichever flag put it there.
    */
   emitConflictComments: boolean;
 

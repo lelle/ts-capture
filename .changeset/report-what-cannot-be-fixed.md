@@ -45,5 +45,6 @@ parses in the dialect the file's extension implies: reading a `.ts` file as TSX
 takes `const f = <T>(v: T) => v;` for a JSX element and invents JsxText over
 ordinary code, which refused a real note on nest for a line inside nothing.
 
-Set `infer.emitConflictComments` to `false` to turn notes off. Like the other
+Set `infer.emitConflictComments` to `false` to turn notes off. The site is
+still left alone — the flag governs the note, not the verdict. Like the other
 checker-backed rules, they need a project.
