@@ -11,15 +11,18 @@ import { filterAcceptedReplacements, type VerificationContext } from "./apply-ty
 import { checkerGate } from "./checker-gate.js";
 import { carriesNoInformation, computeAnnotationTypeString } from "./compute-annotation.js";
 import {
+  addNote,
   type ConflictNote,
   isInsideTextRun,
-  lineStartAndIndent,
   markerLineRanges,
   markerSpanRanges,
+  type NoteBucket,
   noteReplacements,
   parseForNoteSafety,
   type PreviewNote,
+  type SiteKind,
   siteName,
+  siteNameAt,
 } from "./conflict-comment.js";
 import {
   hasConstAssertion,
@@ -106,15 +109,9 @@ export function buildCstReplacements(
   const cstReplacements: Replacement[] = [];
   // Contradictions between the run and the checker, grouped by the line they
   // sit on: one line can hold several sites, and their notes stack above it.
-  const conflictNotes = new Map<
-    number,
-    { indent: string; notes: Array<ConflictNote & { pos: number }> }
-  >();
+  const conflictNotes = new Map<number, NoteBucket<ConflictNote>>();
   // What apply would have written, for the preview modes.
-  const previewNotes = new Map<
-    number,
-    { indent: string; notes: Array<PreviewNote & { pos: number }> }
-  >();
+  const previewNotes = new Map<number, NoteBucket<PreviewNote>>();
   const pendingPreviews = new Map<number, PreviewNote>();
   // The checker's view at the site currently being decided, so the preview can
   // report it without every branch threading it through.
@@ -129,27 +126,63 @@ export function buildCstReplacements(
    */
   function placeNote(
     pos: number,
-    kind: "param" | "varDecl" | "returnType",
+    kind: SiteKind,
     node: ts.Node | undefined,
-    inferred: ts.Type | undefined,
+    inferred: string | undefined,
     observed: string[],
   ): void {
-    if (!checker || !node || source === undefined) return;
+    if (!node || inferred === undefined || source === undefined) return;
     // No leading-line check here: `noteReplacements` is the one place that
     // knows whether this note ends up above the line or at the site, and only
     // the first of those cares what the line starts inside.
-    const { lineStart, indent } = lineStartAndIndent(source, pos);
-    const bucket = conflictNotes.get(lineStart) ?? { indent, notes: [] };
-    bucket.notes.push({
-      pos,
+    addNote(conflictNotes, source, pos, {
       name: siteName(kind, node, node.getSourceFile()),
       observed,
-      inferred: checker.typeToString(inferred!, undefined, ts.TypeFormatFlags.NoTruncation),
+      inferred,
     });
-    conflictNotes.set(lineStart, bucket);
   }
-  // When verify is enabled, buffer annotation insertions here and decide
-  // acceptance in a single batch pass at the end of the loop.
+
+  /** The node the checker resolved for a site, by the index its kind lives in. */
+  function checkerNodeAt(kind: SiteKind, pos: number): ts.Node | undefined {
+    if (kind === "param") return checkerIndex?.paramSites.get(pos)?.node;
+    if (kind === "returnType") return checkerIndex?.returnTypeSites.get(pos)?.node;
+    return checkerIndex?.varDeclSites.get(pos)?.nameNode?.parent;
+  }
+
+  /**
+   * Ask the checker whether this annotation is worth writing, and act on the
+   * answer. False means the site is settled and the caller moves on.
+   *
+   * One place for the response, for the same reason `checker-gate.ts` gives for
+   * the rule order: the site kinds differ only in which index resolves the
+   * node, and a verdict acted on in one branch and not another is invisible.
+   */
+  function gateAllows(
+    pos: number,
+    kind: SiteKind,
+    inferred: ts.Type | undefined,
+    emitted: string,
+  ): boolean {
+    const verdict = checkerGate(checker, inferred, emitted, infer);
+    if (verdict.kind === "contradiction") {
+      placeNote(pos, kind, checkerNodeAt(kind, pos), lastInferredString, verdict.observed);
+      return false;
+    }
+    if (verdict.kind === "redundant") {
+      if (telemetry) telemetry.idempotent++;
+      return false;
+    }
+    return verdict.kind !== "suppress";
+  }
+
+  /**
+   * Re-check the FINAL string: `rewriteToNamedInScope` and `expandCtorArity`
+   * run after `computeAnnotationTypeString`, and arity expansion in particular
+   * turns a keepable bare `Container` into `Container<unknown>`, which
+   * describes no payload.
+   */
+  const describesNothing = (emitted: string): boolean =>
+    !infer.emitDiagnosticComments && carriesNoInformation(emitted);
   // Parsed once, and only when a note is actually about to be placed: a line
   // start inside a template literal or JSX text is inside *text*, and a comment
   // written there becomes part of it.
@@ -159,6 +192,8 @@ export function buildCstReplacements(
     noteSafetySf ??= parseForNoteSafety(filename, source);
     return !isInsideTextRun(noteSafetySf, lineStart);
   }
+  // When verify is enabled, buffer annotation insertions here and decide
+  // acceptance in a single batch pass at the end of the loop.
   const annotationCandidates: AnnotationCandidate[] = [];
 
   // Paren wraps for paren-less arrows (`x => …` needs `(x) => …` before an
@@ -182,15 +217,7 @@ export function buildCstReplacements(
   // Names come from the detached index, which exists whether or not a project
   // does — a note that cannot say which position it means is a note a reader
   // cannot follow.
-  const nameOf = (node: ts.Node | undefined, fallback: string): string =>
-    node ? siteName("param", node, node.getSourceFile()) : fallback;
-  const paramName = (pos: number): string => nameOf(paramSites.get(pos)?.node, "parameter");
-  const varDeclName = (pos: number): string =>
-    nameOf(varDeclSites.get(pos)?.nameNode?.parent, "binding");
-  const returnName = (pos: number): string => {
-    const node = index.returnTypeSites.get(pos)?.node;
-    return node ? siteName("returnType", node, node.getSourceFile()) : "return";
-  };
+  const nameAt = (kind: SiteKind, pos: number): string => siteNameAt(index, kind, pos, source);
 
   /**
    * Note what would be written here, pending acceptance.
@@ -217,10 +244,7 @@ export function buildCstReplacements(
   function settlePreview(pos: number): void {
     const note = pendingPreviews.get(pos);
     if (!note || source === undefined) return;
-    const { lineStart, indent } = lineStartAndIndent(source, pos);
-    const bucket = previewNotes.get(lineStart) ?? { indent, notes: [] };
-    bucket.notes.push({ ...note, pos });
-    previewNotes.set(lineStart, bucket);
+    addNote(previewNotes, source, pos, note);
   }
 
   function pushOrBufferAnnotation(pos: number, text: string, priority?: number): void {
@@ -286,31 +310,12 @@ export function buildCstReplacements(
       }
       // Parse-check — refuse to write an unparseable type.
       if (!isParseableTypeString(emitted)) continue;
-      // Re-check the FINAL string: `rewriteToNamedInScope` and
-      // `expandCtorArity` run after `computeAnnotationTypeString`, and arity
-      // expansion in particular turns a keepable bare `Container` into
-      // `Container<unknown>`, which describes no payload.
-      if (!infer.emitDiagnosticComments && carriesNoInformation(emitted)) continue;
+      if (describesNothing(emitted)) continue;
       // Nothing to add when the checker already types this parameter — a
       // contextually typed callback param, for instance.
       const inferredParam = typeAt(checker, checkerIndex?.paramSites.get(pos)?.node.name);
       lastInferredString = describeInferred(checker, inferredParam);
-      const paramVerdict = checkerGate(checker, inferredParam, emitted, infer);
-      if (paramVerdict.kind === "contradiction") {
-        placeNote(
-          pos,
-          "param",
-          checkerIndex?.paramSites.get(pos)?.node,
-          inferredParam,
-          paramVerdict.observed,
-        );
-        continue;
-      }
-      if (paramVerdict.kind === "redundant") {
-        if (telemetry) telemetry.idempotent++;
-        continue;
-      }
-      if (paramVerdict.kind === "suppress") continue;
+      if (!gateAllows(pos, "param", inferredParam, emitted)) continue;
       // Paren-less single-param arrow: wrap with `()` separately so the
       // annotation can be gated through verify independently. Wrap
       // pushes unconditionally — if verify rejects the annotation,
@@ -320,10 +325,10 @@ export function buildCstReplacements(
       // `(x: T) => body`. Mirrors the offset-based path.
       if (site.parensOpenPos !== undefined) {
         requestParenWrap(site.parensOpenPos, pos);
-        recordPreview(pos, paramName(pos), emitted, types.length);
+        recordPreview(pos, nameAt("param", pos), emitted, types.length);
         pushOrBufferAnnotation(pos, ": " + prefix + emitted + markerSuffix, 1);
       } else {
-        recordPreview(pos, paramName(pos), emitted, types.length);
+        recordPreview(pos, nameAt("param", pos), emitted, types.length);
         pushOrBufferAnnotation(pos, ": " + prefix + emitted + markerSuffix);
       }
     } else if (kind === "thisType") {
@@ -335,11 +340,7 @@ export function buildCstReplacements(
       if (!allTypeRefsInScope(emitted, scopedTypeNames)) continue;
       // Parse-check.
       if (!isParseableTypeString(emitted)) continue;
-      // Re-check the FINAL string: `rewriteToNamedInScope` and
-      // `expandCtorArity` run after `computeAnnotationTypeString`, and arity
-      // expansion in particular turns a keepable bare `Container` into
-      // `Container<unknown>`, which describes no payload.
-      if (!infer.emitDiagnosticComments && carriesNoInformation(emitted)) continue;
+      if (describesNothing(emitted)) continue;
       // When the function already has params, the apply needs a
       // separator between `this: T` and the first real param.
       // Mirrors the offset-based path's opts.thisNeedsComma flag —
@@ -368,22 +369,7 @@ export function buildCstReplacements(
 
       // `this` has no single value to write down. Any concrete type here —
       // however well observed — costs every subclass its own return type.
-      const returnVerdict = checkerGate(checker, inferredReturn, emitted, infer);
-      if (returnVerdict.kind === "contradiction") {
-        placeNote(
-          pos,
-          "returnType",
-          checkerIndex?.returnTypeSites.get(pos)?.node,
-          inferredReturn,
-          returnVerdict.observed,
-        );
-        continue;
-      }
-      if (returnVerdict.kind === "redundant") {
-        if (telemetry) telemetry.idempotent++;
-        continue;
-      }
-      if (returnVerdict.kind === "suppress") continue;
+      if (!gateAllows(pos, "returnType", inferredReturn, emitted)) continue;
       // Lower priority than param inserts so the priority-tied
       // collision case from the offset-based path (paren-less arrow:
       // both inserts at same pos) is handled the same way. In this
@@ -392,12 +378,8 @@ export function buildCstReplacements(
       // is purely defensive.
       // Parse-check.
       if (!isParseableTypeString(emitted)) continue;
-      // Re-check the FINAL string: `rewriteToNamedInScope` and
-      // `expandCtorArity` run after `computeAnnotationTypeString`, and arity
-      // expansion in particular turns a keepable bare `Container` into
-      // `Container<unknown>`, which describes no payload.
-      if (!infer.emitDiagnosticComments && carriesNoInformation(emitted)) continue;
-      recordPreview(pos, returnName(pos), emitted, types.length);
+      if (describesNothing(emitted)) continue;
+      recordPreview(pos, nameAt("returnType", pos), emitted, types.length);
       pushOrBufferAnnotation(pos, ": " + prefix + emitted + markerSuffix, -1);
     } else {
       // varDecl: user-written `as Type` / `<Type>` cast on RHS — defer
@@ -423,37 +405,18 @@ export function buildCstReplacements(
       // `const self = this` — the same erasure as on a return type, in a
       // binding. nest aliases `this` that way so a class expression can close
       // over it.
-      const bindingVerdict = checkerGate(checker, inferredBinding, emitted, infer);
-      if (bindingVerdict.kind === "contradiction") {
-        placeNote(
-          pos,
-          "varDecl",
-          checkerIndex?.varDeclSites.get(pos)?.nameNode?.parent,
-          inferredBinding,
-          bindingVerdict.observed,
-        );
-        continue;
-      }
       // The checker answers redundancy exactly and for every initializer shape.
       // The syntactic table below is the fallback for runs with no project
       // (`getProgram` returns undefined without a tsconfig).
-      if (bindingVerdict.kind === "redundant") {
-        if (telemetry) telemetry.idempotent++;
-        continue;
-      }
-      if (bindingVerdict.kind === "suppress") continue;
+      if (!gateAllows(pos, "varDecl", inferredBinding, emitted)) continue;
       if (infer.skipRedundantAnnotations && site.initializer) {
         const inferredFromSource = inferTypeFromInitializer(site.initializer, site.narrowsLiterals);
         if (inferredFromSource !== null && inferredFromSource === emitted) continue;
       }
       // Parse-check.
       if (!isParseableTypeString(emitted)) continue;
-      // Re-check the FINAL string: `rewriteToNamedInScope` and
-      // `expandCtorArity` run after `computeAnnotationTypeString`, and arity
-      // expansion in particular turns a keepable bare `Container` into
-      // `Container<unknown>`, which describes no payload.
-      if (!infer.emitDiagnosticComments && carriesNoInformation(emitted)) continue;
-      recordPreview(pos, varDeclName(pos), emitted, types.length);
+      if (describesNothing(emitted)) continue;
+      recordPreview(pos, nameAt("varDecl", pos), emitted, types.length);
       pushOrBufferAnnotation(pos, ": " + prefix + emitted + markerSuffix);
     }
   }

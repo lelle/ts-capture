@@ -126,6 +126,29 @@ const TS_CAPTURE_IGNORE_RE_CST = /@ts-capture-ignore\b/;
  * consulted only for `ignoreExistingTypes` (whether already-typed params are
  * still indexed).
  */
+/**
+ * A site index over the *Program's* SourceFile, keyed identically to one built
+ * from a detached parse — or undefined when the checker cannot be asked.
+ *
+ * Nodes reparsed from a source string do not belong to the Program, so the
+ * TypeChecker cannot answer questions about them; this index is what the
+ * checker-backed rules resolve positions in. Both files must hold the same
+ * text for the offsets to line up, which is why the guard is explicit: a stale
+ * on-disk file would resolve a site to the wrong node, and the checker would
+ * then answer about a position nobody asked about.
+ */
+export function buildCheckerSiteIndex(
+  program: ts.Program | undefined,
+  filename: string | undefined,
+  source: string,
+  infer: InferOptions,
+): CstSiteIndex | undefined {
+  if (!program || !filename) return undefined;
+  const programSf = program.getSourceFile(filename);
+  if (!programSf || programSf.text !== source) return undefined;
+  return buildCstSiteIndex(programSf, source, infer);
+}
+
 export function buildCstSiteIndex(
   sf: ts.SourceFile,
   source: string,

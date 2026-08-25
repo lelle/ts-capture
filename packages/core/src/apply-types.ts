@@ -11,18 +11,19 @@ import { inferClassFieldTypes } from "./class-field-inference.js";
 import { carriesNoInformation, computeAnnotationTypeString } from "./compute-annotation.js";
 import { INFER_DEFAULTS } from "./configuration.js";
 import {
+  addNote,
   type ConflictNote,
   isInsideTextRun,
-  lineStartAndIndent,
   markerLineRanges,
   markerSpanRanges,
   type NoteBucket,
   noteReplacements,
   parseForNoteSafety,
   type PreviewNote,
-  siteName,
+  type SiteKind,
+  siteNameAt,
 } from "./conflict-comment.js";
-import { buildCstSiteIndex } from "./cst-site-index.js";
+import { buildCheckerSiteIndex } from "./cst-site-index.js";
 import {
   buildInferableInfoMap,
   hasConstAssertion,
@@ -76,28 +77,17 @@ export function applyTypesToFile(
   const previewNotes = new Map<number, NoteBucket<PreviewNote>>();
   let lastInferredString: string | undefined;
   const pendingPreviews = new Map<number, PreviewNote>();
-  /**
-   * What to call the site in a note. Sites come from the checker index when
-   * there is one; without a project the note falls back to the kind, which is
-   * still enough to tell two positions on a line apart in order.
-   */
+  /** Which site kind an entry's options describe. */
+  function siteKindOf(opts: ExtraOptions | undefined): SiteKind | "thisType" {
+    if (opts?.thisType) return "thisType";
+    if (opts?.returnType) return "returnType";
+    return opts?.varDecl ? "varDecl" : "param";
+  }
+
+  /** What to call the site in a note, through the checker index when there is one. */
   function previewName(pos: number, opts: ExtraOptions | undefined): string {
-    const index = checkerSites?.index;
     const origPos = checkerSites ? checkerSites.toOriginalPos(pos) : pos;
-    if (opts?.thisType) return "this";
-    if (opts?.returnType) {
-      const node = index?.returnTypeSites.get(origPos)?.node;
-      return node ? siteName("returnType", node, node.getSourceFile()) : "return";
-    }
-    const node = opts?.varDecl
-      ? index?.varDeclSites.get(origPos)?.nameNode?.parent
-      : index?.paramSites.get(origPos)?.node;
-    if (node) return siteName(opts?.varDecl ? "varDecl" : "param", node, node.getSourceFile());
-    // No project, so no index — but a binding site is keyed on `name.end`, so
-    // the identifier is the run of name characters ending right here. Reading
-    // it back beats naming the note `binding`, which tells a reader nothing.
-    const identifier = /[A-Za-z_$][\w$]*$/.exec(source.slice(0, pos))?.[0];
-    return identifier ?? (opts?.varDecl ? "binding" : "parameter");
+    return siteNameAt(checkerSites?.index, siteKindOf(opts), origPos, source);
   }
 
   // See `canPlaceNoteAt` in cst-replacements.ts.
@@ -126,10 +116,7 @@ export function applyTypesToFile(
     // No check here: `noteReplacements` is the one place that knows whether
     // this note ends up above the line or at the site, and only the first of
     // those cares what the line starts inside.
-    const { lineStart, indent } = lineStartAndIndent(source, pos);
-    const bucket = previewNotes.get(lineStart) ?? { indent, notes: [] };
-    bucket.notes.push({ ...note, pos });
-    previewNotes.set(lineStart, bucket);
+    addNote(previewNotes, source, pos, note);
   }
   const prefix = options.prefix ?? "";
   const infer = options.infer ?? INFER_DEFAULTS;
@@ -234,17 +221,12 @@ export function applyTypesToFile(
   // either from the caller (the CST applier hands them over when delegating
   // pass-through entries, along with the inverse of its rebasing) or, when this
   // applier is driven directly, from the Program's own SourceFile.
+  const ownCheckerIndex = options.checkerSites
+    ? undefined
+    : buildCheckerSiteIndex(program, options.filename, source, infer);
   const checkerSites =
     options.checkerSites ??
-    (() => {
-      if (!program || !options.filename) return undefined;
-      const programSf = program.getSourceFile(options.filename);
-      if (!programSf || programSf.text !== source) return undefined;
-      return {
-        index: buildCstSiteIndex(programSf, source, infer),
-        toOriginalPos: (p: number) => p,
-      };
-    })();
+    (ownCheckerIndex ? { index: ownCheckerIndex, toOriginalPos: (p: number) => p } : undefined);
   const checker = checkerSites ? program?.getTypeChecker() : undefined;
 
   const telemetry = options.telemetry;
@@ -512,21 +494,16 @@ export function applyTypesToFile(
           : opts?.varDecl
             ? checkerSites.index.varDeclSites.get(origPos)?.nameNode?.parent
             : checkerSites.index.paramSites.get(origPos)?.node;
-        if (site) {
-          const kind = opts?.returnType ? "returnType" : opts?.varDecl ? "varDecl" : "param";
+        if (site && lastInferredString !== undefined) {
           // No leading-line check: `noteReplacements` is the one place that
           // knows whether this note goes above the line or at the site. The
           // site is settled either way — a contradiction apply cannot report
           // is still a contradiction.
-          const { lineStart, indent } = lineStartAndIndent(source, pos);
-          const bucket = conflictNotes.get(lineStart) ?? { indent, notes: [] };
-          bucket.notes.push({
-            pos,
-            name: siteName(kind, site, site.getSourceFile()),
+          addNote(conflictNotes, source, pos, {
+            name: previewName(pos, opts),
             observed: verdict.observed,
-            inferred: checker.typeToString(inferred!, undefined, ts.TypeFormatFlags.NoTruncation),
+            inferred: lastInferredString,
           });
-          conflictNotes.set(lineStart, bucket);
         }
         continue;
       }

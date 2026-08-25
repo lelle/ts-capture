@@ -401,45 +401,27 @@ export function resolveInferOptions(config: TsCaptureConfig): InferOptions {
   return deepMergeInfer(INFER_DEFAULTS, config.infer);
 }
 
+/** Drop keys explicitly set to `undefined`, so a spread cannot erase a default. */
+function definedOnly<T extends object>(value: T | undefined): Partial<T> {
+  if (!value) return {};
+  return Object.fromEntries(Object.entries(value).filter(([, v]) => v !== undefined)) as Partial<T>;
+}
+
 function deepMergeInfer(
   defaults: InferOptions,
   overrides: DeepPartial<InferOptions> | undefined,
 ): InferOptions {
   if (!overrides) return defaults;
+  // Field-by-field, a new option needs a line here or user config silently
+  // loses it — it reads as "the flag does nothing". Only the nested groups are
+  // named; every scalar merges by virtue of being one.
+  const { literal, narrowOptional, patternDetection, ...scalars } = overrides;
   return {
-    recursiveObjectMerge: overrides.recursiveObjectMerge ?? defaults.recursiveObjectMerge,
-    crossSampleArrayMerge: overrides.crossSampleArrayMerge ?? defaults.crossSampleArrayMerge,
-    rewriteCommonBase: overrides.rewriteCommonBase ?? defaults.rewriteCommonBase,
-    skipRedundantAnnotations:
-      overrides.skipRedundantAnnotations ?? defaults.skipRedundantAnnotations,
-    honorAsCasts: overrides.honorAsCasts ?? defaults.honorAsCasts,
-    preferNamedInScope: overrides.preferNamedInScope ?? defaults.preferNamedInScope,
-    requireTypeRefInScope: overrides.requireTypeRefInScope ?? defaults.requireTypeRefInScope,
-    cstAware: overrides.cstAware ?? defaults.cstAware,
-    typecheckVerify: overrides.typecheckVerify ?? defaults.typecheckVerify,
-    ignoreExistingTypes: overrides.ignoreExistingTypes ?? defaults.ignoreExistingTypes,
-    recognizeBuiltinShapes: overrides.recognizeBuiltinShapes ?? defaults.recognizeBuiltinShapes,
-    lubFallback: overrides.lubFallback ?? defaults.lubFallback,
-    literal: {
-      string: overrides.literal?.string ?? defaults.literal.string,
-      stringMaxLength: overrides.literal?.stringMaxLength ?? defaults.literal.stringMaxLength,
-      number: overrides.literal?.number ?? defaults.literal.number,
-      boolean: overrides.literal?.boolean ?? defaults.literal.boolean,
-    },
-    patternDetection: {
-      isoDate: overrides.patternDetection?.isoDate ?? defaults.patternDetection.isoDate,
-      uuid: overrides.patternDetection?.uuid ?? defaults.patternDetection.uuid,
-      url: overrides.patternDetection?.url ?? defaults.patternDetection.url,
-    },
-    narrowOptional: {
-      preferUndefinedOverNull:
-        overrides.narrowOptional?.preferUndefinedOverNull ??
-        defaults.narrowOptional.preferUndefinedOverNull,
-    },
-    emitDiagnosticComments: overrides.emitDiagnosticComments ?? defaults.emitDiagnosticComments,
-    maxAnnotationChars: overrides.maxAnnotationChars ?? defaults.maxAnnotationChars,
-    emitConflictComments: overrides.emitConflictComments ?? defaults.emitConflictComments,
-    outputMode: overrides.outputMode ?? defaults.outputMode,
+    ...defaults,
+    ...(definedOnly(scalars) as Partial<InferOptions>),
+    literal: { ...defaults.literal, ...definedOnly(literal) },
+    patternDetection: { ...defaults.patternDetection, ...definedOnly(patternDetection) },
+    narrowOptional: { ...defaults.narrowOptional, ...definedOnly(narrowOptional) },
   };
 }
 

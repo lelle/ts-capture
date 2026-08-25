@@ -251,17 +251,36 @@ function hasUnknownArrayField(t: string): boolean {
 }
 
 /**
- * Detect an inferred function-type whose params and return are all
- * `unknown` — the residue of observing a callback that was never invoked.
- * Matches:
- *   (arg: unknown) => unknown
- *   (a: unknown, b: unknown) => unknown
- *   (...args: unknown[]) => unknown
- *   (a: unknown, ...rest: unknown[]) => unknown
+ * Join observed types into a union, parenthesising function types.
  *
- * Excludes `() => unknown` (zero-param) because a callable shape with no
- * args may still carry semantic intent even when the return is unknown.
+ * `((a: T) => R) | string` and `(a: T) => R | string` are different types —
+ * the second is a function returning a union. Joining with a bare `|` emitted
+ * the second while meaning the first. Surfaced on nestjs/nest by the vacuity
+ * guard, which correctly read `(arg: unknown) => unknown|string` as a function
+ * returning `unknown`.
  */
+function joinUnion(types: readonly string[]): string {
+  if (types.length < 2) return types.join("|");
+  return types.map((t) => (isTopLevelFunctionType(t) ? `(${t})` : t)).join("|");
+}
+
+/** Does the type read as a function type at its top level? */
+function isTopLevelFunctionType(t: string): boolean {
+  // Every function and constructor type has an arrow. Checking for one first
+  // keeps the parse off the primitives and named types that make up almost
+  // every union arm.
+  if (!t.includes("=>")) return false;
+  const sf = ts.createSourceFile(
+    "__union_probe.ts",
+    `type __X = ${t};`,
+    ts.ScriptTarget.Latest,
+    /*setParentNodes*/ false,
+  );
+  const stmt = sf.statements[0];
+  if (!stmt || !ts.isTypeAliasDeclaration(stmt)) return false;
+  return ts.isFunctionTypeNode(stmt.type) || ts.isConstructorTypeNode(stmt.type);
+}
+
 /**
  * Does the annotation describe nothing?
  *
@@ -279,33 +298,6 @@ function hasUnknownArrayField(t: string): boolean {
  * (An earlier draft walked every token and treated `argsArray` in
  * `(...argsArray: unknown[]) => Promise<unknown>` as information.)
  */
-/**
- * Join observed types into a union, parenthesising function types.
- *
- * `((a: T) => R) | string` and `(a: T) => R | string` are different types —
- * the second is a function returning a union. Joining with a bare `|` emitted
- * the second while meaning the first. Surfaced on nestjs/nest by the vacuity
- * guard, which correctly read `(arg: unknown) => unknown|string` as a function
- * returning `unknown`.
- */
-function joinUnion(types: readonly string[]): string {
-  if (types.length < 2) return types.join("|");
-  return types.map((t) => (isTopLevelFunctionType(t) ? `(${t})` : t)).join("|");
-}
-
-/** Does the type read as a function type at its top level? */
-function isTopLevelFunctionType(t: string): boolean {
-  const sf = ts.createSourceFile(
-    "__union_probe.ts",
-    `type __X = ${t};`,
-    ts.ScriptTarget.Latest,
-    /*setParentNodes*/ false,
-  );
-  const stmt = sf.statements[0];
-  if (!stmt || !ts.isTypeAliasDeclaration(stmt)) return false;
-  return ts.isFunctionTypeNode(stmt.type) || ts.isConstructorTypeNode(stmt.type);
-}
-
 export function carriesNoInformation(t: string): boolean {
   const sf = ts.createSourceFile(
     "__vacuity_probe.ts",

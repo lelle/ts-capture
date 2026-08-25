@@ -8,7 +8,7 @@ import { applyTypesToFile } from "./apply-types.js";
 import { INFER_DEFAULTS } from "./configuration.js";
 import { buildCstReplacements } from "./cst-replacements.js";
 import { routeEntries } from "./cst-routing.js";
-import { buildCstSiteIndex } from "./cst-site-index.js";
+import { buildCheckerSiteIndex, buildCstSiteIndex } from "./cst-site-index.js";
 import { buildNamedTypeIndex, type NamedTypeIndex } from "./named-type-rewrite.js";
 import { applyReplacements } from "./replacement.js";
 import {
@@ -153,18 +153,9 @@ export function applyTypesToFileCst(
 
   const cstIndex = buildCstSiteIndex(sf, source, infer);
 
-  // A second index over the *Program's* SourceFile, keyed identically.
-  //
-  // `sf` above is a detached SourceFile parsed from `source`; its nodes do not
-  // belong to the Program, so the TypeChecker cannot answer questions about
-  // them. The checker-backed redundancy oracle therefore looks its nodes up
-  // here instead. Both files hold the same text, so offsets line up — guarded
-  // explicitly, since a stale on-disk file would silently misalign them.
-  const programSf = options.filename ? program?.getSourceFile(options.filename) : undefined;
-  const checkerIndex =
-    programSf && programSf.text === source
-      ? buildCstSiteIndex(programSf, source, infer)
-      : undefined;
+  // A second index over the *Program's* SourceFile, keyed identically: `sf`
+  // above is detached, and the checker cannot answer about its nodes.
+  const checkerIndex = buildCheckerSiteIndex(program, options.filename, source, infer);
   const telemetry = options.telemetry;
 
   // --- Route entries: AST-eligible vs pass-through ---

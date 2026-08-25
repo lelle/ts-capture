@@ -1,5 +1,7 @@
 import ts from "typescript";
 
+import type { CstSiteIndex } from "./cst-site-index.js";
+
 import { Replacement } from "./replacement.js";
 
 // Notes ts-capture leaves where the run contradicts the project's own types.
@@ -181,13 +183,6 @@ export function previewCommentText(
 
 /** The marker as it reads inside a block comment. */
 const INLINE_MARKER = "/* @ts-capture";
-const inline = (state: NoteState): string => `${INLINE_MARKER}[${state}]:`;
-
-/** A whole-line note, tagged or bare — but never `@ts-capture-ignore`. */
-const NOTE_LINE_RE = /^\/\/ @ts-capture(?:\[[a-z]+\])?:/;
-/** An inline note, tagged or bare. */
-const NOTE_SPAN_RE = /\/\* @ts-capture(?:\[[a-z]+\])?:/g;
-
 /**
  * A note that sits at the site instead of above it.
  *
@@ -198,6 +193,13 @@ const NOTE_SPAN_RE = /\/\* @ts-capture(?:\[[a-z]+\])?:/g;
  * type it introduces. At the site there is nothing to name, because the
  * position is the identifier.
  */
+const inline = (state: NoteState): string => `${INLINE_MARKER}[${state}]:`;
+
+/** A whole-line note, tagged or bare — but never `@ts-capture-ignore`. */
+const NOTE_LINE_RE = /^\/\/ @ts-capture(?:\[[a-z]+\])?:/;
+/** An inline note, tagged or bare. */
+const NOTE_SPAN_RE = /\/\* @ts-capture(?:\[[a-z]+\])?:/g;
+
 /** A note with the position it belongs to. */
 type Placed<T> = T & { pos: number };
 
@@ -205,6 +207,26 @@ type Placed<T> = T & { pos: number };
 export interface NoteBucket<T> {
   indent: string;
   notes: Array<Placed<T>>;
+}
+
+/**
+ * Add a note to the bucket for the line `pos` sits on, opening the bucket if
+ * this is the line's first note.
+ *
+ * Beside `noteReplacements` for the reason given there: both appliers place
+ * notes, and a placement rule that lives in one of them is a rule the other
+ * silently lacks.
+ */
+export function addNote<T extends object>(
+  buckets: Map<number, NoteBucket<T>>,
+  source: string,
+  pos: number,
+  note: T,
+): void {
+  const { lineStart, indent } = lineStartAndIndent(source, pos);
+  const bucket = buckets.get(lineStart) ?? { indent, notes: [] };
+  bucket.notes.push({ ...note, pos });
+  buckets.set(lineStart, bucket);
 }
 
 /**
@@ -340,6 +362,9 @@ export function markerLineRanges(source: string): Array<[number, number]> {
   return ranges;
 }
 
+/** The annotation-site kinds a note can name. */
+export type SiteKind = "param" | "varDecl" | "returnType";
+
 /**
  * What to call the site in the note.
  *
@@ -347,15 +372,42 @@ export function markerLineRanges(source: string): Array<[number, number]> {
  * follow — and one line can hold several sites, so `(req, res) => …` needs the
  * name even when only one of them disagrees.
  */
-export function siteName(
-  kind: "param" | "varDecl" | "returnType",
-  node: ts.Node,
-  sf: ts.SourceFile,
-): string {
+export function siteName(kind: SiteKind, node: ts.Node, sf: ts.SourceFile): string {
   if (kind === "returnType") {
     const named = node as ts.SignatureDeclaration & { name?: ts.Node };
     return named.name ? `${named.name.getText(sf)} return` : "return";
   }
   const declaration = node as ts.ParameterDeclaration | ts.VariableDeclaration;
   return declaration.name.getText(sf);
+}
+
+/**
+ * What to call the site at `pos`, resolved through an index keyed by position.
+ *
+ * One place for both appliers: they hold indices keyed identically, and a name
+ * that depends on which path routed the entry means the same site reads
+ * differently in two files.
+ */
+export function siteNameAt(
+  index: CstSiteIndex | undefined,
+  kind: SiteKind | "thisType",
+  pos: number,
+  source: string | undefined,
+): string {
+  if (kind === "thisType") return "this";
+  if (kind === "returnType") {
+    const node = index?.returnTypeSites.get(pos)?.node;
+    return node ? siteName(kind, node, node.getSourceFile()) : "return";
+  }
+  const node =
+    kind === "varDecl"
+      ? index?.varDeclSites.get(pos)?.nameNode?.parent
+      : index?.paramSites.get(pos)?.node;
+  if (node) return siteName(kind, node, node.getSourceFile());
+  // No index — but a site is keyed on `name.end`, so the identifier is the run
+  // of name characters ending right here. Reading it back beats naming the
+  // note `binding`, which tells a reader nothing.
+  const identifier =
+    source === undefined ? undefined : /[A-Za-z_$][\w$]*$/.exec(source.slice(0, pos))?.[0];
+  return identifier ?? (kind === "varDecl" ? "binding" : "parameter");
 }

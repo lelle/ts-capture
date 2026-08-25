@@ -93,7 +93,10 @@ export function carriesPolymorphicThis(
   depth = 0,
 ): boolean {
   if (!checker || !type || depth > 4) return false;
-  if (checker.typeToString(type) === "this") return true;
+  // A this-type is a type parameter. Testing the flag first keeps the printer
+  // off every other type: this is the first rule the gate asks, so a wide union
+  // of object types would otherwise be printed arm by arm to learn nothing.
+  if (type.flags & ts.TypeFlags.TypeParameter && checker.typeToString(type) === "this") return true;
   if (type.isUnion() || type.isIntersection()) {
     return type.types.some((t) => carriesPolymorphicThis(checker, t, depth + 1));
   }
@@ -253,16 +256,27 @@ export function erasesEnum(
   depth = 0,
 ): boolean {
   if (!checker || !inferred || depth > 4) return false;
-  const written = typeReferenceNames(emitted);
+  return erasesAnyOf(checker, inferred, typeReferenceNames(emitted), depth);
+}
+
+// `written` is the same set at every step, so it is parsed once by `erasesEnum`
+// and carried down rather than recomputed per union arm and per type argument.
+function erasesAnyOf(
+  checker: ts.TypeChecker,
+  inferred: ts.Type,
+  written: Set<string>,
+  depth: number,
+): boolean {
+  if (depth > 4) return false;
   if (!inferred.isUnion()) {
     // `Promise<Mode>` and `Mode[]` erase the same name the bare enum does.
     const args = typeArgumentsOf(checker, inferred);
-    if (args.some((arg) => erasesEnum(checker, arg, emitted, depth + 1))) return true;
+    if (args.some((arg) => erasesAnyOf(checker, arg, written, depth + 1))) return true;
   }
   const arms = inferred.isUnion() ? inferred.types : [inferred];
   return arms.some((arm) => {
     if (!(arm.flags & ts.TypeFlags.EnumLike)) {
-      return arm !== inferred && erasesEnum(checker, arm, emitted, depth + 1);
+      return arm !== inferred && erasesAnyOf(checker, arm, written, depth + 1);
     }
     const name = arm.aliasSymbol?.name ?? arm.getSymbol()?.name;
     // An enum literal's own symbol is the member (`Random`); the enum it
@@ -270,33 +284,6 @@ export function erasesEnum(
     const printed = checker.typeToString(arm).split(".")[0];
     return !written.has(printed) && (name === undefined || !written.has(name));
   });
-}
-
-/** Does this annotation name the untyped `Function` anywhere in it? */
-function namesFunctionType(emitted: string): boolean {
-  const sf = ts.createSourceFile(
-    "__function_probe.ts",
-    `type __X = ${emitted};`,
-    ts.ScriptTarget.Latest,
-    /*setParentNodes*/ false,
-  );
-  const stmt = sf.statements[0];
-  if (!stmt || !ts.isTypeAliasDeclaration(stmt)) return false;
-  let found = false;
-  const walk = (node: ts.Node): void => {
-    if (found) return;
-    if (
-      ts.isTypeReferenceNode(node) &&
-      ts.isIdentifier(node.typeName) &&
-      node.typeName.text === "Function"
-    ) {
-      found = true;
-      return;
-    }
-    ts.forEachChild(node, walk);
-  };
-  walk(stmt.type);
-  return found;
 }
 
 /** Is there a call signature anywhere in this type — in a union arm, or an element? */
@@ -331,7 +318,7 @@ export function writesOverCallSignature(
 ): boolean {
   if (!checker || !inferred) return false;
   if (inferred.flags & (ts.TypeFlags.Any | ts.TypeFlags.Unknown)) return false;
-  if (!namesFunctionType(emitted)) return false;
+  if (!typeReferenceNames(emitted).has("Function")) return false;
   return hasCallSignature(checker, inferred);
 }
 
