@@ -12,10 +12,13 @@ const USAGE = `ts-capture — automatically add TypeScript type annotations
 Usage:
   ts-capture instrument <file>  [--in-place]   Instrument a file with type tracking
   ts-capture apply <types.json> [--dry-run] [--comments|--both] [--include-tests] [--force]
+                                [--project <tsconfig.json>]
                                           Apply collected types to source files
                                           --dry-run        report what would change without writing
                                           --include-tests  apply to *.spec.* / *.test.* (default: skip)
                                           --force          bypass <types.json>.applied idempotency manifest
+                                          --project        the tsconfig to typecheck against, when the
+                                                           nearest one holds no files (a solution config)
                                           --comments       write what would be annotated as notes in the
                                                            source, changing no code — a preview in the editor
                                           --both           write the annotations and the notes explaining them

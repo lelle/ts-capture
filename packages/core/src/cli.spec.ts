@@ -287,6 +287,77 @@ describe("cli", () => {
       // still unannotated, so annotations that only conflict in combination
       // reached disk. Surfaced on nestjs/nest, where six type errors survived
       // a run with `typecheckVerify` on.
+      // A solution-style tsconfig — `files: []` plus `references` — is the
+      // standard shape for a TypeScript monorepo, and upward discovery finds
+      // it. It yields a Program with nothing in it, so every checker-backed
+      // rule turns off at once: on honojs/hono that took the same
+      // observations from 88 annotations to 1078 and broke a build that
+      // compiled before. Nothing said so; the only trace was two telemetry
+      // counters reading zero.
+      it("says so when the discovered tsconfig holds no files", () => {
+        withTmpDir((rawDir) => {
+          const dir = fs.realpathSync(rawDir);
+          fs.writeFileSync(
+            path.join(dir, "tsconfig.json"),
+            JSON.stringify({ files: [], references: [{ path: "./tsconfig.src.json" }] }),
+          );
+          const file = path.join(dir, "lib.ts");
+          fs.writeFileSync(file, "export function foo(a) { return a; }\n");
+          fs.writeFileSync(
+            path.join(dir, "types.json"),
+            JSON.stringify([[file, 20, [["number", null]], {}]]),
+          );
+
+          const { stderr } = runInDir(dir, "apply", "types.json");
+          expect(stderr).toMatch(/no files/i);
+          expect(stderr).toContain("--project");
+        });
+      });
+
+      // The escape hatch the warning names. Upward discovery cannot choose
+      // among a solution config's references — they carry different
+      // compilerOptions, and merging them would answer about a project nobody
+      // asked for — so the caller names the one that covers these files.
+      it("--project points apply at a tsconfig discovery cannot choose", () => {
+        withTmpDir((rawDir) => {
+          const dir = fs.realpathSync(rawDir);
+          const options = {
+            noImplicitAny: false,
+            target: "ES2022",
+            module: "ES2022",
+            moduleResolution: "Bundler",
+            skipLibCheck: true,
+            noEmit: true,
+          };
+          fs.writeFileSync(
+            path.join(dir, "tsconfig.json"),
+            JSON.stringify({ files: [], references: [{ path: "./tsconfig.src.json" }] }),
+          );
+          fs.writeFileSync(
+            path.join(dir, "tsconfig.src.json"),
+            JSON.stringify({ compilerOptions: options, include: ["**/*.ts"] }),
+          );
+          const file = path.join(dir, "lib.ts");
+          // `g()` returns a string and the checker knows it, so a redundant
+          // annotation here is dropped only when a Program is actually in hand.
+          fs.writeFileSync(
+            file,
+            'function g(): string {\n  return "x";\n}\nexport const v = g();\n',
+          );
+          const src = fs.readFileSync(file, "utf-8");
+          fs.writeFileSync(
+            path.join(dir, "types.json"),
+            JSON.stringify([
+              [file, src.indexOf("const v") + 7, [["string", null]], { varDecl: true }],
+            ]),
+          );
+
+          const { stderr } = runInDir(dir, "apply", "types.json", "--project", "tsconfig.src.json");
+          expect(stderr).not.toMatch(/no files/i);
+          expect(fs.readFileSync(file, "utf-8")).not.toContain("v: string");
+        });
+      });
+
       it("verify sees annotations already applied to earlier files", () => {
         withTmpDir((rawDir) => {
           // realpath: on macOS os.tmpdir() is a symlink (/var → /private/var).

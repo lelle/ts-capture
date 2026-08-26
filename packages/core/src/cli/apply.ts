@@ -109,6 +109,7 @@ const APPLY_FLAGS = [
   "--include-tests",
   "--force",
   "--telemetry",
+  "--project",
 ];
 
 /** The known flag a mistyped one is nearest to, when it is near enough to name. */
@@ -129,7 +130,12 @@ function warnUnrecognisedFlags(flags: Set<string>): void {
 }
 
 export async function cmdApply(args: string[], flags: Set<string>) {
-  const jsonPath = args.find((a) => !a.startsWith("-") && a !== "apply");
+  // Same spelling as `verify --project`. Read before the positional, so the
+  // path it carries is not mistaken for the types.json.
+  const projectArg =
+    args.find((a) => a.startsWith("--project="))?.slice("--project=".length) ??
+    (args.includes("--project") ? args[args.indexOf("--project") + 1] : undefined);
+  const jsonPath = args.find((a) => !a.startsWith("-") && a !== "apply" && a !== projectArg);
   if (!jsonPath) {
     process.stderr.write("Error: missing types.json argument\n");
     process.exit(1);
@@ -238,7 +244,11 @@ export async function cmdApply(args: string[], flags: Set<string>) {
   // members, and re-exports. When no tsconfig is found (CLI run from a
   // non-project dir), the appliers fall back to the text-level scope
   // check.
-  const tsConfigPath = findTsConfigUpward(process.cwd());
+  const tsConfigPath = projectArg ? path.resolve(projectArg) : findTsConfigUpward(process.cwd());
+  if (projectArg && !fs.existsSync(tsConfigPath!)) {
+    process.stderr.write(`Error: --project not found: ${tsConfigPath}\n`);
+    process.exit(1);
+  }
   let program: ts.Program | undefined;
   // Parsed tsconfig kept around when typecheckVerify is on — verify
   // needs fileNames + compilerOptions to build a LanguageService per file.
@@ -264,6 +274,27 @@ export async function cmdApply(args: string[], flags: Set<string>) {
         `[ts-capture apply] tsconfig discovery failed at ${tsConfigPath}: ${e instanceof Error ? e.message : String(e)} — falling back to text-level scope check.\n`,
       );
     }
+  }
+
+  // A solution-style config — `files: []` with `references` — is the standard
+  // shape for a TypeScript monorepo, and upward discovery finds it. It builds
+  // a Program with nothing in it, and every checker-backed rule then turns off
+  // at once: the redundancy oracle, the five suppression rules, the
+  // contradiction check. Apply keeps going on its syntactic guards alone,
+  // which is a defensible fallback but a terrible thing to do in silence — on
+  // honojs/hono it took the same observations from 88 annotations to 1078 and
+  // broke a build that compiled before.
+  //
+  // Which referenced project to use is not apply's to guess: they carry
+  // different compilerOptions, and answering from the wrong one is worse than
+  // not answering. So it names the problem and the flag that settles it.
+  if (tsConfigPath && program && program.getRootFileNames().length === 0) {
+    process.stderr.write(
+      `[ts-capture apply] ${tsConfigPath} holds no files — every check that needs a project is off, ` +
+        `and apply is running on its syntactic guards alone. ` +
+        `If this is a solution-style config, name the project that covers these sources: ` +
+        `--project <tsconfig.json>.\n`,
+    );
   }
 
   if (infer.typecheckVerify && !parsedTsConfig) {
