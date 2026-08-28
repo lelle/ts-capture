@@ -208,6 +208,31 @@ describe("apply-types-verify", () => {
     expect(wouldIntroduceErrors(ctx, probe)).toBe(true);
   });
 
+  it("accepts an annotation when an untyped site remains later in the file", () => {
+    const proj = makeProject({
+      "target.ts": [
+        "export function one(a) {",
+        "    return a;",
+        "}",
+        "",
+        "export function two(b) {",
+        "    return b;",
+        "}",
+        "",
+      ].join("\n"),
+    });
+    const sourceText = fs.readFileSync(proj.target, "utf-8");
+    const projectCtx = createProjectVerificationContext(
+      proj.fileNames,
+      proj.compilerOptions,
+      proj.dir,
+    );
+    const ctx = createVerificationContext(projectCtx, proj.target, sourceText);
+    const paramEnd = sourceText.indexOf("one(a)") + "one(a".length;
+    const probe = [{ start: paramEnd, end: paramEnd, text: ": number" }];
+    expect(wouldIntroduceErrors(ctx, probe)).toBe(false);
+  });
+
   it("graph is built once on project context, not per-target", () => {
     // Two target files in the same project — both should pull from
     // the same `reverseImportGraph` object on the project context,

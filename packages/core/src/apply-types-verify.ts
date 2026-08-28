@@ -310,7 +310,7 @@ export function wouldIntroduceErrors(
     // diagnostics; only the cross-file regressions need the broader
     // scan. Saves the (project-size − 1) per-file diagnostic calls in
     // the common case.
-    if (hasNewDiagnostic(service, ctx.filename, baselineDiagnostics)) {
+    if (hasNewDiagnostic(service, ctx.filename, baselineDiagnostics, replacements)) {
       return true;
     }
     // Per-probe cross-file scan limited to files that directly import
@@ -332,14 +332,20 @@ function hasNewDiagnostic(
   service: ts.LanguageService,
   file: string,
   baseline: Set<string>,
+  replacements?: ReadonlyArray<SpanReplacement>,
 ): boolean {
+  const isNew = (d: ts.Diagnostic): boolean => {
+    if (!replacements || d.start === undefined) return !baseline.has(diagnosticIdentity(d));
+    const start = sourceOffsetOfProbeOffset(d.start, replacements);
+    return start === undefined || !baseline.has(diagnosticIdentity(d, start));
+  };
   const semantic = service.getSemanticDiagnostics(file);
   for (const d of semantic) {
-    if (!baseline.has(diagnosticIdentity(d))) return true;
+    if (isNew(d)) return true;
   }
   const syntactic = service.getSyntacticDiagnostics(file);
   for (const d of syntactic) {
-    if (!baseline.has(diagnosticIdentity(d))) return true;
+    if (isNew(d)) return true;
   }
   return false;
 }
@@ -495,6 +501,25 @@ function collectCrossFileDiagnostics(
   return set;
 }
 
-function diagnosticIdentity(d: ts.Diagnostic): string {
-  return `${d.file?.fileName ?? ""}:${d.start ?? -1}:${d.code}`;
+function diagnosticIdentity(d: ts.Diagnostic, start: number = d.start ?? -1): string {
+  return `${d.file?.fileName ?? ""}:${start}:${d.code}`;
+}
+
+/**
+ * Map a probe diagnostic offset back to baseline coordinates, so an insertion
+ * does not give every diagnostic below it a new identity. `undefined` means the
+ * offset lies inside inserted text, which is new by construction.
+ */
+function sourceOffsetOfProbeOffset(
+  offset: number,
+  replacements: ReadonlyArray<SpanReplacement>,
+): number | undefined {
+  let shift = 0;
+  for (const r of [...replacements].sort((a, b) => a.start - b.start)) {
+    const probeStart = r.start + shift;
+    if (offset <= probeStart) return offset - shift;
+    if (offset < probeStart + r.text.length) return undefined;
+    shift += r.text.length - (r.end - r.start);
+  }
+  return offset - shift;
 }
