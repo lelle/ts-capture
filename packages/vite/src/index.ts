@@ -634,7 +634,17 @@ export function getCollectorSnippet(
     };
     window.addEventListener("beforeunload", __tscptr__report_unload);
     setInterval(__tscptr__report_periodic, 10000);
-    __tscptr__bump = function() {};
+    // Flush on the next macrotask: test-runner pages are torn down without
+    // beforeunload, often before the first tick. Any delay > 0 races that
+    // teardown. Coalesced, so a burst is one request.
+    var __tscptr__pending = null;
+    __tscptr__bump = function() {
+      if (__tscptr__pending !== null) clearTimeout(__tscptr__pending);
+      __tscptr__pending = setTimeout(function() {
+        __tscptr__pending = null;
+        __tscptr__report_periodic();
+      }, 0);
+    };
   } else if (IS_NODE) {
     // Per-PID JSON dump under TS_CAPTURE_TYPES_DIR (defaults to os.tmpdir()).
     // Vitest workers don't reliably reach process.on("exit"), so we flush

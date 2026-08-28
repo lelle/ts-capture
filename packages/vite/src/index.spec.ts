@@ -496,6 +496,8 @@ describe("tsCapturePlugin", () => {
             }
           : setInterval,
         clearInterval: clearInterval,
+        setTimeout: setTimeout,
+        clearTimeout: clearTimeout,
         navigator: opts.sendBeaconSpy
           ? { sendBeacon: opts.sendBeaconSpy }
           : { sendBeacon: () => {} },
@@ -588,6 +590,22 @@ describe("tsCapturePlugin", () => {
         else process.env.TS_CAPTURE_TYPES_DIR = prevDir;
         fs.rmSync(outDir, { recursive: true, force: true });
       }
+    });
+
+    it("browser path delivers a burst in one request without waiting for the ticker or an unload event", async () => {
+      const fetchCalls: Array<{ url: string; body: string }> = [];
+      const sandbox = evalSnippetWithEnv({
+        window: { addEventListener: () => {} },
+        processStub: null,
+        target: "browser",
+        captureIntervalFn: () => {},
+        fetchSpy: (url, init) => fetchCalls.push({ url, body: init.body }),
+      });
+      sandbox.__tscptr__("host", "SvelteKit", 0, "/Welcome.svelte__script.ts", "{}");
+      sandbox.__tscptr__("guest", "Vitest", 1, "/Welcome.svelte__script.ts", "{}");
+      await new Promise((resolve) => setTimeout(resolve, 400));
+      expect(fetchCalls.length).toBe(1);
+      expect(JSON.parse(fetchCalls[0].body)).toHaveLength(2);
     });
 
     it("pure browser (window present, process undefined): browser path wins (regression guard)", () => {
@@ -700,6 +718,8 @@ describe("tsCapturePlugin", () => {
           require: stubRequire,
           setInterval: setInterval,
           clearInterval: clearInterval,
+          setTimeout: () => 0,
+          clearTimeout: () => {},
           navigator: undefined,
           window: undefined,
         };
@@ -832,6 +852,8 @@ describe("tsCapturePlugin", () => {
           require: stubRequire,
           setInterval: setInterval,
           clearInterval: clearInterval,
+          setTimeout: () => 0,
+          clearTimeout: () => {},
           navigator: undefined,
           window: undefined,
         };
@@ -1256,6 +1278,8 @@ describe("tsCapturePlugin", () => {
           return 0;
         },
         clearInterval: () => {},
+        setTimeout: () => 0,
+        clearTimeout: () => {},
         navigator: {
           sendBeacon: (url: string, body: unknown) => beaconCalls.push({ url, body }),
         },
@@ -1393,6 +1417,8 @@ describe("tsCapturePlugin", () => {
           return 0;
         },
         clearInterval: () => {},
+        setTimeout: () => 0,
+        clearTimeout: () => {},
         navigator: { sendBeacon: () => {} },
         fetch: (url: string, init: { headers: Record<string, string> }) => {
           calls.push({ url, init });
