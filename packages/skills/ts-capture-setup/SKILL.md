@@ -44,6 +44,9 @@ Less direct:
 Required reads (in this order):
 
 1. `package.json` — `devDependencies`, `dependencies`, `scripts`.
+   Note the **vitest major** if present: the single-worker option was
+   renamed in Vitest 4, and the wrong one is ignored rather than
+   rejected (Step 3).
 2. `tsconfig.json` (and any `tsconfig.*.json`) — `module`,
    `moduleResolution`, `strict`, `experimentalDecorators`,
    `lib` includes.
@@ -78,6 +81,42 @@ even if a runner sits in front.
 | No test runner — dev server only (Vite)                    | `@ts-capture/vite`                        | Use the dev-server beacon path with `outputFile`. Make sure the user knows beacons fire only in `vite serve`, not `vite build` / Vitest.                                                                                                                                                                                                                                                       |
 | No build tool, plain `node script.ts`                      | `@ts-capture/core/preload`                | NODE_OPTIONS preload covers this directly.                                                                                                                                                                                                                                                                                                                                                     |
 
+**Where observations land — and why browser mode is different.**
+
+Every row above delivers the same way: per-process JSON dumps under
+`TS_CAPTURE_TYPES_DIR`, consolidated with `ts-capture merge`. Vitest
+**browser mode** (`test.browser.enabled`, e.g. the Playwright provider)
+does not — and it fails silently, which makes it the single most likely
+cause of a "the tests pass but there are no dumps" report on a modern
+Svelte / Vue / React project.
+
+A browser has no filesystem to dump to. The collector POSTs to the
+plugin's `/__ts-capture_collect` middleware instead, and that middleware
+**discards what it receives unless `outputFile` is set**. So
+`TS_CAPTURE_TYPES_DIR` has no effect there, `ls` finds nothing, and
+nothing warns:
+
+```
+src/vite.config.ts
++ tsCapturePlugin({ outputFile: "./ts-capture-browser.json" }),
+```
+
+Merge that file instead of a dump directory — or alongside one, since a
+project with both a node and a browser test project (a SvelteKit scaffold
+is exactly this) needs the plugin in both:
+
+```sh
+ts-capture merge ./ts-capture-browser.json --out types.json
+ts-capture merge ./.ts-capture ./ts-capture-browser.json --out types.json
+```
+
+Delivery is scheduled as observations arrive. On builds predating that,
+the browser collector only flushed on a 10-second ticker and on
+`beforeunload` — neither of which a test-runner page reaches — so a run
+shorter than ten seconds delivered nothing at all. If a browser-mode run
+produces an empty `outputFile`, check the installed version before
+re-reading the config.
+
 Edge cases that need a question, not a guess:
 
 - **Both Vitest and Jest** — monorepo with mixed runners. Ask which
@@ -102,16 +141,27 @@ src/vite.config.ts
   export default defineConfig({
 +   plugins: [tsCapturePlugin()],
     test: {
-+     pool: "forks",
-+     poolOptions: { forks: { singleFork: true } },
++     fileParallelism: false,
     },
   });
 ```
 
-Include the `pool: "forks"` + `singleFork: true` recommendation in
-the Vitest path — per ts-capture's EVALUATION docs, this is the
-cheapest large-effect mitigation for per-fork init overhead on
-non-trivial codebases (took the hono suite from "hangs" to 246s).
+Keep the suite in a single worker on the Vitest path — per ts-capture's
+EVALUATION docs, this is the cheapest large-effect mitigation for
+per-fork init overhead on non-trivial codebases (took the hono suite
+from "hangs" to 246s). **Which option to write depends on the vitest
+major read in Step 1:**
+
+| Vitest | Option                                                           |
+| ------ | ---------------------------------------------------------------- |
+| 4+     | `fileParallelism: false` (top-level under `test`)                |
+| 3      | `pool: "forks"` + `poolOptions: { forks: { singleFork: true } }` |
+
+Vitest 4 removed `poolOptions`; every pool option moved to the top
+level. The Vitest 3 form in a Vitest 4 config prints a deprecation
+warning and is otherwise ignored. The Vitest 4 form in a Vitest 3 config
+is ignored _silently_ — the worse of the two, and indistinguishable from
+the wiring failures this skill exists to catch. Read the version.
 
 If the user's Vitest config has `environment: "jsdom"` (or
 `"happy-dom"`) — common in SvelteKit, Vue, and React-Testing-Library
@@ -196,14 +246,28 @@ ts-capture merge ./.ts-capture --out types.json
 ts-capture apply types.json --dry-run   # preview before writing
 ```
 
+Under Vitest browser mode the first two lines don't apply — check the
+`outputFile` you configured in Step 2 instead:
+
+```sh
+npm test
+ls -l ./ts-capture-browser.json    # expect a non-empty JSON array
+ts-capture merge ./ts-capture-browser.json --out types.json
+```
+
 If `ls .ts-capture/` is empty after the test run, that's the failure
 mode this skill exists to catch — walk back through Step 2's adapter
 choice and Step 3's edits. Common causes:
 
+- Vitest browser mode: `TS_CAPTURE_TYPES_DIR` does not apply there. The
+  collector POSTs to the dev-server middleware, which drops the payload
+  unless `outputFile` is set. Check `test.browser.enabled` before
+  re-litigating the adapter choice — the adapter is right, the delivery
+  channel is the one that changed.
 - Vitest `pool: "threads"` + short workers: workers exit before the
-  observation flush ticker fires. Fix is `pool: "forks", singleFork: true`
-  (already in the planned Vitest edits) — verify the user didn't edit
-  it back.
+  observation flush ticker fires. Fix is the single-worker option for
+  the user's vitest major (Step 3) — verify the user didn't edit it
+  back.
 - Babel-plugin path: the runtime import in the setup file was
   forgotten or the setupFiles entry doesn't reference the right path.
 - Runtime-shim path: `NODE_OPTIONS` was overridden by another script
