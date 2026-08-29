@@ -17,3 +17,6 @@ types.json.applied
 # Local working notes — thinking-in-progress, not repo documentation.
 # Graduates into docs/, an issue, or nothing.
 local-docs/
+
+# Playwright MCP session artefacts
+.playwright-mcp/
