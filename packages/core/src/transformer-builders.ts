@@ -56,6 +56,28 @@ export function createTscptrCall(
   );
 }
 
+/**
+ * Like {@link createTscptrCall}, but reports an arbitrary expression. Used for
+ * a destructuring, which binds no single name; the label is display-only.
+ */
+export function createTscptrValueCall(
+  label: string,
+  value: ts.Expression,
+  fileOffset: number,
+  filename: string,
+  opts: ExtraOptions,
+): ts.ExpressionStatement {
+  return ts.factory.createExpressionStatement(
+    ts.factory.createCallExpression(ts.factory.createIdentifier("__tscptr__"), undefined, [
+      ts.factory.createStringLiteral(label),
+      value,
+      ts.factory.createNumericLiteral(fileOffset),
+      ts.factory.createStringLiteral(filename),
+      ts.factory.createStringLiteral(JSON.stringify(opts)),
+    ]),
+  );
+}
+
 export function createTrackCall(
   arg: ts.Expression,
   filename: string,

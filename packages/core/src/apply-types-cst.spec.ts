@@ -165,6 +165,17 @@ describe("applyTypesToFileCst — param annotations via AST lookup", () => {
     expect(cst).toContain("function foo(a: string)");
   });
 
+  it("annotates a destructured declaration", () => {
+    const source = "let { host, guest } = getProps();";
+    const pos = source.indexOf("} =") + 1;
+    const typeInfo: CollectedTypeInfo = [
+      entry("test.ts", pos, [["{ host: string, guest: string }"]], { varDecl: true }),
+    ];
+    const cst = applyTypesToFileCst(source, typeInfo, KEEP_INFERABLE);
+    expect(cst).toBe(applyTypesToFile(source, typeInfo, KEEP_INFERABLE));
+    expect(cst).toContain("let { host, guest }: { host: string, guest: string } = getProps()");
+  });
+
   it("mixed: param BEFORE varDecl in source — varDecl pos rebased correctly", () => {
     // Order matters for the rebase: when CST insertion is at a
     // smaller offset than the pass-through entry, the pass-through

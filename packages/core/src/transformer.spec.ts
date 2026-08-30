@@ -448,9 +448,12 @@ describe("transformer", () => {
       expect(result).not.toContain("__tscptr__.ret");
     });
 
-    it("skips destructuring declarations", () => {
+    it("tracks destructuring declarations after the statement", () => {
       const result = transform("const { a, b } = obj;", { skipTscptrDeclarations: true });
       expect(result).not.toContain("__tscptr__.ret");
+      // `}` of the pattern ends at 14 in `const { a, b } = obj;`
+      expect(result).toMatch(/__tscptr__\("\{ a, b \}", \{ a, b \}, 14,/);
+      expect(result).toContain('\\"varDecl\\":true');
     });
 
     it("includes varDecl flag in opts", () => {

@@ -34,7 +34,9 @@ const RUNES_AMBIENT_SOURCE = [
   "declare namespace $derived {",
   "  export function by<T>(fn: () => T): T;",
   "}",
-  "declare function $props<T = Record<string, any>>(): T;",
+  // Must match Svelte's bare `any`: a generic default reads as a named type,
+  // and the checker gate then silently suppresses every props annotation.
+  "declare function $props(): any;",
   "declare function $bindable<T>(fallback?: T): T;",
   "declare function $effect(fn: () => void | (() => void)): void;",
   "declare namespace $effect {",

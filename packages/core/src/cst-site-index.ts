@@ -71,8 +71,9 @@ export type ReturnTypeSite = {
 export type VarDeclSite = {
   hasType: boolean;
   /** The binding name, so the checker can be asked what it infers. Optional
-   * for the same reason as `ReturnTypeSite.node`. */
-  nameNode?: ts.Identifier;
+   * for the same reason as `ReturnTypeSite.node`. A pattern works too: the
+   * checker answers with the shape it bound. */
+  nameNode?: ts.Identifier | ts.ObjectBindingPattern;
   rhsIsFunction: boolean;
   initializer: ts.Expression | undefined;
   narrowsLiterals: boolean;
@@ -272,7 +273,10 @@ export function buildCstSiteIndex(
         node: node as ts.SignatureDeclaration,
       });
     }
-    if (ts.isVariableDeclaration(node) && ts.isIdentifier(node.name)) {
+    if (
+      ts.isVariableDeclaration(node) &&
+      (ts.isIdentifier(node.name) || ts.isObjectBindingPattern(node.name))
+    ) {
       const initializer = node.initializer;
       const list = node.parent;
       const isConst = ts.isVariableDeclarationList(list) && (list.flags & ts.NodeFlags.Const) !== 0;

@@ -120,6 +120,38 @@ describe("svelte apply typecheck-verify", () => {
     expect(verified).not.toMatch(/ctxVal\s*:\s*\{[^}]*plate/);
   });
 
+  it("annotates a destructured $props() declaration", () => {
+    const proj = makeProject({
+      "noop.ts": "export const noop = 0;\n",
+    });
+
+    const svelteFile = path.join(proj.dir, "Comp.svelte");
+    const scriptBody = "\nlet { host, guest } = $props()\n";
+    const svelteSource = `<script lang="ts">${scriptBody}</script>`;
+
+    const prefix = `${svelteFile}__script.ts`;
+    const patternEnd = scriptBody.indexOf("}") + 1;
+    const typeInfo: CollectedTypeInfo = [
+      [
+        prefix,
+        patternEnd,
+        [["{ host: string, guest: string }", undefined]],
+        { varDecl: true },
+      ],
+    ];
+
+    const projectVerify = createProjectVerificationContext(
+      proj.fileNames,
+      proj.compilerOptions,
+      proj.dir,
+    );
+    const verified = sveltePlugin().apply(svelteSource, typeInfo, {
+      filename: svelteFile,
+      projectVerify,
+    });
+    expect(verified).toMatch(/\{ host, guest \}\s*:\s*\{[^}]*host: string/);
+  });
+
   it("keeps a sound annotation while dropping an unsound one in the same block", () => {
     const proj = makeProject({
       "ctx.ts": [

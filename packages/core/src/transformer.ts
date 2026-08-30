@@ -9,6 +9,7 @@ import {
   createRetCall,
   createTrackCall,
   createTscptrCall,
+  createTscptrValueCall,
   getDeclarationStatements,
 } from "./transformer-builders.js";
 
@@ -286,6 +287,55 @@ function needsThisInstrumentation(
 
 // --- Main visitor ---
 
+/**
+ * Rebuild an object-binding pattern as an object literal. Null for a rest
+ * element or nested pattern: neither rebuilds the value the declaration saw.
+ */
+function reconstructBoundObject(
+  pattern: ts.ObjectBindingPattern,
+): ts.ObjectLiteralExpression | null {
+  const properties: ts.ObjectLiteralElementLike[] = [];
+  for (const element of pattern.elements) {
+    if (element.dotDotDotToken) return null;
+    if (!ts.isIdentifier(element.name)) return null;
+    properties.push(
+      element.propertyName
+        ? ts.factory.createPropertyAssignment(element.propertyName, element.name)
+        : ts.factory.createShorthandPropertyAssignment(element.name),
+    );
+  }
+  return properties.length > 0 ? ts.factory.createObjectLiteralExpression(properties) : null;
+}
+
+/**
+ * Observations for a statement's destructured declarations, emitted after it.
+ * Never wrapped: Svelte 5 requires a rune to stay the direct right-hand side.
+ * Object patterns only; an array literal observes as an array, not a tuple.
+ */
+function destructuringObservations(
+  statement: ts.VariableStatement,
+  source: ts.SourceFile,
+): ts.Statement[] {
+  const observations: ts.Statement[] = [];
+  for (const declaration of statement.declarationList.declarations) {
+    if (!declaration.initializer || declaration.type) continue;
+    if (!ts.isObjectBindingPattern(declaration.name)) continue;
+    const value = reconstructBoundObject(declaration.name);
+    if (!value) continue;
+    const site = findInstrumentationSite(declaration, "varDecl", source)!;
+    observations.push(
+      createTscptrValueCall(
+        declaration.name.getText(source),
+        value,
+        site.pos,
+        source.fileName,
+        site.opts,
+      ),
+    );
+  }
+  return observations;
+}
+
 function visitorFactory(
   ctx: ts.TransformationContext,
   source: ts.SourceFile,
@@ -523,6 +573,12 @@ function visitorFactory(
           createRetCall(node.initializer, site.pos, source.fileName, site.opts),
         );
       }
+    }
+
+    // The original node, because a synthesized one has no source offsets.
+    if (ts.isVariableStatement(node) && ts.isVariableStatement(originalNode)) {
+      const observations = destructuringObservations(originalNode, source);
+      if (observations.length > 0) return [node, ...observations];
     }
 
     // Class property instrumentation: name = expr → name = __tscptr__.ret(expr, pos, ...)
