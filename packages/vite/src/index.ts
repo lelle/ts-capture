@@ -260,6 +260,10 @@ export function tsCapturePlugin(options: TsCapturePluginOptions = {}): Plugin {
     },
 
     configureServer(server: ViteDevServer) {
+      // One dev server is one run: its first POST replaces outputFile, later
+      // ones (one per browser-mode page) add to it.
+      let outputFileOpened = false;
+
       server.middlewares.use((req: any, res: any, next: any) => {
         if (req.url !== "/__ts-capture_collect" || req.method !== "POST") {
           return next();
@@ -272,7 +276,11 @@ export function tsCapturePlugin(options: TsCapturePluginOptions = {}): Plugin {
             const typeInfo = JSON.parse(body) as CollectedTypeInfo;
 
             if (options.outputFile) {
-              fs.writeFileSync(options.outputFile, JSON.stringify(typeInfo, null, 2));
+              const collected = outputFileOpened
+                ? [...readCollectedTypeInfo(options.outputFile), ...typeInfo]
+                : typeInfo;
+              outputFileOpened = true;
+              fs.writeFileSync(options.outputFile, JSON.stringify(collected, null, 2));
             }
 
             if (options.apply) {
@@ -301,6 +309,19 @@ export function tsCapturePlugin(options: TsCapturePluginOptions = {}): Plugin {
       });
     },
   };
+}
+
+/**
+ * Observations already in the output file, or none if it is unreadable: an
+ * interrupted earlier write must not fail the collect request.
+ */
+function readCollectedTypeInfo(file: string): CollectedTypeInfo {
+  try {
+    const parsed: unknown = JSON.parse(fs.readFileSync(file, "utf-8"));
+    return Array.isArray(parsed) ? (parsed as CollectedTypeInfo) : [];
+  } catch {
+    return [];
+  }
 }
 
 // Exported for testing the collector snippet's runtime behavior in

@@ -947,6 +947,50 @@ describe("tsCapturePlugin", () => {
       expect(middlewares.length).toBeGreaterThan(0);
     });
 
+    it("accumulates observations from every page into outputFile", () => {
+      const dir = fs.mkdtempSync(path.join(os.tmpdir(), "ts-capture-outfile-"));
+      const outputFile = path.join(dir, "browser.json");
+      try {
+        const middleware = captureMiddleware(tsCapturePlugin({ outputFile }) as Plugin);
+        const post = (body: string): void => {
+          const req = makeReq("/__ts-capture_collect", "POST");
+          middleware(req, makeRes(), vi.fn());
+          feed(req, body);
+        };
+
+        post(JSON.stringify([["a.ts", 1, [["number", null]], {}]]));
+        post(JSON.stringify([["b.ts", 2, [["string", null]], {}]]));
+
+        const written = JSON.parse(fs.readFileSync(outputFile, "utf-8"));
+        expect(written.map((e: unknown[]) => e[0])).toEqual(["a.ts", "b.ts"]);
+      } finally {
+        fs.rmSync(dir, { recursive: true, force: true });
+      }
+    });
+
+    it("starts a fresh outputFile per server rather than growing forever", () => {
+      const dir = fs.mkdtempSync(path.join(os.tmpdir(), "ts-capture-outfile-"));
+      const outputFile = path.join(dir, "browser.json");
+      try {
+        const post = (middleware: Function, body: string): void => {
+          const req = makeReq("/__ts-capture_collect", "POST");
+          middleware(req, makeRes(), vi.fn());
+          feed(req, body);
+        };
+
+        const firstRun = captureMiddleware(tsCapturePlugin({ outputFile }) as Plugin);
+        post(firstRun, JSON.stringify([["stale.ts", 1, [["number", null]], {}]]));
+
+        const secondRun = captureMiddleware(tsCapturePlugin({ outputFile }) as Plugin);
+        post(secondRun, JSON.stringify([["fresh.ts", 2, [["string", null]], {}]]));
+
+        const written = JSON.parse(fs.readFileSync(outputFile, "utf-8"));
+        expect(written.map((e: unknown[]) => e[0])).toEqual(["fresh.ts"]);
+      } finally {
+        fs.rmSync(dir, { recursive: true, force: true });
+      }
+    });
+
     it("calls next() for non-target URL", () => {
       const middleware = captureMiddleware(tsCapturePlugin() as Plugin);
       const req = makeReq("/some-other-path", "POST");
