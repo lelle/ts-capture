@@ -74,25 +74,29 @@ function deparen(node: ts.TypeNode): ts.TypeNode {
   return current;
 }
 
-function render(node: ts.TypeNode): string {
+/** `faithful` keeps names and order, fixing only punctuation. */
+function render(node: ts.TypeNode, faithful = false): string {
   const n = deparen(node);
 
-  if (ts.isUnionTypeNode(n)) return renderList(n.types, " | ");
-  if (ts.isIntersectionTypeNode(n)) return renderList(n.types, " & ");
-  if (ts.isArrayTypeNode(n)) return `${atom(n.elementType)}[]`;
+  if (ts.isUnionTypeNode(n)) return renderList(n.types, " | ", faithful);
+  if (ts.isIntersectionTypeNode(n)) return renderList(n.types, " & ", faithful);
+  if (ts.isArrayTypeNode(n)) return `${atom(n.elementType, faithful)}[]`;
 
   if (ts.isTypeLiteralNode(n)) {
-    const members = n.members.map(renderMember).sort();
+    const members = n.members.map((m) => renderMember(m, faithful));
+    if (!faithful) members.sort();
     return members.length > 0 ? `{ ${members.join("; ")} }` : "{}";
   }
 
   if (ts.isTypeReferenceNode(n)) {
     const name = collapse(n.typeName.getText());
-    const args = n.typeArguments?.map(render);
+    const args = n.typeArguments?.map((t) => render(t, faithful));
     return args && args.length > 0 ? `${name}<${args.join(", ")}>` : name;
   }
 
-  if (ts.isTupleTypeNode(n)) return `[${n.elements.map(render).join(", ")}]`;
+  if (ts.isTupleTypeNode(n)) {
+    return `[${n.elements.map((t) => render(t, faithful)).join(", ")}]`;
+  }
 
   if (ts.isFunctionTypeNode(n)) {
     // A parameter's name is not part of the type: `(a: string) => void` and
@@ -104,33 +108,35 @@ function render(node: ts.TypeNode): string {
       .map((param, i) => {
         const rest = param.dotDotDotToken ? "..." : "";
         const optional = param.questionToken ? "?" : "";
-        const type = param.type ? render(param.type) : "any";
-        return `${rest}p${i}${optional}: ${type}`;
+        const type = param.type ? render(param.type, faithful) : "any";
+        const name = faithful ? collapse(param.name.getText()) : `p${i}`;
+        return `${rest}${name}${optional}: ${type}`;
       })
       .join(", ");
-    return `(${params}) => ${render(n.type)}`;
+    return `(${params}) => ${render(n.type, faithful)}`;
   }
 
   return collapse(n.getText());
 }
 
-/** Union and intersection members, deduped and in a fixed order. */
-function renderList(nodes: ts.NodeArray<ts.TypeNode>, separator: string): string {
-  return [...new Set(nodes.map(atom))].sort().join(separator);
+/** Union/intersection arms: sorted and deduped, or as written when `faithful`. */
+function renderList(nodes: ts.NodeArray<ts.TypeNode>, separator: string, faithful = false): string {
+  const arms = nodes.map((n) => atom(n, faithful));
+  return faithful ? arms.join(separator) : [...new Set(arms)].sort().join(separator);
 }
 
-function atom(node: ts.TypeNode): string {
+function atom(node: ts.TypeNode, faithful = false): string {
   const n = deparen(node);
-  return needsParens(n) ? `(${render(n)})` : render(n);
+  return needsParens(n) ? `(${render(n, faithful)})` : render(n, faithful);
 }
 
-function renderMember(member: ts.TypeElement): string {
+function renderMember(member: ts.TypeElement, faithful = false): string {
   if (!ts.isPropertySignature(member)) return collapse(member.getText());
   const readonly = member.modifiers?.some((m) => m.kind === ts.SyntaxKind.ReadonlyKeyword)
     ? "readonly "
     : "";
   const optional = member.questionToken ? "?" : "";
-  const type = member.type ? render(member.type) : "any";
+  const type = member.type ? render(member.type, faithful) : "any";
   return `${readonly}${propertyName(member.name)}${optional}: ${type}`;
 }
 
@@ -141,6 +147,18 @@ function renderMember(member: ts.TypeElement): string {
 export function canonicalTypeString(text: string): string | undefined {
   const node = parseType(text);
   return node ? render(node) : undefined;
+}
+
+/**
+ * A type-string in the punctuation TypeScript and formatters use, keeping
+ * parameter names and member/union order. Applied only where a type becomes
+ * text, so the gates upstream still compare the string they computed.
+ * Undefined when the text is not a type, or carries a note parsing would drop.
+ */
+export function typeStringForSource(text: string): string | undefined {
+  if (text.includes("/*")) return undefined;
+  const node = parseType(text);
+  return node ? render(node, /*faithful*/ true) : undefined;
 }
 
 /**

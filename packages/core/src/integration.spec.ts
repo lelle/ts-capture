@@ -203,7 +203,7 @@ commas('Lavender');
 commas(['Apples', 'Oranges']);`;
 
     const result = runPipeline(input);
-    expect(result).toContain("item: string|string[]");
+    expect(result).toContain("item: string | string[]");
   });
 
   it("handles optional parameters", () => {
@@ -296,7 +296,7 @@ describe("integration: return type inference", () => {
   it("infers union return type from multiple code paths", () => {
     const input = `function maybe(x) { if (x > 0) return x; return "negative"; }\nmaybe(5);\nmaybe(-1);`;
     const result = runPipeline(input)!;
-    expect(result).toContain("): number|string");
+    expect(result).toContain("): number | string");
   });
 
   it("does not annotate return type for functions with existing return type", () => {
@@ -536,7 +536,7 @@ describe("integration: edge cases from original", () => {
   it("infers object types with special keys", () => {
     const input = "function foo(obj) { return obj; }\n" + "foo({hello: 'world', 'foo-bar': 42});";
     const result = runPipeline(input)!;
-    expect(result).toContain('obj: { "foo-bar": number, hello: string }');
+    expect(result).toContain('obj: { "foo-bar": number; hello: string }');
   });
 
   it("does not crash on circular references", () => {
@@ -1034,7 +1034,7 @@ describe(new Dog());`;
       collector: { captureClassHierarchy: true },
       // apply uses defaults — rewriteCommonBase=false
     })!;
-    expect(result).toMatch(/pet:\s*Cat\|Dog/);
+    expect(result).toMatch(/pet:\s*Cat \| Dog/);
     expect(result).not.toContain("@sa:");
   });
 
@@ -1049,7 +1049,7 @@ describe(new Cat());
 describe(new Dog());`;
     // Both sides default — no change in behaviour expected.
     const result = runPipeline(input)!;
-    expect(result).toMatch(/pet:\s*Cat\|Dog/);
+    expect(result).toMatch(/pet:\s*Cat \| Dog/);
     expect(result).not.toContain("@sa:");
   });
 
@@ -1084,7 +1084,7 @@ inspect(new Daisy());`;
       collector: { captureClassHierarchy: true },
       apply: { infer: { ...INFER_DEFAULTS, rewriteCommonBase: true } },
     })!;
-    expect(result).toMatch(/thing:\s*Cat\|Daisy/);
+    expect(result).toMatch(/thing:\s*Cat \| Daisy/);
     expect(result).not.toContain("@sa:");
   });
 
@@ -1101,7 +1101,7 @@ tag("plain string");`;
       collector: { captureClassHierarchy: true },
       apply: { infer: { ...INFER_DEFAULTS, rewriteCommonBase: true } },
     })!;
-    expect(result).toMatch(/x:\s*Animal\|string/);
+    expect(result).toMatch(/x:\s*Animal \| string/);
     expect(result).not.toContain("@sa:");
   });
 });
@@ -1199,7 +1199,7 @@ function commas(item) {
 }
 commas('Lavender');
 commas(['Apples', 'Oranges']);`);
-    expect(result).toContain("item: string|string[]");
+    expect(result).toContain("item: string | string[]");
   });
 
   it("optional parameter", () => {

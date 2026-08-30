@@ -83,7 +83,7 @@ describe("applyTypesToFile", () => {
     const result = applyTypesToFile(source, typeInfo, {
       infer: { ...INFER_DEFAULTS, requireTypeRefInScope: false },
     });
-    expect(result).toBe("function foo(a: number|string) {}");
+    expect(result).toBe("function foo(a: number | string) {}");
   });
 
   it("deduplicates repeated type observations", () => {
@@ -94,7 +94,7 @@ describe("applyTypesToFile", () => {
     const result = applyTypesToFile(source, typeInfo, {
       infer: { ...INFER_DEFAULTS, requireTypeRefInScope: false },
     });
-    expect(result).toBe("function foo(a: number|string) {}");
+    expect(result).toBe("function foo(a: number | string) {}");
   });
 
   it("removes 'undefined' from optional parameter types", () => {
@@ -210,7 +210,7 @@ describe("merging object types for optional properties", () => {
     const result = applyTypesToFile(source, typeInfo, {
       infer: { ...INFER_DEFAULTS, requireTypeRefInScope: false },
     });
-    expect(result).toBe("function foo(a: { age?: number, name: string }) {}");
+    expect(result).toBe("function foo(a: { age?: number; name: string }) {}");
   });
 });
 
@@ -232,7 +232,7 @@ describe("discriminated union detection (applier wiring)", () => {
       infer: { ...INFER_DEFAULTS, requireTypeRefInScope: false },
     });
     expect(result).toBe(
-      "function foo(a: { items?: string[], kind: number | string, value?: number }) {}",
+      "function foo(a: { items?: string[]; kind: number | string; value?: number }) {}",
     );
   });
 
@@ -249,7 +249,7 @@ describe("discriminated union detection (applier wiring)", () => {
       },
     });
     expect(result).toBe(
-      'function foo(a: { kind: "a", value: number }|{ kind: "b", items: string[] }) {}',
+      'function foo(a: { kind: "a"; value: number } | { kind: "b"; items: string[] }) {}',
     );
   });
 
@@ -270,7 +270,7 @@ describe("discriminated union detection (applier wiring)", () => {
     const result = applyTypesToFile(source, typeInfo, {
       infer: { ...INFER_DEFAULTS, requireTypeRefInScope: false },
     });
-    expect(result).toBe("function foo(a: { a: string, b: number, c: boolean }) {}");
+    expect(result).toBe("function foo(a: { a: string; b: number; c: boolean }) {}");
   });
 
   it("sorts the final union when a cross-sample array merges beside a non-array", () => {
@@ -281,7 +281,7 @@ describe("discriminated union detection (applier wiring)", () => {
     const result = applyTypesToFile(source, typeInfo, {
       infer: { ...INFER_DEFAULTS, crossSampleArrayMerge: true },
     });
-    expect(result).toBe("function foo(a: Array<number | string>|boolean) {}");
+    expect(result).toBe("function foo(a: Array<number | string> | boolean) {}");
   });
 });
 
@@ -492,7 +492,7 @@ describe("applyTypesToFile — class field inference from constructor params", (
       infer: { ...INFER_DEFAULTS, requireTypeRefInScope: false },
     });
     // Expect a union of the two assignment sources
-    expect(result).toMatch(/^\s*value: number\|string;/m);
+    expect(result).toMatch(/^\s*value: number \| string;/m);
   });
 });
 
@@ -658,7 +658,7 @@ describe("applyTypesToFile — RewriteMostSpecificCommonBase (applier wiring)", 
     const result = applyTypesToFile(source, typeInfo, {
       infer: { ...INFER_DEFAULTS, requireTypeRefInScope: false },
     });
-    expect(result).toBe("function foo(a: Cat|Dog) {}");
+    expect(result).toBe("function foo(a: Cat | Dog) {}");
   });
 
   it("collapses a class union nested inside an object value position", () => {
@@ -710,7 +710,7 @@ describe("applyTypesToFile — skipRedundantAnnotations (applier wiring)", () =>
     const result = applyTypesToFile(source, typeInfo, {
       infer: { ...INFER_DEFAULTS, skipRedundantAnnotations: true },
     });
-    expect(result).toBe("let x: number|string = 5;");
+    expect(result).toBe("let x: number | string = 5;");
   });
 
   it("ON — class field `x = 5` skips the redundant `: number`", () => {
@@ -938,7 +938,7 @@ describe("applyTypesToFile — preferNamedInScope cross-file (applier wiring)", 
     const result = applyTypesToFile(source, typeInfo, {
       infer: { ...INFER_DEFAULTS, preferNamedInScope: true, cstAware: false },
     });
-    expect(result).toContain("function subscribe(s: { activeCustomer: string, uniqueId: string })");
+    expect(result).toContain("function subscribe(s: { activeCustomer: string; uniqueId: string })");
   });
 });
 
@@ -1703,7 +1703,7 @@ describe("cartesian-product collapse inside Array<...> (applier wiring)", () => 
     // a and b should both end up as null|number, not as 4-way object union.
     // Accept both `{...}[]` and `Array<{...}>` forms and `|` vs ` | ` spacing.
     expect(result).toMatch(
-      /let xs: (?:\{ a: null ?\| ?number, b: null ?\| ?number \}\[\]|Array<\{ a: null ?\| ?number, b: null ?\| ?number \}>)/,
+      /let xs: (?:\{ a: null ?\| ?number; b: null ?\| ?number \}\[\]|Array<\{ a: null ?\| ?number; b: null ?\| ?number \}>)/,
     );
   });
 });
@@ -1965,7 +1965,7 @@ describe("extension: skip outer varDecl annotation when RHS is an object of meth
     const result = applyTypesToFile(source, typeInfo, {
       infer: { ...INFER_DEFAULTS, requireTypeRefInScope: false },
     });
-    expect(result).toContain("const config: { url: string, timeout: number } = ");
+    expect(result).toContain("const config: { url: string; timeout: number } = ");
   });
 
   // `emittedHasUselessArrowMethod` was removed — the real
@@ -1993,7 +1993,7 @@ describe("extension: skip outer varDecl annotation when RHS is an object of meth
       infer: { ...INFER_DEFAULTS, requireTypeRefInScope: false },
     });
     expect(result).toContain(
-      "const result: { score: number, label: string, format: (n: number) => string } = ",
+      "const result: { score: number; label: string; format: (n: number) => string } = ",
     );
   });
 
@@ -2063,7 +2063,7 @@ describe("extension: skip outer varDecl annotation when RHS is an object of meth
     const result = applyTypesToFile(source, typeInfo, {
       infer: { ...INFER_DEFAULTS, requireTypeRefInScope: false },
     });
-    expect(result).toContain(": Promise<{ id: number, name: string }>");
+    expect(result).toContain(": Promise<{ id: number; name: string }>");
   });
 
   // The spread-RHS detection and the shorthand-method variant were removed
@@ -2103,7 +2103,7 @@ describe("irDedupUnion fn-paren at apply boundary", () => {
     });
     // Expected: fn wrapped in parens before the `|`.
     expect(result).toContain("((a: string) => number)");
-    expect(result).not.toMatch(/=> number\|string/);
+    expect(result).not.toMatch(/=> number \| string/);
   });
 });
 

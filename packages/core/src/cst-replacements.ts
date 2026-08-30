@@ -39,6 +39,7 @@ import {
 } from "./redundant-annotation.js";
 import { type AnnotationCandidate, Replacement } from "./replacement.js";
 import { allTypeRefsInScope, expandCtorArity } from "./scope-reachability.js";
+import { typeStringForSource } from "./type-canonical.js";
 
 // Replacement-building for the AST-aware applier. Turns
 // the routed CST-eligible entries into a list of `Replacement`s, running each
@@ -339,10 +340,17 @@ export function buildCstReplacements(
       if (site.parensOpenPos !== undefined) {
         requestParenWrap(site.parensOpenPos, pos);
         recordPreview(pos, nameAt("param", pos), emitted, types.length);
-        pushOrBufferAnnotation(pos, ": " + prefix + emitted + markerSuffix, 1);
+        pushOrBufferAnnotation(
+          pos,
+          ": " + prefix + (typeStringForSource(emitted) ?? emitted) + markerSuffix,
+          1,
+        );
       } else {
         recordPreview(pos, nameAt("param", pos), emitted, types.length);
-        pushOrBufferAnnotation(pos, ": " + prefix + emitted + markerSuffix);
+        pushOrBufferAnnotation(
+          pos,
+          ": " + prefix + (typeStringForSource(emitted) ?? emitted) + markerSuffix,
+        );
       }
     } else if (kind === "thisType") {
       const site = thisTypeSites.get(pos)!;
@@ -367,7 +375,10 @@ export function buildCstReplacements(
       lastInferredString = describeInferred(checker, inferredThis);
       if (!gateAllows(pos, "thisType", inferredThis, emitted)) continue;
       recordPreview(pos, "this", emitted, types.length);
-      pushOrBufferAnnotation(pos, "this: " + prefix + emitted + markerSuffix + suffix);
+      pushOrBufferAnnotation(
+        pos,
+        "this: " + prefix + (typeStringForSource(emitted) ?? emitted) + markerSuffix + suffix,
+      );
     } else if (kind === "returnType") {
       const computed = computeAnnotationTypeString(types, opts, infer, false, program);
       if (computed === null) continue;
@@ -400,7 +411,11 @@ export function buildCstReplacements(
       if (!isParseableTypeString(emitted)) continue;
       if (describesNothing(emitted)) continue;
       recordPreview(pos, nameAt("returnType", pos), emitted, types.length);
-      pushOrBufferAnnotation(pos, ": " + prefix + emitted + markerSuffix, -1);
+      pushOrBufferAnnotation(
+        pos,
+        ": " + prefix + (typeStringForSource(emitted) ?? emitted) + markerSuffix,
+        -1,
+      );
     } else {
       // varDecl: user-written `as Type` / `<Type>` cast on RHS — defer
       // to the cast unless honorAsCasts is explicitly off.
@@ -437,7 +452,10 @@ export function buildCstReplacements(
       if (!isParseableTypeString(emitted)) continue;
       if (describesNothing(emitted)) continue;
       recordPreview(pos, nameAt("varDecl", pos), emitted, types.length);
-      pushOrBufferAnnotation(pos, ": " + prefix + emitted + markerSuffix);
+      pushOrBufferAnnotation(
+        pos,
+        ": " + prefix + (typeStringForSource(emitted) ?? emitted) + markerSuffix,
+      );
     }
   }
 

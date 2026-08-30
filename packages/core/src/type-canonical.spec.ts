@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { canonicalTypeString, sameTypeString } from "./type-canonical.js";
+import { canonicalTypeString, sameTypeString, typeStringForSource } from "./type-canonical.js";
 
 // Unit spec for the type-string canonicaliser. The boundary case — what the
 // checker's printer actually emits against what ts-capture writes — lives in
@@ -65,5 +65,25 @@ describe("sameTypeString — differences that change the type", () => {
   it("falls back to text equality when a side does not parse", () => {
     expect(sameTypeString("{ a: string", "{ a: string")).toBe(true);
     expect(sameTypeString("{ a: string", "{ a: string }")).toBe(false);
+  });
+});
+
+describe("typeStringForSource", () => {
+  it("spells separators the way TypeScript does", () => {
+    expect(typeStringForSource("{ b: number|string, a: T }")).toBe("{ b: number | string; a: T }");
+  });
+
+  it("keeps parameter names, member order and union order", () => {
+    expect(typeStringForSource("(value: string) => void")).toBe("(value: string) => void");
+    expect(typeStringForSource("{ b: string, a: number }")).toBe("{ b: string; a: number }");
+    expect(typeStringForSource("string|number")).toBe("string | number");
+  });
+
+  it("returns undefined for text that is not a type", () => {
+    expect(typeStringForSource("... 8 more ...")).toBeUndefined();
+  });
+
+  it("leaves a type carrying a diagnostic note alone", () => {
+    expect(typeStringForSource("unknown /* @ts-capture:polymorphic-position */")).toBeUndefined();
   });
 });

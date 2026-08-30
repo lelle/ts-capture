@@ -135,7 +135,7 @@ describe("E2E: CLI pipeline (instrument → run → apply)", () => {
       execFileSync("node", [CLI, "apply", typesFile], { encoding: "utf-8" });
 
       const result = fs.readFileSync(srcFile, "utf-8");
-      expect(result).toContain("val: number|string");
+      expect(result).toContain("val: number | string");
     });
   });
 });

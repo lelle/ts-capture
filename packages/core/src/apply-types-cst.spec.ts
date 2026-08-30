@@ -137,7 +137,7 @@ describe("applyTypesToFileCst — param annotations via AST lookup", () => {
     const typeInfo: CollectedTypeInfo = [entry("test.ts", pos, [["{ a: number, b: number }"]])];
     const cst = applyTypesToFileCst(source, typeInfo, {});
     expect(cst).toBe(applyTypesToFile(source, typeInfo, {}));
-    expect(cst).toContain("{ a, b }: { a: number, b: number }");
+    expect(cst).toContain("{ a, b }: { a: number; b: number }");
   });
 
   it("destructure-pattern params (array binding): same path", () => {
@@ -165,6 +165,17 @@ describe("applyTypesToFileCst — param annotations via AST lookup", () => {
     expect(cst).toContain("function foo(a: string)");
   });
 
+  it("writes separators a formatter would leave alone", () => {
+    const source = "function foo(a) { return a; }";
+    const aPos = source.indexOf("a)") + 1;
+    const typeInfo: CollectedTypeInfo = [
+      entry("test.ts", aPos, [["{ x: number, y: string }"], ["number"]]),
+    ];
+    const cst = applyTypesToFileCst(source, typeInfo, KEEP_INFERABLE);
+    expect(cst).toBe(applyTypesToFile(source, typeInfo, KEEP_INFERABLE));
+    expect(cst).toContain("a: number | { x: number; y: string }");
+  });
+
   it("annotates a destructured declaration", () => {
     const source = "let { host, guest } = getProps();";
     const pos = source.indexOf("} =") + 1;
@@ -173,7 +184,7 @@ describe("applyTypesToFileCst — param annotations via AST lookup", () => {
     ];
     const cst = applyTypesToFileCst(source, typeInfo, KEEP_INFERABLE);
     expect(cst).toBe(applyTypesToFile(source, typeInfo, KEEP_INFERABLE));
-    expect(cst).toContain("let { host, guest }: { host: string, guest: string } = getProps()");
+    expect(cst).toContain("let { host, guest }: { host: string; guest: string } = getProps()");
   });
 
   it("mixed: param BEFORE varDecl in source — varDecl pos rebased correctly", () => {
@@ -713,11 +724,11 @@ describe("applyTypesToFileCst — TypeChecker verify integration", () => {
 
     const withNotes = applyWithProgram(files, info);
     expect(withNotes).toContain("@ts-capture[conflict]");
-    expect(withNotes).not.toContain("a: string|undefined");
+    expect(withNotes).not.toContain("a: string | undefined");
 
     const quiet = applyWithProgram(files, info, { emitConflictComments: false });
     expect(quiet).not.toContain("@ts-capture");
-    expect(quiet).not.toContain("a: string|undefined");
+    expect(quiet).not.toContain("a: string | undefined");
   });
 
   // Apply owns every line carrying the marker: it removes the ones it finds
@@ -810,7 +821,7 @@ describe("applyTypesToFileCst — TypeChecker verify integration", () => {
       { "target.ts": "export function use(p) {\n  return p;\n}\n" },
       (src, target) => [entry(target, src.indexOf("(p)") + 2, [["string"], ["number"]])],
     );
-    expect(result).toMatch(/p: (number\|string|string\|number)/);
+    expect(result).toMatch(/p: (number \| string|string \| number)/);
   });
 
   function makeProject(files: Record<string, string>): {
@@ -1481,7 +1492,7 @@ describe("applyTypesToFileCst — TypeChecker verify integration", () => {
     expect(result).toContain(
       "  // @ts-capture[conflict]: `p` observed `undefined`, TypeScript infers `string`\n  const p = f();",
     );
-    expect(result).not.toContain("const p: string|undefined");
+    expect(result).not.toContain("const p: string | undefined");
   });
 
   it("writes a note from the offset applier too, driven directly", () => {
@@ -1513,7 +1524,7 @@ describe("applyTypesToFileCst — TypeChecker verify integration", () => {
     expect(result).toContain(
       "  // @ts-capture[conflict]: `p` observed `undefined`, TypeScript infers `string`\n  const p = f();",
     );
-    expect(result).not.toContain("const p: string|undefined");
+    expect(result).not.toContain("const p: string | undefined");
   });
 
   // The CST applier hands its pass-through entries to the offset applier along

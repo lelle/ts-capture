@@ -52,6 +52,7 @@ import {
   isAlreadyApplied,
   positionLooksLikeInsertionSite,
 } from "./skip-sets.js";
+import { typeStringForSource } from "./type-canonical.js";
 
 export function applyTypesToFile(
   source: string,
@@ -514,7 +515,13 @@ export function applyTypesToFile(
       if (verdict.kind === "suppress") continue;
     }
 
-    const annotationText = thisPrefix + ": " + prefix + emitted + suffix + markerSuffix;
+    const annotationText =
+      thisPrefix +
+      ": " +
+      prefix +
+      (typeStringForSource(emitted) ?? emitted) +
+      suffix +
+      markerSuffix;
 
     recordPreview(pos, previewName(pos, opts), emitted, types.length);
 
