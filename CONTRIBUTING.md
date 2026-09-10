@@ -23,7 +23,8 @@ you touch.
 
 ## Development setup
 
-This is a [pnpm](https://pnpm.io) workspace. Node.js >= 20.
+This is a [pnpm](https://pnpm.io) workspace. Development needs Node.js >= 22.13;
+the published packages support Node.js 20 and later, and CI tests them there.
 
 ```sh
 pnpm install

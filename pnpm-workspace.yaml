@@ -1,8 +1,5 @@
 packages:
   - "packages/*"
-# pnpm 11 reads build-script allowlists from here, not package.json.
-onlyBuiltDependencies:
-  - esbuild
 minimumReleaseAgeExclude:
   - "@oxlint/binding-android-arm-eabi@1.66.0"
   - "@oxlint/binding-android-arm64@1.66.0"
@@ -34,6 +31,5 @@ overrides:
   "brace-expansion@>=3.0.0 <5.0.9": "5.0.9"
   "js-yaml@>=3.0.0 <3.15.1": "3.15.1"
   "js-yaml@>=4.0.0 <4.3.1": "4.3.1"
-# pnpm >= 11.15 reads this key; onlyBuiltDependencies above covers pnpm 10 (CI's Node 20 row).
 allowBuilds:
   esbuild: true
