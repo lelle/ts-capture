@@ -61,8 +61,8 @@ export default [
     // re-export barrel, which defines the package's exported API. Every
     // re-export statement must carry a one-line JSDoc so IDE hover / TypeDoc
     // document the public symbols. Internals stay free of mandatory JSDoc
-    // (they use rich inline "why" comments instead); the other packages'
-    // index.ts mix declarations and are out of scope for this gate.
+    // (see CONTRIBUTING.md on comments); the other packages' index.ts mix
+    // declarations and are out of scope for this gate.
     files: ["packages/core/src/index.ts"],
     plugins: { jsdoc },
     rules: {

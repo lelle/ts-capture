@@ -15,6 +15,12 @@ flow from that and are non-negotiable in contributions:
 2. **Test-driven.** Behaviour is proven by tests, not asserted in prose.
    New behaviour starts with a failing test (Red → Green → Refactor).
 
+Code comments say only what the code cannot: a constraint or a non-obvious
+why, usually one to three lines. The history behind a change belongs in its
+commit body and changeset. Say a thing once, where the decision is made; a
+test's name and assertions carry the rest. Tighten existing comments in files
+you touch.
+
 ## Development setup
 
 This is a [pnpm](https://pnpm.io) workspace. Node.js >= 20.
@@ -63,12 +69,13 @@ A husky pre-commit hook runs prettier, lint, and typecheck.
    ```
 
    Pick the affected packages and a bump type (`patch` / `minor` /
-   `major`), and write a one-line summary. Commit the generated
-   `.changeset/*.md` file with your change. Changes with no user-visible
-   effect (internal refactors, tests, docs) don't need one.
+   `major`), and write two to four sentences on what changed for the user.
+   Commit the generated `.changeset/*.md` file with your change. Changes with
+   no user-visible effect (internal refactors, tests, docs) don't need one.
 
 5. **Commit** using [Conventional Commits](https://www.conventionalcommits.org):
-   `feat:`, `fix:`, `refactor:`, `test:`, `docs:`, `chore:`.
+   `feat:`, `fix:`, `refactor:`, `test:`, `docs:`, `chore:`, with a short
+   body giving the why.
 6. **Open a PR.** CI must be green: format, lint, build, typecheck, tests.
 
 ## How releases work
