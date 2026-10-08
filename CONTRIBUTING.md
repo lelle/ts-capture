@@ -83,8 +83,9 @@ A husky pre-commit hook runs prettier, lint, and typecheck.
 
 Maintainers don't publish by hand. When changesets land on `main`, the
 **Release** workflow opens a "Version Packages" PR that bumps versions and
-updates each package's `CHANGELOG.md`. Merging it publishes to npm with
-provenance via trusted publishing (OIDC).
+updates each package's `CHANGELOG.md`. Merging it starts a publish to npm
+with provenance via trusted publishing (OIDC), which waits for a maintainer
+to approve the `Release` environment.
 
 ## Reporting bugs and proposing features
 

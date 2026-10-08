@@ -21,7 +21,8 @@ your change so it goes through review.
 2. The **Release** workflow opens (and keeps updating) a "Version Packages"
    PR that consumes the pending changesets, bumps versions, and writes each
    package's `CHANGELOG.md`.
-3. Merging that PR publishes the bumped packages to npm with provenance via
-   trusted publishing (OIDC) — no npm token required.
+3. Merging that PR starts a publish of the bumped packages to npm with
+   provenance via trusted publishing (OIDC) — no npm token required. The
+   publish waits for a maintainer to approve the `Release` environment.
 
 See [`CONTRIBUTING.md`](../CONTRIBUTING.md) for the full flow.

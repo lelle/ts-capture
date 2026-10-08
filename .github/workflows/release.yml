@@ -8,19 +8,68 @@ concurrency:
   group: release-${{ github.ref }}
   cancel-in-progress: false
 
-# Least privilege at the top; the release job opts into exactly what it needs.
+# Least privilege at the top; each job opts into exactly what it needs.
 permissions: {}
 
 jobs:
-  release:
-    name: Version PR or publish
+  version:
+    name: Version PR
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write # push the version bump branch
+      pull-requests: write # open / update the "Version Packages" PR
+    outputs:
+      has-changesets: ${{ steps.changesets.outputs.has-changesets }}
+      unpublished: ${{ steps.unpublished.outputs.pending }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6.0.10
+
+      - name: Setup Node
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      # No publish-script here: this job only ever opens or updates the PR.
+      - name: Create or update the Release PR
+        id: changesets
+        uses: changesets/action@8488615a623b1b9c987934bb89eae8af6a946ac1 # v2.1.1
+        with:
+          version-script: pnpm version-packages
+          commit-message: "chore: version packages"
+          pr-title: "chore: version packages"
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Find versions that are not on npm yet
+        id: unpublished
+        run: |
+          pending="$(scripts/unpublished-packages.sh)"
+          echo "$pending"
+          if [ -n "$pending" ]; then
+            echo "pending=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "pending=false" >> "$GITHUB_OUTPUT"
+          fi
+
+  publish:
+    name: Publish to npm
+    needs: version
+    # Only ask for approval when there is something to publish.
+    if: needs.version.outputs.has-changesets == 'false' && needs.version.outputs.unpublished == 'true'
     runs-on: ubuntu-latest
     # `Release` is a protected environment — require manual approval before
     # a publish runs. Configure it in repo Settings → Environments.
     environment: Release
     permissions:
-      contents: write # push the version bump + create git tags
-      pull-requests: write # open / update the "Version Packages" PR
+      contents: write # create git tags + GitHub releases
       id-token: write # npm trusted publishing (OIDC) + provenance
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -43,11 +92,22 @@ jobs:
       - name: Pin npm with trusted-publishing support
         run: npm install -g npm@latest
 
-      - name: Create Release PR or publish
+      # npm can only link a package to this workflow once the package exists,
+      # so a first publish needs the NPM_TOKEN environment secret. Without the
+      # secret this step does nothing and trusted publishing (OIDC) applies.
+      - name: Use the bootstrap token when one is set
+        env:
+          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          if [ -n "$NPM_TOKEN" ]; then
+            npm config set //registry.npmjs.org/:_authToken "$NPM_TOKEN"
+          fi
+
+      - name: Publish
         uses: changesets/action@8488615a623b1b9c987934bb89eae8af6a946ac1 # v2.1.1
         with:
-          version-script: pnpm version-packages
           publish-script: pnpm release
-          commit-message: "chore: version packages"
-          pr-title: "chore: version packages"
           github-token: ${{ secrets.GITHUB_TOKEN }}
+        env:
+          # Automatic only with trusted publishing; a token publish needs it.
+          NPM_CONFIG_PROVENANCE: true
