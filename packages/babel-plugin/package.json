@@ -1,6 +1,6 @@
 {
   "name": "@ts-capture/babel-plugin",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "ts-capture Babel plugin — instrument TS/JS at compile time so test runs collect type observations. (0.x — API may change between minor versions.)",
   "exports": {
     ".": {
