@@ -141,8 +141,8 @@ observation may happen inside an effect context.
 3. Svelte 5 reserves the `$` prefix for runes ($state, $derived, $props,
    …) and requires them as the direct right-hand side of a declaration
    or class field. The preprocessor skips wrapping any `$`-prefixed
-initializer call so rune placement stays valid, while still honoring
-a caller-supplied `skipInitializerCalleeWhen` for non-rune sites.
+   initializer call so rune placement stays valid, while still honoring
+   a caller-supplied `skipInitializerCalleeWhen` for non-rune sites.
 4. After the run, `sveltePlugin()` / `applySvelteTypesToFile` remaps the
    collected block-relative offsets back to file-relative positions and
    writes annotations into the owning `.svelte` file's `<script>`

@@ -25,20 +25,21 @@
     "node": ">=22.13"
   },
   "devDependencies": {
-    "@changesets/changelog-github": "1.0.0",
-    "@changesets/cli": "3.0.1",
-    "@typescript-eslint/eslint-plugin": "8.69.0",
-    "@typescript-eslint/parser": "8.69.0",
-    "eslint": "10.9.1",
-    "eslint-plugin-jsdoc": "64.3.4",
-    "eslint-plugin-perfectionist": "5.11.0",
-    "eslint-plugin-regexp": "3.2.0",
+    "@changesets/changelog-github": "1.0.1",
+    "@changesets/cli": "3.0.3",
+    "@typescript-eslint/eslint-plugin": "8.71.0",
+    "@typescript-eslint/parser": "8.71.0",
+    "eslint": "10.11.0",
+    "eslint-plugin-jsdoc": "65.0.1",
+    "eslint-plugin-perfectionist": "5.12.1",
+    "eslint-plugin-regexp": "3.3.1",
     "husky": "9.1.7",
-    "knip": "6.34.0",
-    "lint-staged": "17.4.1",
-    "prettier": "3.9.6"
+    "knip": "6.39.0",
+    "lint-staged": "17.6.0",
+    "prettier": "3.9.9"
   },
   "lint-staged": {
     "*": "prettier --write --ignore-unknown"
-  }
+  },
+  "packageManager": "pnpm@12.10.1+sha512.ba40a37eb1a370d60fea8c4cf1d364c13bcccef518e98ad2bcee954f539d38da37458e58261a3fa55e06523450ea0ffff9f497b135be41f2c15c1642bacace6c"
 }

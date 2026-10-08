@@ -28,8 +28,6 @@ jobs:
 
       - name: Install pnpm
         uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6.0.10
-        with:
-          version: 11
 
       - name: Setup Node ${{ matrix.node }}
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
@@ -61,7 +59,7 @@ jobs:
       - name: Test + coverage
         run: pnpm -r test:coverage
 
-  # The packages support Node 20, but pnpm 11 does not run on it: build on 22,
+  # The packages support Node 20, but the workspace needs 22.13: build on 22,
   # then run each suite's vitest directly on 20.
   node-20-runtime:
     name: ubuntu-latest / Node 20 runtime
@@ -73,8 +71,6 @@ jobs:
 
       - name: Install pnpm
         uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6.0.10
-        with:
-          version: 11
 
       - name: Setup Node 22 for install and build
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
