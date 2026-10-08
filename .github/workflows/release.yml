@@ -88,13 +88,10 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      # Trusted publishing + automatic provenance require npm >= 11.5.1.
-      - name: Pin npm with trusted-publishing support
-        run: npm install -g npm@latest
-
       # npm can only link a package to this workflow once the package exists,
       # so a first publish needs the NPM_TOKEN environment secret. Without the
       # secret this step does nothing and trusted publishing (OIDC) applies.
+      # pnpm attests provenance only on the OIDC path, so a token publish has none.
       - name: Use the bootstrap token when one is set
         env:
           NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
@@ -108,6 +105,3 @@ jobs:
         with:
           publish-script: pnpm release
           github-token: ${{ secrets.GITHUB_TOKEN }}
-        env:
-          # Automatic only with trusted publishing; a token publish needs it.
-          NPM_CONFIG_PROVENANCE: true
