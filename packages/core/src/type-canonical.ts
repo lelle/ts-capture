@@ -187,6 +187,29 @@ export function typeReferenceNames(text: string): Set<string> {
   return names;
 }
 
+/**
+ * The leftmost identifier of every name this type-string must resolve:
+ * `React` for `React.ReactElement`, `Widget` for `typeof Widget`. Undefined
+ * when the text is not a type.
+ */
+export function rootReferenceNames(text: string): Set<string> | undefined {
+  const node = parseType(text);
+  if (!node) return undefined;
+  const names = new Set<string>();
+  const root = (name: ts.EntityName): string => {
+    let left = name;
+    while (ts.isQualifiedName(left)) left = left.left;
+    return left.text;
+  };
+  const walk = (n: ts.Node): void => {
+    if (ts.isTypeReferenceNode(n)) names.add(root(n.typeName));
+    else if (ts.isTypeQueryNode(n)) names.add(root(n.exprName));
+    ts.forEachChild(n, walk);
+  };
+  walk(node);
+  return names;
+}
+
 /** Does this type-string spell out an object shape anywhere in it? */
 export function containsTypeLiteral(text: string): boolean {
   const node = parseType(text);

@@ -1,5 +1,7 @@
 import ts from "typescript";
 
+import { rootReferenceNames } from "./type-canonical.js";
+
 /**
  * ECMA-core allowlist of type names that ts-capture may emit even when
  * no explicit import / same-file decl brings them in. Mirrors what every
@@ -116,13 +118,14 @@ export function buildScopedTypeNames(source: string, filename?: string): Set<str
 }
 
 /**
- * Extract PascalCase type identifiers from a ts-capture-emitted annotation
- * string. Regex-based — covers the type strings ts-capture emits in
- * practice (unions, arrays, generics, structural literals, intersections),
- * but is a heuristic. Negative lookbehind skips dotted property accesses
- * like `Foo.Bar` (we only want top-level identifiers, not qualified ones).
+ * The PascalCase type names an emitted annotation refers to, read from the
+ * parsed type so a string literal, property key or parameter name is never
+ * taken for one. Text that does not parse falls back to a regex over the raw
+ * string, which over-reports and so can only skip an annotation.
  */
 function extractTypeRefs(emitted: string): string[] {
+  const parsed = rootReferenceNames(emitted);
+  if (parsed) return [...parsed].filter((name) => /^[A-Z]/.test(name));
   const refs = new Set<string>();
   for (const m of emitted.matchAll(/(?<![.\w])([A-Z]\w*)/g)) {
     refs.add(m[1]);
