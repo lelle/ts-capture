@@ -797,6 +797,30 @@ describe("tsCapturePlugin", () => {
       }
     });
 
+    it("rewrites the dump when a known position gains a new type", () => {
+      const outDir = fs.mkdtempSync(path.join(os.tmpdir(), "ts-capture-wt-test-"));
+      const prevDir = process.env.TS_CAPTURE_TYPES_DIR;
+      process.env.TS_CAPTURE_TYPES_DIR = outDir;
+      try {
+        const sandbox = evalSnippetWithWorkerThreads({ isMainThread: false, outDir });
+        sandbox.__tscptr__("v", null, 0, "/test.ts", "{}");
+        sandbox.__tscptr__("v", undefined, 0, "/test.ts", "{}");
+        const files = fs.readdirSync(outDir).filter((f) => f.startsWith("ts-capture-types-"));
+        const contents = JSON.parse(fs.readFileSync(path.join(outDir, files[0]), "utf8")) as [
+          string,
+          number,
+          [string, unknown][],
+          unknown,
+        ][];
+        expect(contents).toHaveLength(1);
+        expect(contents[0][2].map(([typeName]) => typeName).sort()).toEqual(["null", "undefined"]);
+      } finally {
+        if (prevDir === undefined) delete process.env.TS_CAPTURE_TYPES_DIR;
+        else process.env.TS_CAPTURE_TYPES_DIR = prevDir;
+        fs.rmSync(outDir, { recursive: true, force: true });
+      }
+    });
+
     it("does NOT flush after a single observation in main thread (FLUSH_EVERY=10 preserved)", () => {
       const outDir = fs.mkdtempSync(path.join(os.tmpdir(), "ts-capture-mt-test-"));
       const prevDir = process.env.TS_CAPTURE_TYPES_DIR;

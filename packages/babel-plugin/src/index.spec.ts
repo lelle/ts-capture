@@ -120,4 +120,48 @@ describe("@ts-capture/babel-plugin", () => {
       }
     });
   });
+
+  describe("runtime — flush", () => {
+    it("rewrites the dump when a known position gains a new type", () => {
+      const RUNTIME_PATH = path.resolve(
+        path.dirname(fileURLToPath(import.meta.url)),
+        "../runtime.cjs",
+      );
+      const typesDir = fs.mkdtempSync(
+        path.join(os.tmpdir(), "ts-capture-babel-flush-"),
+      );
+      try {
+        const result = spawnSync(
+          process.execPath,
+          [
+            "--require",
+            RUNTIME_PATH,
+            "-e",
+            [
+              "globalThis.__tscptr__('p', null, 0, '/x.ts', '{}');",
+              "process.emit('beforeExit', 0);",
+              "globalThis.__tscptr__('p', undefined, 0, '/x.ts', '{}');",
+              "process.exit(0);",
+            ].join(" "),
+          ],
+          {
+            env: { ...process.env, TS_CAPTURE_TYPES_DIR: typesDir },
+            encoding: "utf-8",
+          },
+        );
+        expect(result.status).toBe(0);
+        const [dumpFile] = fs.readdirSync(typesDir);
+        const dump = JSON.parse(
+          fs.readFileSync(path.join(typesDir, dumpFile), "utf-8"),
+        ) as [string, number, [string, unknown][], unknown][];
+        expect(dump).toHaveLength(1);
+        expect(dump[0][2].map(([typeName]) => typeName).sort()).toEqual([
+          "null",
+          "undefined",
+        ]);
+      } finally {
+        fs.rmSync(typesDir, { recursive: true, force: true });
+      }
+    });
+  });
 });

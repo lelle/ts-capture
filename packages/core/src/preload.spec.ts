@@ -120,11 +120,25 @@ describe("@ts-capture/core/preload", () => {
 
     it("flush is a no-op when no new observations since last flush", () => {
       const before = fs.statSync(outFile).mtimeMs;
-      // Nothing recorded between this flush and the previous one — the
-      // lastFlushedSize early-return branch should prevent a rewrite.
+      // Nothing recorded between this flush and the previous one.
       process.emit("beforeExit", 0);
       const after = fs.statSync(outFile).mtimeMs;
       expect(after).toBe(before);
+    });
+
+    it("rewrites the dump when a known position gains a new type", () => {
+      tscptr("late", null, 300, "/test/file.ts", "{}");
+      process.emit("beforeExit", 0);
+      tscptr("late", undefined, 300, "/test/file.ts", "{}");
+      process.emit("beforeExit", 0);
+      const dump = JSON.parse(fs.readFileSync(findDumpFile(), "utf-8")) as [
+        string,
+        number,
+        [string, unknown][],
+        unknown,
+      ][];
+      const entry = dump.find(([, pos]) => pos === 300);
+      expect(entry?.[2].map(([typeName]) => typeName).sort()).toEqual(["null", "undefined"]);
     });
   });
 
