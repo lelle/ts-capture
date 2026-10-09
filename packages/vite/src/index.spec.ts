@@ -744,6 +744,78 @@ describe("tsCapturePlugin", () => {
   // flush after EVERY observation (FLUSH_EVERY=1) so the dump exists
   // even for sub-500ms workers. Main-thread / forks pool keep the
   // original FLUSH_EVERY=10 throughput.
+  describe("collector snippet — Node delegates to the core collector", () => {
+    function evalSnippetInNode(opts: { coreResolvable: boolean }) {
+      const snippet = getCollectorSnippet({
+        literalString: false,
+        literalStringMaxLength: 16,
+        literalNumber: false,
+        literalBoolean: false,
+        captureClassHierarchy: false,
+        maxAnnotationChars: 4096,
+      });
+      const realRequire = require;
+      const stubRequire: NodeJS.Require = ((id: string) => {
+        if (id === "@ts-capture/core" && !opts.coreResolvable) {
+          throw new Error("Cannot find module '@ts-capture/core'");
+        }
+        return realRequire(id);
+      }) as NodeJS.Require;
+      const ctx: Record<string, unknown> = {
+        process,
+        require: stubRequire,
+        setInterval: setInterval,
+        clearInterval: clearInterval,
+        navigator: undefined,
+        window: undefined,
+      };
+      vm.createContext(ctx);
+      vm.runInContext(snippet, ctx);
+      return ctx as { __tscptr__: any };
+    }
+
+    // A callback defined in instrumented code, called once, then passed on as
+    // an argument: the receiving parameter should carry the signature the
+    // callback itself was observed with.
+    function observeCallbackPassedAsArgument(sandbox: { __tscptr__: any }): string {
+      const label = (count: unknown) => String(count);
+      sandbox.__tscptr__.regFn(label, 100, "/callback.ts");
+      sandbox.__tscptr__("count", 1, 90, "/callback.ts", '{"fnRetPos":100}');
+      sandbox.__tscptr__.ret("1", 100, "/callback.ts", '{"returnType":true}');
+      sandbox.__tscptr__("format", label, 10, "/receiver.ts", '{"fnRetPos":20}');
+      const entries = sandbox.__tscptr__.get() as [string, number, [string, unknown][], unknown][];
+      return entries.find(([file, pos]) => file === "/receiver.ts" && pos === 10)![2][0][0];
+    }
+
+    it("types a callback parameter with the signature observed for the callback", () => {
+      const prevDir = process.env.TS_CAPTURE_TYPES_DIR;
+      const outDir = fs.mkdtempSync(path.join(os.tmpdir(), "ts-capture-core-test-"));
+      process.env.TS_CAPTURE_TYPES_DIR = outDir;
+      try {
+        const sandbox = evalSnippetInNode({ coreResolvable: true });
+        expect(observeCallbackPassedAsArgument(sandbox)).toBe("(count: number) => string");
+      } finally {
+        if (prevDir === undefined) delete process.env.TS_CAPTURE_TYPES_DIR;
+        else process.env.TS_CAPTURE_TYPES_DIR = prevDir;
+        fs.rmSync(outDir, { recursive: true, force: true });
+      }
+    });
+
+    it("falls back to the built-in collector when core cannot be resolved", () => {
+      const prevDir = process.env.TS_CAPTURE_TYPES_DIR;
+      const outDir = fs.mkdtempSync(path.join(os.tmpdir(), "ts-capture-core-test-"));
+      process.env.TS_CAPTURE_TYPES_DIR = outDir;
+      try {
+        const sandbox = evalSnippetInNode({ coreResolvable: false });
+        expect(observeCallbackPassedAsArgument(sandbox)).toBe("(count: unknown) => unknown");
+      } finally {
+        if (prevDir === undefined) delete process.env.TS_CAPTURE_TYPES_DIR;
+        else process.env.TS_CAPTURE_TYPES_DIR = prevDir;
+        fs.rmSync(outDir, { recursive: true, force: true });
+      }
+    });
+  });
+
   describe("collector snippet — worker_threads flush strategy", () => {
     function evalSnippetWithWorkerThreads(opts: { isMainThread: boolean; outDir: string }) {
       const snippet = getCollectorSnippet({
@@ -902,8 +974,9 @@ describe("tsCapturePlugin", () => {
           expect(Array.isArray(entry[2])).toBe(true); // types[]
           for (const t of entry[2]) {
             expect(Array.isArray(t)).toBe(true);
-            // [name, sourceLocation?] — name may be undefined
-            expect(t.length).toBe(2);
+            // [name, sourceLocation?, approximationReason?] — the core
+            // collector's tuple; name may be undefined
+            expect(t.length === 2 || t.length === 3).toBe(true);
           }
           expect(typeof entry[3]).toBe("object"); // ExtraOptions
         }
