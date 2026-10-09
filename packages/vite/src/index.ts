@@ -432,10 +432,16 @@ export function getCollectorSnippet(
     if (t === "number" && LITERAL_NUMBER && Number.isFinite(value)) return String(value);
     if (t === "boolean" && LITERAL_BOOLEAN) return String(value);
     if (t === "string" || t === "number" || t === "boolean" || t === "bigint" || t === "symbol") return t;
-    if (typeof value === "object" || typeof value === "function") {
-      if (visited.has(value)) return null;
-      visited.add(value);
-    }
+    if (typeof value !== "object" && typeof value !== "function") return t;
+    // Cycle guard: visited holds only the ancestors of the value being
+    // walked, so an object shared by two siblings is described both times.
+    if (visited.has(value)) return null;
+    visited.add(value);
+    try { return __tscptr__getReferenceTypeName(value, depth, maxDepth, visited); }
+    finally { visited.delete(value); }
+  }
+
+  function __tscptr__getReferenceTypeName(value, depth, maxDepth, visited) {
     if (Array.isArray(value)) {
       if (value.length === 0) return "unknown[]";
       var types = new Set();
@@ -572,7 +578,7 @@ export function getCollectorSnippet(
       });
       return "{ " + pairs.join(", ") + " }";
     }
-    return t;
+    return typeof value;
   }
 
   function __tscptr__record(name, value, pos, filename, optsJson) {

@@ -234,4 +234,29 @@ describe("vite runtime mirror ≡ core walker", () => {
       expect(vite).toBe(core);
     });
   });
+
+  describe("reference tracking (visited-set mirror)", () => {
+    it("describes a shared, non-cyclic object every time it appears", () => {
+      const sandbox = makeSandbox(OPTS_OFF);
+      const shared = { x: 1 };
+      const value = [
+        { first: shared, second: shared },
+        { first: shared, second: shared },
+      ];
+      const core = getTypeName(value, 5, OPTS_OFF);
+      const vite = viteType(sandbox, value, 0);
+      expect(core).toBe("{ first: { x: number }, second: { x: number } }[]");
+      expect(vite).toBe(core);
+    });
+
+    it("still cuts a true cycle", () => {
+      const sandbox = makeSandbox(OPTS_OFF);
+      const cyclic: Record<string, unknown> = { x: 1 };
+      cyclic.self = cyclic;
+      const core = getTypeName(cyclic, 5, OPTS_OFF);
+      const vite = viteType(sandbox, cyclic, 0);
+      expect(core).toBe("{ self: unknown, x: number }");
+      expect(vite).toBe(core);
+    });
+  });
 });

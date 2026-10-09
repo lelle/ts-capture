@@ -35,6 +35,34 @@ describe("createValueWalker → WalkResult", () => {
     });
   });
 
+  it("describes a shared, non-cyclic object every time it appears", () => {
+    const walk = createValueWalker();
+    const shared = { x: 1 };
+    expect(walk({ first: shared, second: shared })).toMatchObject({
+      kind: "ok",
+      type: "{ first: { x: number }, second: { x: number } }",
+    });
+    expect(walk([{ lines: shared }, { lines: shared }])).toMatchObject({
+      kind: "ok",
+      type: "{ lines: { x: number } }[]",
+    });
+    const map = new Map([
+      ["a", shared],
+      ["b", shared],
+    ]);
+    expect(walk(map)).toMatchObject({ kind: "ok", type: "Map<string, { x: number }>" });
+  });
+
+  it("cuts a cycle that runs through an array", () => {
+    const walk = createValueWalker();
+    const parent: { children: unknown[] } = { children: [] };
+    parent.children.push({ parent });
+    expect(walk(parent)).toMatchObject({
+      kind: "ok",
+      type: "{ children: { parent: unknown }[] }",
+    });
+  });
+
   it("flags depthExceeded when a branch bails at the depth limit", () => {
     const walk = createValueWalker({ maxDepth: 1 });
     const result = walk({ a: { b: 1 } });
