@@ -7,7 +7,7 @@ import type { ExtraOptions, SourceLocation } from "./type-collector.js";
 import { rewriteCommonBase, stripAllChainMarkers } from "./class-chain.js";
 import { applyMemberFilters, type Priority, type UnconditionalFilter } from "./member-filters.js";
 import { unwrapOneLevelPromise } from "./named-type-rewrite.js";
-import { collapseLiteral, mergeTypes } from "./type-merge.js";
+import { collapseLiteral, isArrayShapedType, mergeTypes } from "./type-merge.js";
 
 function findType(
   program: ts.Program | undefined,
@@ -192,25 +192,6 @@ export function computeAnnotationTypeString(
   }
 
   return finalType;
-}
-
-/**
- * Detect any array-shaped type: `T[]`, `Array<...>`, or `{ ... }[]` (a
- * suffixed object-shape). Used by the unknown[]-drop filter — we
- * only collapse `unknown[]` from a union when there is another array
- * to defer the "shape is an array" signal to.
- *
- * NOT the same as isSimpleArrayType (which constrains to atom-element
- * arrays only). Here we also accept object-shape arrays since they
- * still convey "this is an array".
- */
-function isArrayShapedType(t: string): boolean {
-  if (t === "unknown[]") return false;
-  // T[] or { ... }[] — anything ending in [] at the top level
-  if (t.endsWith("[]")) return true;
-  // Array<...>
-  if (/^Array<.*>$/.test(t)) return true;
-  return false;
 }
 
 /**

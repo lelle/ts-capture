@@ -457,6 +457,26 @@ describe("mergeTypes — recursive object merge", () => {
   });
 });
 
+describe("mergeTypes — empty-array observation inside an object", () => {
+  it("lets a concrete array at the same key stand for the empty one", () => {
+    expect(mergeTypes(["{ lines: unknown[] }", "{ lines: { sku: string }[] }"])).toEqual([
+      "{ lines: { sku: string }[] }",
+    ]);
+  });
+
+  it("keeps unknown[] when it is the only observation of the key", () => {
+    expect(mergeTypes(["{ lines: unknown[] }", "{ lines: unknown[], total: number }"])).toEqual([
+      "{ lines: unknown[], total?: number }",
+    ]);
+  });
+
+  it("keeps unknown[] beside a value that is not an array", () => {
+    expect(mergeTypes(["{ v: unknown[] }", "{ v: string }"])).toEqual([
+      "{ v: string | unknown[] }",
+    ]);
+  });
+});
+
 describe("mergeTypes — cross-sample array merge", () => {
   // Migrated from apply-types.spec.ts's "cross-sample array merge" sub-block.
   // The basic on/off behavior is covered by the mergeTypes block above; these
