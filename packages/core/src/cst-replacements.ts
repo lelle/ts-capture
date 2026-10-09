@@ -1,13 +1,17 @@
 import ts from "typescript";
 
 import type { InferOptions } from "./configuration.js";
-import type { ApplyTelemetry } from "./contract.js";
+import type { ApplySkipReason, ApplyTelemetry } from "./contract.js";
 import type { RoutedEntry } from "./cst-routing.js";
 import type { CstSiteIndex } from "./cst-site-index.js";
 
 import { suppressArrayCallbackStructural } from "./annotation-eligibility.js";
 import { buildDiagnosticMarkerSuffix } from "./apply-diagnostics.js";
-import { filterAcceptedReplacements, type VerificationContext } from "./apply-types-verify.js";
+import {
+  explainRejection,
+  filterAcceptedReplacements,
+  type VerificationContext,
+} from "./apply-types-verify.js";
 import { checkerGate } from "./checker-gate.js";
 import { carriesNoInformation, computeAnnotationTypeString } from "./compute-annotation.js";
 import {
@@ -38,7 +42,7 @@ import {
   typeAt,
 } from "./redundant-annotation.js";
 import { type AnnotationCandidate, Replacement } from "./replacement.js";
-import { allTypeRefsInScope, expandCtorArity } from "./scope-reachability.js";
+import { expandCtorArity, unreachableTypeRefs } from "./scope-reachability.js";
 import { typeStringForSource } from "./type-canonical.js";
 
 // Replacement-building for the AST-aware applier. Turns
@@ -180,13 +184,22 @@ export function buildCstReplacements(
       // the name `siteNameAt` gives it rather than a declaration's own.
       const named = kind === "thisType" ? "param" : kind;
       placeNote(pos, named, checkerNodeAt(kind, pos), lastInferredString, verdict.observed);
+      skip("contradiction", lastInferredString && `the type here is ${lastInferredString}`);
       return false;
     }
     if (verdict.kind === "redundant") {
-      if (telemetry) telemetry.idempotent++;
+      if (telemetry) {
+        telemetry.idempotent++;
+        telemetry.redundant++;
+      }
+      skip("redundant");
       return false;
     }
-    return verdict.kind !== "suppress";
+    if (verdict.kind === "suppress") {
+      skip("kept-existing", lastInferredString && `TypeScript has ${lastInferredString}`);
+      return false;
+    }
+    return true;
   }
 
   /**
@@ -266,6 +279,7 @@ export function buildCstReplacements(
     // has to agree with what an ordinary apply would do.
     if (verify) {
       annotationCandidates.push({ pos, text, priority });
+      observedByCandidatePos.set(pos, currentObserved);
       return;
     }
     settlePreview(pos);
@@ -275,12 +289,38 @@ export function buildCstReplacements(
     if (telemetry) telemetry.emitted++;
   }
 
+  // What the report says about a site that gets nothing. Set per entry, so a
+  // drop anywhere below is recorded against the site it belongs to.
+  let currentPos = 0;
+  let currentObserved = "";
+  const observedByCandidatePos = new Map<number, string>();
+  function skip(reason: ApplySkipReason, detail?: string): void {
+    telemetry?.skipped.push({
+      pos: currentPos,
+      reason,
+      observed: currentObserved,
+      ...(detail ? { detail } : {}),
+    });
+  }
+  /** Records the drop and answers true when the annotation names a type out of reach. */
+  function outOfScope(emitted: string): boolean {
+    const missing = unreachableTypeRefs(emitted, scopedTypeNames);
+    if (missing.length === 0) return false;
+    skip(
+      "out-of-scope",
+      `${missing.join(", ")} ${missing.length === 1 ? "is" : "are"} not in scope`,
+    );
+    return true;
+  }
+
   for (const { entry, kind } of eligible.values()) {
     // Each site answers for itself. This is one variable shared by every
     // branch, and a value left over from the previous entry names a different
     // position — a note that gets that wrong is worse than one that omits it.
     lastInferredString = undefined;
     const [, pos, types, opts] = entry;
+    currentPos = pos;
+    currentObserved = [...new Set(types.map(([name]) => name).filter(Boolean))].join(" | ");
     // Shared marker-comment suffix; appended after the type and before
     // any structural suffix (`)` for paren-less arrow wrap, `, ` for
     // thisType-with-other-params).
@@ -290,10 +330,13 @@ export function buildCstReplacements(
       const site = paramSites.get(pos)!;
       const isOptional = !!site.node.questionToken;
       const computed = computeAnnotationTypeString(types, opts, infer, isOptional, program);
-      if (computed === null) continue;
+      if (computed === null) {
+        skip("no-information");
+        continue;
+      }
       const named = rewriteToNamedInScope(computed, namedTypeIndex);
       const emitted = ctorArityMap ? expandCtorArity(named, ctorArityMap) : named;
-      if (!allTypeRefsInScope(emitted, scopedTypeNames)) {
+      if (outOfScope(emitted)) {
         // Paren-less single-param arrow: even when we skip emitting the
         // param annotation, the sibling returnType entry will try to
         // land `: T` at the same pos. Without the `()` wrap, the result
@@ -320,11 +363,18 @@ export function buildCstReplacements(
         if (site.parensOpenPos !== undefined) {
           requestParenWrap(site.parensOpenPos, pos);
         }
+        skip("redundant");
         continue;
       }
       // Parse-check — refuse to write an unparseable type.
-      if (!isParseableTypeString(emitted)) continue;
-      if (describesNothing(emitted)) continue;
+      if (!isParseableTypeString(emitted)) {
+        skip("no-information", "not a type TypeScript can parse");
+        continue;
+      }
+      if (describesNothing(emitted)) {
+        skip("no-information");
+        continue;
+      }
       // Nothing to add when the checker already types this parameter — a
       // contextually typed callback param, for instance.
       const inferredParam = typeAt(checker, checkerIndex?.paramSites.get(pos)?.node.name);
@@ -355,13 +405,22 @@ export function buildCstReplacements(
     } else if (kind === "thisType") {
       const site = thisTypeSites.get(pos)!;
       const computed = computeAnnotationTypeString(types, opts, infer, false, program);
-      if (computed === null) continue;
+      if (computed === null) {
+        skip("no-information");
+        continue;
+      }
       const named = rewriteToNamedInScope(computed, namedTypeIndex);
       const emitted = ctorArityMap ? expandCtorArity(named, ctorArityMap) : named;
-      if (!allTypeRefsInScope(emitted, scopedTypeNames)) continue;
+      if (outOfScope(emitted)) continue;
       // Parse-check.
-      if (!isParseableTypeString(emitted)) continue;
-      if (describesNothing(emitted)) continue;
+      if (!isParseableTypeString(emitted)) {
+        skip("no-information", "not a type TypeScript can parse");
+        continue;
+      }
+      if (describesNothing(emitted)) {
+        skip("no-information");
+        continue;
+      }
       // When the function already has params, the apply needs a
       // separator between `this: T` and the first real param.
       // Mirrors the offset-based path's opts.thisNeedsComma flag —
@@ -381,15 +440,19 @@ export function buildCstReplacements(
       );
     } else if (kind === "returnType") {
       const computed = computeAnnotationTypeString(types, opts, infer, false, program);
-      if (computed === null) continue;
+      if (computed === null) {
+        skip("no-information");
+        continue;
+      }
       const named = rewriteToNamedInScope(computed, namedTypeIndex);
       const emitted = ctorArityMap ? expandCtorArity(named, ctorArityMap) : named;
-      if (!allTypeRefsInScope(emitted, scopedTypeNames)) continue;
+      if (outOfScope(emitted)) continue;
       // Same suppression as for arrow-param entries —
       // when the returnType lands on an Array.prototype callback's
       // arrow AND emitted is a structural shape, TS contextually types
       // the callback's return from the array's element type. Skip.
       if (suppressArrayCallbackStructural(arrayCallbackArrowParams.has(pos), emitted)) {
+        skip("redundant");
         continue;
       }
       const inferredReturn = inferredReturnType(
@@ -408,8 +471,14 @@ export function buildCstReplacements(
       // paren-less goes through `parens` opt → passThrough), so this
       // is purely defensive.
       // Parse-check.
-      if (!isParseableTypeString(emitted)) continue;
-      if (describesNothing(emitted)) continue;
+      if (!isParseableTypeString(emitted)) {
+        skip("no-information", "not a type TypeScript can parse");
+        continue;
+      }
+      if (describesNothing(emitted)) {
+        skip("no-information");
+        continue;
+      }
       recordPreview(pos, nameAt("returnType", pos), emitted, types.length);
       pushOrBufferAnnotation(
         pos,
@@ -419,22 +488,34 @@ export function buildCstReplacements(
     } else {
       // varDecl: user-written `as Type` / `<Type>` cast on RHS — defer
       // to the cast unless honorAsCasts is explicitly off.
-      if (opts?.hasAsCast && infer.honorAsCasts) continue;
+      if (opts?.hasAsCast && infer.honorAsCasts) {
+        skip("kept-existing", "the initializer has an `as` cast");
+        continue;
+      }
       const site = varDeclSites.get(pos)!;
       const computed = computeAnnotationTypeString(types, opts, infer, false, program);
-      if (computed === null) continue;
+      if (computed === null) {
+        skip("no-information");
+        continue;
+      }
       const named = rewriteToNamedInScope(computed, namedTypeIndex);
       const emitted = ctorArityMap ? expandCtorArity(named, ctorArityMap) : named;
-      if (!allTypeRefsInScope(emitted, scopedTypeNames)) continue;
+      if (outOfScope(emitted)) continue;
       // A const assertion is a narrowing the author asked for, and an
       // observation can only widen it. Unconditional, unlike
       // `skipRedundantAnnotations` below: asking for redundant annotations is
       // asking for restatement, not for destruction.
-      if (site.initializer && hasConstAssertion(site.initializer)) continue;
+      if (site.initializer && hasConstAssertion(site.initializer)) {
+        skip("kept-existing", "the initializer is `as const`");
+        continue;
+      }
       // A `unique symbol` is the same narrowing, inferred rather than
       // asked for: widening it to `symbol` is destruction, not
       // restatement, so it does not wait for the flag either.
-      if (emitted === "symbol" && site.initializer && isSymbolCall(site.initializer)) continue;
+      if (emitted === "symbol" && site.initializer && isSymbolCall(site.initializer)) {
+        skip("kept-existing", "a `unique symbol` would be widened");
+        continue;
+      }
       const inferredBinding = typeAt(checker, checkerIndex?.varDeclSites.get(pos)?.nameNode);
       lastInferredString = describeInferred(checker, inferredBinding);
       // `const self = this` — the same erasure as on a return type, in a
@@ -446,11 +527,20 @@ export function buildCstReplacements(
       if (!gateAllows(pos, "varDecl", inferredBinding, emitted)) continue;
       if (infer.skipRedundantAnnotations && site.initializer) {
         const inferredFromSource = inferTypeFromInitializer(site.initializer, site.narrowsLiterals);
-        if (inferredFromSource !== null && inferredFromSource === emitted) continue;
+        if (inferredFromSource !== null && inferredFromSource === emitted) {
+          skip("redundant");
+          continue;
+        }
       }
       // Parse-check.
-      if (!isParseableTypeString(emitted)) continue;
-      if (describesNothing(emitted)) continue;
+      if (!isParseableTypeString(emitted)) {
+        skip("no-information", "not a type TypeScript can parse");
+        continue;
+      }
+      if (describesNothing(emitted)) {
+        skip("no-information");
+        continue;
+      }
       recordPreview(pos, nameAt("varDecl", pos), emitted, types.length);
       pushOrBufferAnnotation(
         pos,
@@ -484,6 +574,18 @@ export function buildCstReplacements(
     }
     if (telemetry) {
       telemetry.verifyReject += annotationCandidates.length - acceptedSet.size;
+      annotationCandidates.forEach((candidate, i) => {
+        if (acceptedSet.has(i)) return;
+        const diagnostic = explainRejection(verify, probes[i]);
+        telemetry.skipped.push({
+          pos: candidate.pos,
+          reason: "type-error",
+          observed: observedByCandidatePos.get(candidate.pos) ?? "",
+          ...(diagnostic
+            ? { diagnostic }
+            : { detail: "type-checks alone, but not with the other annotations in this file" }),
+        });
+      });
     }
   }
 

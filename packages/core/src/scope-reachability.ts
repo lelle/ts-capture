@@ -140,11 +140,16 @@ function extractTypeRefs(emitted: string): string[] {
  * pre-instrument).
  */
 export function allTypeRefsInScope(emitted: string, scopedNames: Set<string> | undefined): boolean {
-  if (!scopedNames) return true;
-  for (const ref of extractTypeRefs(emitted)) {
-    if (!scopedNames.has(ref)) return false;
-  }
-  return true;
+  return unreachableTypeRefs(emitted, scopedNames).length === 0;
+}
+
+/** The PascalCase refs in the emitted annotation that are not reachable at the target file. */
+export function unreachableTypeRefs(
+  emitted: string,
+  scopedNames: Set<string> | undefined,
+): string[] {
+  if (!scopedNames) return [];
+  return extractTypeRefs(emitted).filter((ref) => !scopedNames.has(ref));
 }
 
 /**

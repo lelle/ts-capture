@@ -653,6 +653,131 @@ describe("cli", () => {
     // are exactly the ones a typo turns off. Unknown flags still pass — a
     // script sending a flag a newer version understands must keep working —
     // but they no longer pass in silence.
+    describe("report of what was written and what was not", () => {
+      const TSCONFIG = JSON.stringify({
+        compilerOptions: {
+          noImplicitAny: false,
+          target: "ES2022",
+          module: "ES2022",
+          moduleResolution: "Bundler",
+          skipLibCheck: true,
+          noEmit: true,
+        },
+        include: ["**/*.ts"],
+      });
+
+      function project(
+        files: Record<string, string>,
+        entries: (at: (file: string, marker: string) => [string, number]) => unknown[],
+        fn: (dir: string, jsonFile: string) => void,
+      ): void {
+        withTmpDir((rawDir) => {
+          const dir = fs.realpathSync(rawDir);
+          fs.writeFileSync(path.join(dir, "tsconfig.json"), TSCONFIG);
+          for (const [name, source] of Object.entries(files)) {
+            fs.writeFileSync(path.join(dir, name), source);
+          }
+          // The position just after `marker`'s first character run: `x)` → after `x`.
+          const at = (file: string, marker: string): [string, number] => [
+            path.join(dir, file),
+            files[file].indexOf(marker) + marker.length - 1,
+          ];
+          const jsonFile = path.join(dir, "types.json");
+          fs.writeFileSync(jsonFile, JSON.stringify(entries(at)));
+          fn(dir, jsonFile);
+        });
+      }
+
+      const GREET = 'export function greet(name) {\n  return "Hi " + name;\n}\n';
+
+      it("says how much was written", () => {
+        project(
+          { "greet.ts": GREET },
+          (at) => [[...at("greet.ts", "name)"), [["string", undefined]], {}]],
+          (dir, jsonFile) => {
+            const { stdout } = runInDir(dir, "apply", jsonFile);
+            expect(stdout).toBe("apply: 1 annotation written in 1 file.\n");
+          },
+        );
+      });
+
+      // The annotation is right, but `use.ts` adds a property the type would
+      // then not have. Apply refuses it; before this the refusal was silent.
+      const CART = "export function addLine(cart) {\n  return cart;\n}\n";
+      const USE =
+        'import { addLine } from "./cart.js";\n' +
+        "const cart = addLine({ lines: [1] });\n" +
+        "cart.coupon = 1;\n";
+      const cartEntries = (at: (file: string, marker: string) => [string, number]) => [
+        [...at("cart.ts", "cart)"), [["{ lines: number[] }", undefined]], {}],
+      ];
+
+      it("counts an observed position it did not write, and points at --report", () => {
+        project({ "cart.ts": CART, "use.ts": USE }, cartEntries, (dir, jsonFile) => {
+          const { stdout } = runInDir(dir, "apply", jsonFile);
+          expect(stdout).toBe(
+            "apply: 0 annotations written in 0 files.\n" +
+              "       1 observed position not written (1 would add a type error) - see --report.\n",
+          );
+        });
+      });
+
+      it("--report names the position, the observed type and the error it would add", () => {
+        project({ "cart.ts": CART, "use.ts": USE }, cartEntries, (dir, jsonFile) => {
+          const { stdout } = runInDir(dir, "apply", jsonFile, "--report");
+          expect(stdout).toContain("Observed but not written (1)");
+          expect(stdout).toContain("  Would add a type error (1)\n");
+          expect(stdout).toContain("    cart.ts:1:25  cart\n");
+          expect(stdout).toContain("      observed  { lines: number[] }\n");
+          expect(stdout).toContain("      TS2339 at use.ts:3: Property 'coupon' does not exist");
+          expect(stdout).not.toContain("see --report");
+        });
+      });
+
+      it("--report separates an observation that says nothing from one naming an unreachable type", () => {
+        project(
+          {
+            "a.ts": "export function run(task, widget) {\n  return [task, widget];\n}\n",
+          },
+          (at) => [
+            [...at("a.ts", "task,"), [["unknown", undefined]], {}],
+            [...at("a.ts", "widget)"), [["Widget", undefined]], {}],
+          ],
+          (dir, jsonFile) => {
+            const { stdout } = runInDir(dir, "apply", jsonFile, "--report");
+            expect(stdout).toContain("  Carries no type information (1)\n    a.ts:1:21  task\n");
+            expect(stdout).toContain(
+              "  Refers to a type this file cannot name (1)\n    a.ts:1:27  widget\n" +
+                "      observed  Widget\n" +
+                "      Widget is not in scope\n",
+            );
+          },
+        );
+      });
+
+      it("--report counts, without listing, what TypeScript already had", () => {
+        project(
+          { "greet.ts": 'export function greet(name: string) {\n  return "Hi " + name;\n}\n' },
+          // `at` stops one short of the marker's end: just past the `)`.
+          (at) => [[...at("greet.ts", "string) "), [["string", undefined]], { returnType: true }]],
+          (dir, jsonFile) => {
+            const { stdout } = runInDir(dir, "apply", jsonFile, "--report");
+            expect(stdout).toContain("Nothing to add (1)\n  1 already inferred by TypeScript\n");
+            expect(stdout).not.toContain("Observed but not written");
+          },
+        );
+      });
+
+      it("--dry-run gives the same count as the run it previews", () => {
+        project({ "cart.ts": CART, "use.ts": USE }, cartEntries, (dir, jsonFile) => {
+          const { stdout } = runInDir(dir, "apply", jsonFile, "--dry-run");
+          expect(stdout).toContain(
+            "1 observed position not written (1 would add a type error) - see --report.",
+          );
+        });
+      });
+    });
+
     describe("unrecognised flags", () => {
       it("warns instead of silently applying when a safety flag is misspelled", () => {
         withTmpDir((dir) => {
