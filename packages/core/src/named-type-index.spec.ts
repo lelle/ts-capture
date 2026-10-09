@@ -256,6 +256,29 @@ describe("buildNamedTypeIndex — cross-file (with Program)", () => {
     );
   });
 
+  it("keeps a shape structural when its only match is a type this file cannot name", () => {
+    const source = "export function findUser(users, id) { return users[0]; }";
+    const program = makeProgram({
+      "/models.ts": "export interface User { id: number; name: string; }",
+      "/test.ts": source,
+    });
+    const index = buildNamedTypeIndex(source, program, "/test.ts", new Set());
+    expect(rewriteToNamedInScope("{ id: number, name: string }[]", index)).toBe(
+      "{ id: number, name: string }[]",
+    );
+  });
+
+  it("rewrites a subset match to a type from another file once it is in scope", () => {
+    const source =
+      "import type { User } from './models.js';\nexport function findUser(users, id) { return users[0]; }";
+    const program = makeProgram({
+      "/models.ts": "export interface User { id: number; name: string; nickname?: string; }",
+      "/test.ts": source,
+    });
+    const index = buildNamedTypeIndex(source, program, "/test.ts", new Set(["User"]));
+    expect(rewriteToNamedInScope("{ id: number, name: string }[]", index)).toBe("User[]");
+  });
+
   it("indexes only same-file declarations when no Program is supplied", () => {
     const source =
       "import { BookingState } from './state.js';\nfunction subscribe(s) { return s; }";

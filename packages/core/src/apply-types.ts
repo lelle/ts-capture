@@ -135,12 +135,6 @@ export function applyTypesToFile(
   // comparison below, but the const-assertion guard beside it is not a
   // redundancy question and holds whatever that flag says.
   const inferableInfoMap: Map<number, InferableInfo> = buildInferableInfoMap(source);
-  // When Program + filename available, use the cross-file index (seeded
-  // with same-file via getSymbolsInScope). Falls back to same-file-only
-  // when no Program is provided.
-  const namedTypeIndex: NamedTypeIndex | undefined = infer.preferNamedInScope
-    ? buildNamedTypeIndex(source, program, options.filename)
-    : undefined;
   // Scope discovery for emitted-name reachability. TypeChecker-based
   // when Program + filename are available — includes DOM types,
   // namespace roots, re-exports. Falls back to text-level (imports +
@@ -153,6 +147,12 @@ export function applyTypesToFile(
     }
     return buildScopedTypeNames(source, options.filename);
   })();
+  // When Program + filename available, use the cross-file index (seeded
+  // with same-file via getSymbolsInScope). Falls back to same-file-only
+  // when no Program is provided.
+  const namedTypeIndex: NamedTypeIndex | undefined = infer.preferNamedInScope
+    ? buildNamedTypeIndex(source, program, options.filename, scopedTypeNames)
+    : undefined;
 
   // Arity map for expanding bare generic class/interface names with
   // `<unknown, ...>` so TS2314 doesn't fire on user-defined generic ctors.
