@@ -137,12 +137,21 @@ function resolveType(value: unknown, depth: number, state: WalkState): string | 
     return t;
   }
 
-  // Circular reference detection for objects and arrays
-  if (typeof value === "object" || typeof value === "function") {
-    if (state.visited.has(value as object)) return null;
-    state.visited.add(value as object);
-  }
+  if (typeof value !== "object" && typeof value !== "function") return t;
 
+  // Cycle guard. `visited` holds only the ancestors of the value being
+  // walked, so an object shared by two siblings is described both times.
+  const ref = value as object;
+  if (state.visited.has(ref)) return null;
+  state.visited.add(ref);
+  try {
+    return resolveReferenceType(ref, depth, state);
+  } finally {
+    state.visited.delete(ref);
+  }
+}
+
+function resolveReferenceType(value: object, depth: number, state: WalkState): string {
   if (Array.isArray(value)) {
     return resolveArrayType(value, depth, state);
   }
@@ -229,7 +238,7 @@ function resolveType(value: unknown, depth: number, state: WalkState): string | 
     return resolveObjectType(value as Record<string, unknown>, depth, state);
   }
 
-  return t;
+  return typeof value;
 }
 
 function resolveArrayType(arr: unknown[], depth: number, state: WalkState): string {
