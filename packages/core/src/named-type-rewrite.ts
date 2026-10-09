@@ -241,11 +241,8 @@ function buildCrossFileSubsetIndex(
   // Walk every user-authored source file in the Program — not just
   // symbols `getSymbolsInScope` returns, because subset matching is
   // useful for types reachable only transitively (e.g. via index types
-  // like `BookingState['availableProducts']`). The scope check at
-  // emission time (`allTypeRefsInScope`) filters out matches whose
-  // name isn't reachable as a type at the apply site, so widening
-  // the search here is safe — false matches end up skipped entirely
-  // rather than emitted under an unreachable name.
+  // like `BookingState['availableProducts']`). `buildNamedTypeIndex`
+  // then drops the names the target file cannot reach.
   for (const candidateSf of program.getSourceFiles()) {
     if (candidateSf === sf) continue;
     if (candidateSf.isDeclarationFile) continue;
@@ -299,11 +296,19 @@ export function buildNamedTypeIndex(
   source: string,
   program?: ts.Program,
   filename?: string,
+  scopedTypeNames?: Set<string>,
 ): NamedTypeIndex {
   if (program && filename) {
     const named = buildCrossFileNamedTypeIndex(program, filename, source);
     const subset = buildCrossFileSubsetIndex(program, filename, source);
-    if (named && subset) return { named, subset };
+    if (named && subset) {
+      // A match under a name the file cannot reach would fail the emission
+      // scope check and take the valid structural annotation down with it.
+      const reachable = scopedTypeNames
+        ? subset.filter((entry) => scopedTypeNames.has(entry.name))
+        : subset;
+      return { named, subset: reachable };
+    }
     // File not in the Program — fall through to same-file only.
   }
   return {

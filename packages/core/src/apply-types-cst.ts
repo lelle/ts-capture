@@ -119,13 +119,6 @@ export function applyTypesToFileCst(
   }
   const infer = options.infer ?? INFER_DEFAULTS;
   const prefix = options.prefix ?? "";
-  // Unified named-type index (exact + subset) for substituting structural
-  // annotations with the matching in-scope interface / type alias. Off
-  // unless `preferNamedInScope`; the builder owns the cross-file vs
-  // same-file scope decision (mirrors offset path).
-  const namedTypeIndex: NamedTypeIndex | undefined = infer.preferNamedInScope
-    ? buildNamedTypeIndex(source, program, options.filename)
-    : undefined;
   // Scope check (mirrored from offset path). Prefers TypeChecker when
   // Program + filename available.
   const scopedTypeNames: Set<string> | undefined = (() => {
@@ -136,6 +129,13 @@ export function applyTypesToFileCst(
     }
     return buildScopedTypeNames(source, options.filename);
   })();
+  // Unified named-type index (exact + subset) for substituting structural
+  // annotations with the matching in-scope interface / type alias. Off
+  // unless `preferNamedInScope`; the builder owns the cross-file vs
+  // same-file scope decision (mirrors offset path).
+  const namedTypeIndex: NamedTypeIndex | undefined = infer.preferNamedInScope
+    ? buildNamedTypeIndex(source, program, options.filename, scopedTypeNames)
+    : undefined;
 
   // Arity map for expanding bare generic class/interface names.
   const ctorArityMap: Map<string, number> | undefined =
