@@ -67,17 +67,19 @@ try {
 }
 const OUT_FILE = path.join(TYPES_DIR, `ts-capture-types-${process.pid}.json`);
 
-let lastFlushedSize = 0;
+// Compared as serialized output, not entry count: a known position can
+// gain a type without adding an entry.
+let lastFlushedJson = "[]";
 // One-shot stderr warning on write failure (BACKLOG follow-up from
 // 2be6b90). Auto-mkdir covers dir-not-exists; permission-denied /
 // disk-full / unmounted-volume still silently lose data without this.
 let warnedWriteFailure = false;
 function flush() {
-  const types = ctx.getCollectedTypes();
-  if (types.length === lastFlushedSize) return;
-  lastFlushedSize = types.length;
+  const json = JSON.stringify(ctx.getCollectedTypes());
+  if (json === lastFlushedJson) return;
+  lastFlushedJson = json;
   try {
-    fs.writeFileSync(OUT_FILE, JSON.stringify(types));
+    fs.writeFileSync(OUT_FILE, json);
   } catch (e) {
     if (!warnedWriteFailure) {
       warnedWriteFailure = true;

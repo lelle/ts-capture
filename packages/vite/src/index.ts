@@ -394,6 +394,9 @@ export function getCollectorSnippet(
   var CAPTURE_CLASS_HIERARCHY = ${literalOpts.captureClassHierarchy};
 
   var __tscptr__logs = {};
+  // Bumped whenever any position gains a type; flush compares it, so a new
+  // type at a known position is written too.
+  var __tscptr__revision = 0;
 
   // Re-entry guard. Without this, observing a Proxy-backed value (Hono's
   // c.req.queries, Vue's reactive(), Solid signals, etc.) triggers a
@@ -581,7 +584,10 @@ export function getCollectorSnippet(
       var typeName;
       try { typeName = __tscptr__getTypeName(value); }
       catch (e) { typeName = "unknown"; } // belt-and-suspenders for any other walk failures
-      __tscptr__logs[key].add(JSON.stringify([typeName, undefined]));
+      var seen = __tscptr__logs[key];
+      var sizeBefore = seen.size;
+      seen.add(JSON.stringify([typeName, undefined]));
+      if (seen.size !== sizeBefore) __tscptr__revision++;
     } finally {
       __tscptr__in_record = false;
     }
@@ -711,11 +717,10 @@ export function getCollectorSnippet(
     // this. Guarded so repeat flushes don't spam.
     var __tscptr__warned = false;
     function __tscptr__flush() {
-      var types = __tscptr__.get();
-      if (types.length === lastFlushed) return;
-      lastFlushed = types.length;
+      if (__tscptr__revision === lastFlushed) return;
+      lastFlushed = __tscptr__revision;
       try {
-        fs.writeFileSync(OUT_FILE, JSON.stringify(types));
+        fs.writeFileSync(OUT_FILE, JSON.stringify(__tscptr__.get()));
       } catch (e) {
         if (!__tscptr__warned) {
           __tscptr__warned = true;
