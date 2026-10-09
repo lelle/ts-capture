@@ -23,6 +23,13 @@ import {
   type TsCaptureConfig,
 } from "../configuration.js";
 import { type ApplyTelemetry, newApplyTelemetry } from "../contract.js";
+import {
+  type LocatedSkip,
+  locateSkip,
+  notWrittenLine,
+  reportLines,
+  summaryLines,
+} from "./apply-report.js";
 
 interface ApplyManifest {
   version: 1;
@@ -109,6 +116,7 @@ const APPLY_FLAGS = [
   "--include-tests",
   "--force",
   "--telemetry",
+  "--report",
   "--project",
 ];
 
@@ -160,6 +168,7 @@ export async function cmdApply(args: string[], flags: Set<string>) {
   const includeTests = flags.has("--include-tests");
   const force = flags.has("--force");
   const telemetryEnabled = flags.has("--telemetry");
+  const reportEnabled = flags.has("--report");
   // Always counted, printed only on request. `emitted` is what decides whether
   // the manifest is written, and a counter is cheaper than the alternative:
   // asking each applier afterwards what it did.
@@ -313,6 +322,8 @@ export async function cmdApply(args: string[], flags: Set<string>) {
   const wouldChange: string[] = [];
   const noChange: string[] = [];
   const skippedFiles: string[] = [];
+  const located: LocatedSkip[] = [];
+  let filesWritten = 0;
 
   // Gitignore-style skip chain: built-in test-file default (unless
   // --include-tests) + user `apply.skipFiles` globs from config.
@@ -352,6 +363,7 @@ export async function cmdApply(args: string[], flags: Set<string>) {
         ? createVerificationContext(projectVerifier, file, source)
         : undefined;
 
+    const firstSkipOfFile = telemetry.skipped.length;
     let result: string;
     if (group.plugin) {
       // Plugin-owned file: hand the resolved source + collected entries
@@ -393,6 +405,9 @@ export async function cmdApply(args: string[], flags: Set<string>) {
     if (verify) {
       advanceCurrentSource(verify, result);
     }
+    for (const skip of telemetry.skipped.slice(firstSkipOfFile)) {
+      located.push(locateSkip(skip, file, source));
+    }
 
     if (result === source) {
       noChange.push(file);
@@ -403,6 +418,7 @@ export async function cmdApply(args: string[], flags: Set<string>) {
       wouldChange.push(file);
     } else {
       fs.writeFileSync(file, result);
+      filesWritten++;
     }
   }
 
@@ -421,7 +437,14 @@ export async function cmdApply(args: string[], flags: Set<string>) {
         `  (${skippedFiles.length} file(s) skipped by skip rules — use --include-tests for the test default, or adjust apply.skipFiles)\n`,
       );
     }
+    const notWritten = notWrittenLine(located, !reportEnabled);
+    if (notWritten) process.stdout.write(`  ${notWritten}\n`);
+    if (reportEnabled) process.stdout.write(`${reportLines(telemetry, located).join("\n")}\n`);
   } else {
+    const lines = summaryLines(telemetry, filesWritten, located, !reportEnabled);
+    if (reportEnabled) lines.push(...reportLines(telemetry, located));
+    process.stdout.write(`${lines.join("\n")}\n`);
+
     // Real (non-dry-run) apply: write the manifest so subsequent runs
     // with the same types.json short-circuit. Skip on --force so users
     // can repeatedly re-apply without leaving stale manifests.

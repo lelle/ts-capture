@@ -22,6 +22,33 @@ import type { CstSiteIndex } from "./cst-site-index.js";
  *     per-rule heuristics whose breakdown is
  *     a follow-up.
  */
+/** Why an observed position got no annotation. */
+export type ApplySkipReason =
+  /** The type-check oracle rejected it; `diagnostic` says with what. */
+  | "type-error"
+  /** The observation describes no usable type (`unknown`, an empty array, …). */
+  | "no-information"
+  /** It names a type the target file cannot reach. */
+  | "out-of-scope"
+  /** The observed value falls outside the type already there. */
+  | "contradiction"
+  /** TypeScript already infers the same type. */
+  | "redundant"
+  /** The code already says something an observation must not overwrite. */
+  | "kept-existing";
+
+export interface ApplySkip {
+  /** Offset in the source handed to the applier. */
+  pos: number;
+  reason: ApplySkipReason;
+  /** The observed type-strings, joined as a union. */
+  observed: string;
+  detail?: string;
+  diagnostic?: { code: number; message: string; file: string; line: number };
+  /** Filled in by the caller that knows which file was being applied. */
+  file?: string;
+}
+
 export interface ApplyTelemetry {
   totalEntries: number;
   emitted: number;
@@ -29,6 +56,10 @@ export interface ApplyTelemetry {
   unparseable: number;
   positionMismatch: number;
   verifyReject: number;
+  /** The part of `idempotent` that was a restatement rather than an existing annotation. */
+  redundant: number;
+  /** One record per observed position that was not written. */
+  skipped: ApplySkip[];
 }
 
 /**
@@ -43,6 +74,8 @@ export function newApplyTelemetry(): ApplyTelemetry {
     unparseable: 0,
     positionMismatch: 0,
     verifyReject: 0,
+    redundant: 0,
+    skipped: [],
   };
 }
 

@@ -237,6 +237,8 @@ export function applyTypesToFileCst(
         unparseable: 0,
         positionMismatch: 0,
         verifyReject: 0,
+        redundant: 0,
+        skipped: [],
       }
     : undefined;
   // Invert the rebasing so the delegate can look sites up by their original
@@ -266,6 +268,13 @@ export function applyTypesToFileCst(
     telemetry.unparseable += sub.unparseable;
     telemetry.positionMismatch += sub.positionMismatch;
     telemetry.verifyReject += sub.verifyReject;
+    telemetry.redundant += sub.redundant;
+    for (const skipped of sub.skipped) {
+      telemetry.skipped.push({
+        ...skipped,
+        pos: originalPosByRebased.get(skipped.pos) ?? skipped.pos,
+      });
+    }
   }
   return result;
 }

@@ -17,6 +17,8 @@ Usage:
                                           --dry-run        report what would change without writing
                                           --include-tests  apply to *.spec.* / *.test.* (default: skip)
                                           --force          bypass <types.json>.applied idempotency manifest
+                                          --report         list every observed position that was not
+                                                           written, with the reason
                                           --project        the tsconfig to typecheck against, when the
                                                            nearest one holds no files (a solution config)
                                           --comments       write what would be annotated as notes in the

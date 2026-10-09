@@ -334,20 +334,57 @@ function hasNewDiagnostic(
   baseline: Set<string>,
   replacements?: ReadonlyArray<SpanReplacement>,
 ): boolean {
+  return findNewDiagnostic(service, file, baseline, replacements) !== undefined;
+}
+
+function findNewDiagnostic(
+  service: ts.LanguageService,
+  file: string,
+  baseline: Set<string>,
+  replacements?: ReadonlyArray<SpanReplacement>,
+): ts.Diagnostic | undefined {
   const isNew = (d: ts.Diagnostic): boolean => {
     if (!replacements || d.start === undefined) return !baseline.has(diagnosticIdentity(d));
     const start = sourceOffsetOfProbeOffset(d.start, replacements);
     return start === undefined || !baseline.has(diagnosticIdentity(d, start));
   };
-  const semantic = service.getSemanticDiagnostics(file);
-  for (const d of semantic) {
-    if (isNew(d)) return true;
+  return (
+    service.getSemanticDiagnostics(file).find(isNew) ??
+    service.getSyntacticDiagnostics(file).find(isNew)
+  );
+}
+
+/**
+ * The first diagnostic one rejected candidate introduces on its own, for
+ * reporting. Undefined when it is clean alone and was rejected only in
+ * combination with others.
+ */
+export function explainRejection(
+  ctx: VerificationContext,
+  replacement: SpanReplacement,
+): { code: number; message: string; file: string; line: number } | undefined {
+  const { service, host, baselineDiagnostics } = ctx.project;
+  host.setFileSnapshot(ctx.filename, applyReplacementsForProbe(ctx.currentSource, [replacement]));
+  try {
+    const found =
+      findNewDiagnostic(service, ctx.filename, baselineDiagnostics, [replacement]) ??
+      ctx.importersOfTarget
+        .map((file) => findNewDiagnostic(service, file, baselineDiagnostics))
+        .find((d) => d !== undefined);
+    if (!found) return undefined;
+    const line =
+      found.file && found.start !== undefined
+        ? found.file.getLineAndCharacterOfPosition(found.start).line + 1
+        : 0;
+    return {
+      code: found.code,
+      message: ts.flattenDiagnosticMessageText(found.messageText, " "),
+      file: found.file?.fileName ?? ctx.filename,
+      line,
+    };
+  } finally {
+    host.setFileSnapshot(ctx.filename, ctx.currentSource);
   }
-  const syntactic = service.getSyntacticDiagnostics(file);
-  for (const d of syntactic) {
-    if (isNew(d)) return true;
-  }
-  return false;
 }
 
 /**

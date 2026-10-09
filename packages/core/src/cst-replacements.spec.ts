@@ -5,6 +5,7 @@ import type { DiscoveredType } from "./collector-contract.js";
 import type { CollectedTypeEntry, CollectedTypeInfo, ExtraOptions } from "./type-collector.js";
 
 import { INFER_DEFAULTS } from "./configuration.js";
+import { newApplyTelemetry } from "./contract.js";
 import { buildCstReplacements, type CstApplyContext } from "./cst-replacements.js";
 import { routeEntries } from "./cst-routing.js";
 import { buildCstSiteIndex } from "./cst-site-index.js";
@@ -45,14 +46,7 @@ describe("buildCstReplacements", () => {
   it("counts emitted into telemetry when verify is off", () => {
     const src = "function f(a) {}";
     const pos = src.indexOf("(a") + 2;
-    const telemetry = {
-      totalEntries: 0,
-      emitted: 0,
-      idempotent: 0,
-      unparseable: 0,
-      positionMismatch: 0,
-      verifyReject: 0,
-    };
+    const telemetry = newApplyTelemetry();
     build(src, [entry(pos)], emptyCtx({ telemetry }));
     expect(telemetry.emitted).toBe(1);
   });
