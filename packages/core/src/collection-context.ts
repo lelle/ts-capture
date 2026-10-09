@@ -50,16 +50,34 @@ export function createCollectionContext(options?: CollectorOptions): CollectionC
   // own per-walker re-entry guard as defense-in-depth.)
   // Same fix as the inline collector snippet in @ts-capture/vite/src/index.ts.
   let inRecord = false;
+  // Counts every change to the state getCollectedTypes() reads, so a caller
+  // can tell whether the output moved without computing it.
+  let revision = 0;
+  // What the output keeps of a function is its `${filename}:${retPos}`, not
+  // its identity, so the revision follows those keys: a new closure from a
+  // site already seen at a position changes nothing.
+  const seenFnKeys = new Map<string, Set<string>>();
+  const seenMemberFnKeys = new Map<string, string>();
+  const recordedAsValue = new WeakSet<Function>();
+
+  function register(fn: Function, retPos: number, filename: string): void {
+    const known = registeredFns.get(fn);
+    if (known?.retPos === retPos && known.filename === filename) return;
+    registeredFns.set(fn, { retPos, filename });
+    if (recordedAsValue.has(fn)) revision++;
+  }
 
   return {
     diagnostics,
 
+    revision: () => revision,
+
     registerFn(fn, retPos, filename) {
-      registeredFns.set(fn, { retPos, filename });
+      register(fn, retPos, filename);
     },
 
     regFn(fn, retPos, filename) {
-      registeredFns.set(fn, { retPos, filename });
+      register(fn, retPos, filename);
       return fn;
     },
 
@@ -102,7 +120,11 @@ export function createCollectionContext(options?: CollectorOptions): CollectionC
 
         // Store parameter name for cross-referencing function signatures
         if (!opts.returnType) {
-          paramNames.set(`${filename}:${pos}`, name);
+          const nameKey = `${filename}:${pos}`;
+          if (paramNames.get(nameKey) !== name) {
+            paramNames.set(nameKey, name);
+            revision++;
+          }
         }
 
         // Store function refs for deferred cross-referencing
@@ -110,6 +132,18 @@ export function createCollectionContext(options?: CollectorOptions): CollectionC
           const existing = recordedFunctions.get(key);
           if (existing) existing.push(value);
           else recordedFunctions.set(key, [value]);
+          recordedAsValue.add(value);
+          const info = registeredFns.get(value);
+          if (info) {
+            let fnKeys = seenFnKeys.get(key);
+            if (!fnKeys) {
+              fnKeys = new Set();
+              seenFnKeys.set(key, fnKeys);
+            }
+            const known = fnKeys.size;
+            fnKeys.add(`${info.filename}:${info.retPos}`);
+            if (fnKeys.size !== known) revision++;
+          }
         }
 
         // Store registered-fn refs found as object property values
@@ -123,6 +157,16 @@ export function createCollectionContext(options?: CollectorOptions): CollectionC
             }
             if (memberFns.size > 0) {
               objectMemberFns.set(key, memberFns);
+              const memberFnKeys = [...memberFns]
+                .map(([member, fn]) => {
+                  const info = registeredFns.get(fn)!;
+                  return `${member}=${info.filename}:${info.retPos}`;
+                })
+                .join("|");
+              if (seenMemberFnKeys.get(key) !== memberFnKeys) {
+                seenMemberFnKeys.set(key, memberFnKeys);
+                revision++;
+              }
             }
           } catch {
             // Exotic objects (Proxies with throwing traps) are silently
@@ -153,7 +197,9 @@ export function createCollectionContext(options?: CollectorOptions): CollectionC
         const entry = reason
           ? [typeName, objectDeclaration, reason]
           : [typeName, objectDeclaration];
+        const seen = set.size;
         set.add(JSON.stringify(entry));
+        if (set.size !== seen) revision++;
       } finally {
         inRecord = false;
       }

@@ -394,6 +394,10 @@ export function getCollectorSnippet(
   var CAPTURE_CLASS_HIERARCHY = ${literalOpts.captureClassHierarchy};
 
   var __tscptr__logs = {};
+  // Moves whenever the collected output would; flush compares it, so a new
+  // type at a known position is written without serializing on every call.
+  var __tscptr__revision = 0;
+  var __tscptr__revisionNow = function() { return __tscptr__revision; };
 
   // Re-entry guard. Without this, observing a Proxy-backed value (Hono's
   // c.req.queries, Vue's reactive(), Solid signals, etc.) triggers a
@@ -587,7 +591,10 @@ export function getCollectorSnippet(
       var typeName;
       try { typeName = __tscptr__getTypeName(value); }
       catch (e) { typeName = "unknown"; } // belt-and-suspenders for any other walk failures
-      __tscptr__logs[key].add(JSON.stringify([typeName, undefined]));
+      var seen = __tscptr__logs[key];
+      var sizeBefore = seen.size;
+      seen.add(JSON.stringify([typeName, undefined]));
+      if (seen.size !== sizeBefore) __tscptr__revision++;
     } finally {
       __tscptr__in_record = false;
     }
@@ -702,6 +709,7 @@ export function getCollectorSnippet(
       __tscptr__.registerFn = function(fn, retPos, filename) { __tscptr__ctx.registerFn(fn, retPos, filename); };
       __tscptr__.regFn = function(fn, retPos, filename) { return __tscptr__ctx.regFn(fn, retPos, filename); };
       __tscptr__.get = function() { return __tscptr__ctx.getCollectedTypes(); };
+      __tscptr__revisionNow = function() { return __tscptr__ctx.revision(); };
     } catch (e) { /* keep the built-in collector */ }
     var TYPES_DIR = process.env.TS_CAPTURE_TYPES_DIR || os.tmpdir();
     // Auto-create the dump directory. Without this, a TS_CAPTURE_TYPES_DIR
@@ -730,9 +738,7 @@ export function getCollectorSnippet(
       var __tscptr__wt = require("node:worker_threads");
       IS_WORKER_THREAD = __tscptr__wt.isMainThread === false;
     } catch (e) { /* worker_threads unavailable; assume main */ }
-    // Compared as serialized output, not entry count: a known position can
-    // gain a type, or have a function type resolved, without adding an entry.
-    var lastFlushed = "[]";
+    var lastFlushed = 0;
     var FLUSH_EVERY = IS_WORKER_THREAD ? 1 : 10;
     var callCount = 0;
     // One-shot stderr warning on write failure (follow-up from
@@ -741,11 +747,13 @@ export function getCollectorSnippet(
     // this. Guarded so repeat flushes don't spam.
     var __tscptr__warned = false;
     function __tscptr__flush() {
-      var json = JSON.stringify(__tscptr__.get());
-      if (json === lastFlushed) return;
-      lastFlushed = json;
+      var revision = __tscptr__revisionNow();
+      if (revision === lastFlushed) return;
+      lastFlushed = revision;
+      var types = __tscptr__.get();
+      if (types.length === 0) return;
       try {
-        fs.writeFileSync(OUT_FILE, json);
+        fs.writeFileSync(OUT_FILE, JSON.stringify(types));
       } catch (e) {
         if (!__tscptr__warned) {
           __tscptr__warned = true;

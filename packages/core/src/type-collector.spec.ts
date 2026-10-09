@@ -1379,3 +1379,72 @@ describe("applyParamReturnUpgrade", () => {
     ).toBe("{ fn(cb: (x: number) => void): boolean }");
   });
 });
+
+describe("CollectionContext.revision", () => {
+  it("does not move when an observation repeats", () => {
+    const ctx = createCollectionContext();
+    const callback = (value: number) => String(value);
+    ctx.registerFn(callback, 100, "/callback.ts");
+    ctx.record("format", callback, 10, "/receiver.ts", { fnRetPos: 20 });
+    ctx.record("count", 1, 90, "/callback.ts", { fnRetPos: 100 });
+    const settled = ctx.revision();
+
+    ctx.registerFn(callback, 100, "/callback.ts");
+    ctx.record("format", callback, 10, "/receiver.ts", { fnRetPos: 20 });
+    ctx.record("count", 2, 90, "/callback.ts", { fnRetPos: 100 });
+    expect(ctx.revision()).toBe(settled);
+  });
+
+  it("does not move for a new closure created at an already-seen site", () => {
+    const ctx = createCollectionContext();
+    const makeCallback = () => (value: number) => String(value);
+    const holder = (load: Function) => ({ load, name: "orders" });
+    const observe = (): void => {
+      const callback = ctx.regFn(makeCallback(), 100, "/callback.ts");
+      ctx.record("format", callback, 10, "/receiver.ts", { fnRetPos: 20 });
+      ctx.record("service", holder(callback), 30, "/receiver.ts", { fnRetPos: 40 });
+    };
+    observe();
+    const settled = ctx.revision();
+    const output = JSON.stringify(ctx.getCollectedTypes());
+
+    observe();
+    expect(JSON.stringify(ctx.getCollectedTypes())).toBe(output);
+    expect(ctx.revision()).toBe(settled);
+  });
+
+  it("moves with every step that changes the collected output", () => {
+    const ctx = createCollectionContext();
+    const callback = (value: number) => String(value);
+    const service = { load: callback, name: "orders" };
+    const steps: Array<() => void> = [
+      () => ctx.record("format", callback, 10, "/receiver.ts", { fnRetPos: 20 }),
+      () => ctx.record("count", 1, 90, "/callback.ts", { fnRetPos: 100 }),
+      () => ctx.record("(return)", "1", 100, "/callback.ts", { returnType: true }),
+      () => ctx.registerFn(callback, 100, "/callback.ts"),
+      () => ctx.record("count", null, 90, "/callback.ts", { fnRetPos: 100 }),
+      () => ctx.record("service", service, 30, "/receiver.ts", { fnRetPos: 40 }),
+      () =>
+        ctx.record("format", 7, 10, "/receiver.ts", {
+          paramReturn: true,
+          paramReturnMember: "format",
+        }),
+    ];
+
+    let output = JSON.stringify(ctx.getCollectedTypes());
+    let revision = ctx.revision();
+    let changes = 0;
+    for (const step of steps) {
+      step();
+      const nextOutput = JSON.stringify(ctx.getCollectedTypes());
+      const nextRevision = ctx.revision();
+      if (nextOutput !== output) {
+        changes++;
+        expect(nextRevision).not.toBe(revision);
+      }
+      output = nextOutput;
+      revision = nextRevision;
+    }
+    expect(changes).toBeGreaterThanOrEqual(5);
+  });
+});
