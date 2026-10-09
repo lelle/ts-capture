@@ -394,9 +394,6 @@ export function getCollectorSnippet(
   var CAPTURE_CLASS_HIERARCHY = ${literalOpts.captureClassHierarchy};
 
   var __tscptr__logs = {};
-  // Bumped whenever any position gains a type; flush compares it, so a new
-  // type at a known position is written too.
-  var __tscptr__revision = 0;
 
   // Re-entry guard. Without this, observing a Proxy-backed value (Hono's
   // c.req.queries, Vue's reactive(), Solid signals, etc.) triggers a
@@ -590,10 +587,7 @@ export function getCollectorSnippet(
       var typeName;
       try { typeName = __tscptr__getTypeName(value); }
       catch (e) { typeName = "unknown"; } // belt-and-suspenders for any other walk failures
-      var seen = __tscptr__logs[key];
-      var sizeBefore = seen.size;
-      seen.add(JSON.stringify([typeName, undefined]));
-      if (seen.size !== sizeBefore) __tscptr__revision++;
+      __tscptr__logs[key].add(JSON.stringify([typeName, undefined]));
     } finally {
       __tscptr__in_record = false;
     }
@@ -687,6 +681,28 @@ export function getCollectorSnippet(
     var path = require("node:path");
     var os = require("node:os");
     var crypto = require("node:crypto");
+    // Node can load the real collector, which also resolves a function value
+    // to the signature observed for that function. The built-in one above
+    // stays for the browser, and for a runner that cannot resolve the package.
+    try {
+      var __tscptr__ctx = require("@ts-capture/core").createCollectionContext({
+        literalOptions: {
+          literalString: LITERAL_STRING,
+          literalStringMaxLength: LITERAL_STRING_MAX,
+          literalNumber: LITERAL_NUMBER,
+          literalBoolean: LITERAL_BOOLEAN,
+          captureClassHierarchy: CAPTURE_CLASS_HIERARCHY,
+          maxAnnotationChars: ${literalOpts.maxAnnotationChars},
+        },
+      });
+      __tscptr__record = function(name, value, pos, filename, optsJson) {
+        __tscptr__ctx.record(name, value, pos, filename, JSON.parse(optsJson));
+      };
+      __tscptr__.track = function(value, filename, offset) { return __tscptr__ctx.track(value, filename, offset); };
+      __tscptr__.registerFn = function(fn, retPos, filename) { __tscptr__ctx.registerFn(fn, retPos, filename); };
+      __tscptr__.regFn = function(fn, retPos, filename) { return __tscptr__ctx.regFn(fn, retPos, filename); };
+      __tscptr__.get = function() { return __tscptr__ctx.getCollectedTypes(); };
+    } catch (e) { /* keep the built-in collector */ }
     var TYPES_DIR = process.env.TS_CAPTURE_TYPES_DIR || os.tmpdir();
     // Auto-create the dump directory. Without this, a TS_CAPTURE_TYPES_DIR
     // pointing at a non-existent path causes every flush to throw ENOENT
@@ -714,7 +730,9 @@ export function getCollectorSnippet(
       var __tscptr__wt = require("node:worker_threads");
       IS_WORKER_THREAD = __tscptr__wt.isMainThread === false;
     } catch (e) { /* worker_threads unavailable; assume main */ }
-    var lastFlushed = 0;
+    // Compared as serialized output, not entry count: a known position can
+    // gain a type, or have a function type resolved, without adding an entry.
+    var lastFlushed = "[]";
     var FLUSH_EVERY = IS_WORKER_THREAD ? 1 : 10;
     var callCount = 0;
     // One-shot stderr warning on write failure (follow-up from
@@ -723,10 +741,11 @@ export function getCollectorSnippet(
     // this. Guarded so repeat flushes don't spam.
     var __tscptr__warned = false;
     function __tscptr__flush() {
-      if (__tscptr__revision === lastFlushed) return;
-      lastFlushed = __tscptr__revision;
+      var json = JSON.stringify(__tscptr__.get());
+      if (json === lastFlushed) return;
+      lastFlushed = json;
       try {
-        fs.writeFileSync(OUT_FILE, JSON.stringify(__tscptr__.get()));
+        fs.writeFileSync(OUT_FILE, json);
       } catch (e) {
         if (!__tscptr__warned) {
           __tscptr__warned = true;

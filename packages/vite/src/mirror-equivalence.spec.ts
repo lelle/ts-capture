@@ -46,9 +46,16 @@ function makeSandbox(opts: LiteralOptions) {
     captureClassHierarchy: opts.captureClassHierarchy ?? false,
     maxAnnotationChars: opts.maxAnnotationChars ?? 4096,
   });
+  // In Node the snippet hands collection to core when it can load it. Hide
+  // core here so the built-in collector — the one browsers run — is compared.
+  const realRequire = require;
+  const requireWithoutCore = ((id: string) => {
+    if (id === "@ts-capture/core") throw new Error("hidden from the mirror under test");
+    return realRequire(id);
+  }) as NodeJS.Require;
   const ctx: Record<string, unknown> = {
     process,
-    require,
+    require: requireWithoutCore,
     setInterval,
     clearInterval,
     navigator: undefined,
