@@ -78,6 +78,27 @@ describe("allTypeRefsInScope", () => {
   it("checks only the top-level identifier of a dotted reference", () => {
     expect(allTypeRefsInScope("React.ReactElement", new Set(["React"]))).toBe(true);
   });
+
+  it("does not read a capitalised word inside a string literal as a type name", () => {
+    expect(allTypeRefsInScope('"World"', new Set())).toBe(true);
+    expect(allTypeRefsInScope('{ first: "Ada", last: "Lovelace" }', new Set())).toBe(true);
+  });
+
+  it("does not read a capitalised property key or parameter name as a type name", () => {
+    expect(allTypeRefsInScope("{ Name: string }", new Set())).toBe(true);
+    expect(allTypeRefsInScope("(Value: string) => void", new Set())).toBe(true);
+  });
+
+  it("rejects an unreachable name nested in an object, array or generic", () => {
+    expect(allTypeRefsInScope("{ owner: Foo }", new Set())).toBe(false);
+    expect(allTypeRefsInScope("Foo[]", new Set())).toBe(false);
+    expect(allTypeRefsInScope("Map<string, Foo>", new Set(["Map"]))).toBe(false);
+  });
+
+  it("rejects an unreachable name used in a typeof query", () => {
+    expect(allTypeRefsInScope("typeof Widget", new Set())).toBe(false);
+    expect(allTypeRefsInScope("typeof Widget", new Set(["Widget"]))).toBe(true);
+  });
 });
 
 describe("expandCtorArity", () => {
