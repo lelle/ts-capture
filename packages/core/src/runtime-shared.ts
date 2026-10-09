@@ -99,19 +99,21 @@ export function installTsCaptureRuntime(): void {
 
   guarded.__tscptr__ = tscptr;
 
-  // Compared as serialized output, not entry count: a known position can
-  // gain a type without adding an entry.
-  let lastFlushedJson = "[]";
+  // The context's revision, not the entry count: a known position can gain a
+  // type, or have a function type resolved, without adding an entry.
+  let lastFlushedRevision = 0;
   // One-shot stderr warning on write failure. Auto-mkdir covers
   // dir-not-exists; permission-denied / disk-full / unmounted-volume still
   // silently lose data without this.
   let warnedWriteFailure = false;
   function flush(): void {
-    const json = JSON.stringify(ctx.getCollectedTypes());
-    if (json === lastFlushedJson) return;
-    lastFlushedJson = json;
+    const revision = ctx.revision();
+    if (revision === lastFlushedRevision) return;
+    lastFlushedRevision = revision;
+    const types = ctx.getCollectedTypes();
+    if (types.length === 0) return;
     try {
-      fs.writeFileSync(OUT_FILE, json);
+      fs.writeFileSync(OUT_FILE, JSON.stringify(types));
     } catch (e) {
       if (!warnedWriteFailure) {
         warnedWriteFailure = true;

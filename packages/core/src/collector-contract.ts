@@ -96,6 +96,11 @@ export interface CollectionContext {
    */
   regFn<T extends Function>(fn: T, retPos: number, filename: string): T;
   getCollectedTypes(): CollectedTypeInfo;
+  /**
+   * Changes whenever a call changed what `getCollectedTypes()` would return.
+   * Lets a runtime skip a flush without building the output to compare it.
+   */
+  revision(): number;
   diagnostics: Diagnostic[];
 }
 
