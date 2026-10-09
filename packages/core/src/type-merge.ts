@@ -220,13 +220,37 @@ function isLiteralTypeString(type: string): boolean {
   return type === "true" || type === "false";
 }
 
+/**
+ * Detect any array-shaped type: `T[]`, `Array<...>`, or `{ ... }[]` (a
+ * suffixed object-shape). Used by the unknown[]-drop filter — we
+ * only collapse `unknown[]` from a union when there is another array
+ * to defer the "shape is an array" signal to.
+ *
+ * NOT the same as isSimpleArrayType (which constrains to atom-element
+ * arrays only). Here we also accept object-shape arrays since they
+ * still convey "this is an array".
+ */
+export function isArrayShapedType(t: string): boolean {
+  if (t === "unknown[]") return false;
+  // T[] or { ... }[] — anything ending in [] at the top level
+  if (t.endsWith("[]")) return true;
+  // Array<...>
+  if (/^Array<.*>$/.test(t)) return true;
+  return false;
+}
+
 function mergeKeyValues(values: string[], infer: InferOptions = INFER_DEFAULTS): string {
   // Strip @sa chain markers (and optionally collapse class unions to a
   // common base) before any other handling — markers are an internal
   // encoding and must never leak into the output, and a value-position
   // class union is just as eligible for common-base collapse as a
   // top-level one.
-  const collapsed = rewriteCommonBase(values, infer);
+  const rewritten = rewriteCommonBase(values, infer);
+  // An empty array was observed as `unknown[]`; a concrete array at the same
+  // key says what it holds.
+  const collapsed = rewritten.some(isArrayShapedType)
+    ? rewritten.filter((v) => v !== "unknown[]")
+    : rewritten;
   const unique = [...new Set(collapsed)];
   if (unique.length === 1) return unique[0];
 
