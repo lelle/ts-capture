@@ -12,6 +12,7 @@ import {
   advanceCurrentSource,
   createProjectVerificationContext,
   createVerificationContext,
+  orderByImports,
 } from "../apply-types-verify.js";
 import { applyTypesToFile } from "../apply-types.js";
 import { getProgram } from "../compiler-helper.js";
@@ -344,7 +345,14 @@ export async function cmdApply(args: string[], flags: Set<string>) {
         )
       : undefined;
 
-  for (const [file, group] of grouped) {
+  // Dependencies first, so a callee annotated earlier in the run is typed by
+  // the time its callers' locals are judged for redundancy.
+  const orderedFiles = projectVerifier
+    ? orderByImports([...grouped.keys()], projectVerifier.reverseImportGraph)
+    : [...grouped.keys()];
+
+  for (const file of orderedFiles) {
+    const group = grouped.get(file)!;
     if (skipMatcher.shouldSkip(file)) {
       skippedFiles.push(file);
       continue;
@@ -384,7 +392,10 @@ export async function cmdApply(args: string[], flags: Set<string>) {
       });
     } else {
       const apply = infer.cstAware ? applyTypesToFileCst : applyTypesToFile;
-      result = apply(source, group.entries, { infer, filename: file, verify, telemetry }, program);
+      // The language service's program holds every file applied so far; the
+      // one built from disk does not.
+      const current = verify ? (projectVerifier?.service.getProgram() ?? program) : program;
+      result = apply(source, group.entries, { infer, filename: file, verify, telemetry }, current);
     }
 
     // Tell the shared LanguageService what this file now says, so later

@@ -18,7 +18,45 @@
 import ts from "typescript";
 
 type SpanReplacement = { start: number; end: number; text: string };
-type ReverseImportGraph = Map<string, Set<string>>;
+export type ReverseImportGraph = Map<string, Set<string>>;
+
+/**
+ * The files in an order where each comes after the files it imports, so a
+ * callee annotated earlier in the run is already typed when its callers are
+ * judged. Files nothing here orders keep their given order, and so do the
+ * members of an import cycle, after everything the cycle does not involve.
+ */
+export function orderByImports(
+  files: readonly string[],
+  importersOf: ReverseImportGraph,
+): string[] {
+  const caseSensitive = ts.sys.useCaseSensitiveFileNames;
+  const norm = (p: string): string => (caseSensitive ? p : p.toLowerCase());
+  const indexOf = new Map(files.map((file, i) => [norm(file), i]));
+  const waitingOn = files.map(() => 0);
+  const importers: number[][] = files.map(() => []);
+  files.forEach((file, i) => {
+    for (const importer of importersOf.get(norm(file)) ?? []) {
+      const j = indexOf.get(norm(importer));
+      if (j === undefined || j === i) continue;
+      importers[i].push(j);
+      waitingOn[j]++;
+    }
+  });
+  const ordered: string[] = [];
+  const placed = new Set<number>();
+  const ready = files.map((_, i) => i).filter((i) => waitingOn[i] === 0);
+  while (ready.length > 0) {
+    const i = ready.shift()!;
+    ordered.push(files[i]);
+    placed.add(i);
+    for (const j of importers[i]) if (--waitingOn[j] === 0) ready.push(j);
+  }
+  files.forEach((file, i) => {
+    if (!placed.has(i)) ordered.push(file);
+  });
+  return ordered;
+}
 
 /**
  * Project-scoped verification state. Built once per `cmdApply` run

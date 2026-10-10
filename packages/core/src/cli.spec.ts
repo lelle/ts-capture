@@ -416,6 +416,47 @@ describe("cli", () => {
         });
       });
 
+      it("judges a local against a callee typed in another file, whichever comes first", () => {
+        withTmpDir((rawDir) => {
+          const dir = fs.realpathSync(rawDir);
+          fs.writeFileSync(
+            path.join(dir, "tsconfig.json"),
+            JSON.stringify({
+              compilerOptions: {
+                noImplicitAny: false,
+                target: "ES2022",
+                module: "ES2022",
+                moduleResolution: "Bundler",
+                skipLibCheck: true,
+                noEmit: true,
+              },
+              include: ["**/*.ts"],
+            }),
+          );
+          const pricing = path.join(dir, "pricing.ts");
+          const pricingSource = "export function price(a) {\n  return a;\n}\n";
+          fs.writeFileSync(pricing, pricingSource);
+          const orders = path.join(dir, "orders.ts");
+          const ordersSource = 'import { price } from "./pricing";\nexport const p = price(3);\n';
+          fs.writeFileSync(orders, ordersSource);
+          // The importer comes first in types.json; the run must still see
+          // `price` typed before it judges `p`.
+          const typeInfo = [
+            [orders, ordersSource.indexOf("const p") + 7, [["number", null]], { varDecl: true }],
+            [pricing, pricingSource.indexOf("(a)") + 2, [["number", null]], {}],
+            [pricing, pricingSource.indexOf("(a)") + 3, [["number", null]], { returnType: true }],
+          ];
+          fs.writeFileSync(path.join(dir, "types.json"), JSON.stringify(typeInfo));
+
+          runInDir(dir, "apply", "types.json");
+
+          expect(fs.readFileSync(pricing, "utf-8")).toBe(
+            "export function price(a: number): number {\n  return a;\n}\n",
+          );
+          expect(fs.readFileSync(orders, "utf-8")).toBe(ordersSource);
+        });
+      });
+
       it("verify sees annotations already applied to earlier files", () => {
         withTmpDir((rawDir) => {
           // realpath: on macOS os.tmpdir() is a symlink (/var → /private/var).

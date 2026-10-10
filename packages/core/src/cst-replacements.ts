@@ -76,6 +76,12 @@ export interface CstApplyContext {
   source?: string;
   /** The file's name, which decides the dialect the note-safety parse uses. */
   filename?: string;
+  /**
+   * Whether this pass removes the notes already in `source`. False for a second
+   * pass over the same file: the first pass stripped, and `source` now holds
+   * the notes it wrote.
+   */
+  stripNotes?: boolean;
 }
 
 /**
@@ -607,7 +613,7 @@ export function buildCstReplacements(
   // a note there. Gated on `emitConflictComments`, a run writing preview notes
   // under `outputMode` with conflict notes off took nothing away and stacked a
   // fresh copy above the line on every pass.
-  if (source !== undefined) {
+  if (source !== undefined && ctx.stripNotes !== false) {
     for (const [start, end] of markerLineRanges(source)) {
       cstReplacements.push(Replacement.delete(start, end));
     }
