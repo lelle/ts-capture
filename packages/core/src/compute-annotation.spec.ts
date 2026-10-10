@@ -5,6 +5,7 @@ import type { ExtraOptions } from "./type-collector.js";
 
 import { computeAnnotationTypeString } from "./compute-annotation.js";
 import { INFER_DEFAULTS, type InferOptions } from "./configuration.js";
+import "./test-utils/matchers.js";
 
 // Boundary spec for the shared annotation core. computeAnnotationTypeString is
 // the orchestrator both appliers call; it had no dedicated spec (only the
@@ -24,7 +25,7 @@ function run(
 
 describe("computeAnnotationTypeString — resolution & empties", () => {
   it("falls back to the observed name when no program is supplied", () => {
-    expect(run([["MyType", undefined]], {})).toBe("MyType");
+    expect(run([["MyType", undefined]], {})).toBeTheType("MyType");
   });
 
   it("returns null for an empty observation vector", () => {
@@ -34,11 +35,13 @@ describe("computeAnnotationTypeString — resolution & empties", () => {
 
 describe("computeAnnotationTypeString — return-type shaping", () => {
   it("widens a sole-undefined return to void", () => {
-    expect(run([["undefined", undefined]], { returnType: true })).toBe("void");
+    expect(run([["undefined", undefined]], { returnType: true })).toBeTheType("void");
   });
 
   it("wraps an async return type in Promise<>", () => {
-    expect(run([["string", undefined]], { returnType: true, async: true })).toBe("Promise<string>");
+    expect(run([["string", undefined]], { returnType: true, async: true })).toBeTheType(
+      "Promise<string>",
+    );
   });
 
   it("unwraps an inner Promise before re-wrapping async (no Promise<Promise<>>)", () => {
@@ -58,7 +61,7 @@ describe("computeAnnotationTypeString — return-type shaping", () => {
         ],
         { returnType: true },
       ),
-    ).toBe("number|undefined");
+    ).toBeTheType("number|undefined");
   });
 
   it("widens a sole-undefined async return to Promise<void> (not Promise<undefined>)", () => {
@@ -68,7 +71,7 @@ describe("computeAnnotationTypeString — return-type shaping", () => {
   });
 
   it("does not void-widen a sole-undefined that is not a return type", () => {
-    expect(run([["undefined", undefined]], { varDecl: true })).toBe("undefined");
+    expect(run([["undefined", undefined]], { varDecl: true })).toBeTheType("undefined");
   });
 
   it("unwraps each branch of a Promise union before wrapping async once", () => {
@@ -83,7 +86,7 @@ describe("computeAnnotationTypeString — return-type shaping", () => {
           async: true,
         },
       ),
-    ).toBe("Promise<number | string>");
+    ).toBeTheType("Promise<number | string>");
   });
 
   it("unwraps the Promise side of a mixed Promise<T> | U async return", () => {
@@ -98,7 +101,7 @@ describe("computeAnnotationTypeString — return-type shaping", () => {
           async: true,
         },
       ),
-    ).toBe("Promise<number | string>");
+    ).toBeTheType("Promise<number | string>");
   });
 });
 
@@ -109,11 +112,11 @@ describe("computeAnnotationTypeString — optional-binding undefined strip", () 
   ];
 
   it("drops undefined from an optional binding's union", () => {
-    expect(run(types, {}, true)).toBe("string");
+    expect(run(types, {}, true)).toBeTheType("string");
   });
 
   it("keeps undefined when the binding is not optional", () => {
-    expect(run(types, {}, false)).toBe("string|undefined");
+    expect(run(types, {}, false)).toBeTheType("string|undefined");
   });
 });
 
@@ -138,11 +141,15 @@ describe("computeAnnotationTypeString — useless-arrow suppression", () => {
   });
 
   it("keeps an arrow with a non-unknown parameter", () => {
-    expect(run([["(arg: string) => unknown", undefined]], {})).toBe("(arg: string) => unknown");
+    expect(run([["(arg: string) => unknown", undefined]], {})).toBeTheType(
+      "(arg: string) => unknown",
+    );
   });
 
   it("keeps an arrow with a non-unknown return", () => {
-    expect(run([["(arg: unknown) => string", undefined]], {})).toBe("(arg: unknown) => string");
+    expect(run([["(arg: unknown) => string", undefined]], {})).toBeTheType(
+      "(arg: unknown) => string",
+    );
   });
 
   it("keeps the union when a useless arrow appears alongside a useful type", () => {
@@ -156,7 +163,7 @@ describe("computeAnnotationTypeString — useless-arrow suppression", () => {
       ),
       // Parenthesised: without it the string reads as a function *returning*
       // `unknown|string`, which is a different type from a union with one.
-    ).toBe("((arg: unknown) => unknown)|string");
+    ).toBeTheType("((arg: unknown) => unknown)|string");
   });
 });
 
@@ -175,7 +182,7 @@ describe("computeAnnotationTypeString — unknown[] union collapse", () => {
         ],
         {},
       ),
-    ).toBe("string[]");
+    ).toBeTheType("string[]");
   });
 
   it("drops unknown[] when an Array<T> form is present", () => {
@@ -187,7 +194,7 @@ describe("computeAnnotationTypeString — unknown[] union collapse", () => {
         ],
         {},
       ),
-    ).toBe("Array<string | number>");
+    ).toBeTheType("Array<string | number>");
   });
 
   // `unknown` absorbs everything it is unioned with — `unknown | undefined`
@@ -219,7 +226,7 @@ describe("computeAnnotationTypeString — unknown[] union collapse", () => {
         ],
         {},
       ),
-    ).toBe("string|undefined");
+    ).toBeTheType("string|undefined");
   });
 
   // Reversed deliberately: `unknown[]` names the container and discards the
@@ -237,7 +244,7 @@ describe("computeAnnotationTypeString — unknown[] union collapse", () => {
         ],
         {},
       ),
-    ).toBe("string|unknown[]");
+    ).toBeTheType("string|unknown[]");
   });
 
   it("preserves a T[] | U[] union that has no unknown[] (regression)", () => {
@@ -249,7 +256,7 @@ describe("computeAnnotationTypeString — unknown[] union collapse", () => {
         ],
         {},
       ),
-    ).toBe("number[]|string[]");
+    ).toBeTheType("number[]|string[]");
   });
 });
 
@@ -274,7 +281,9 @@ describe("computeAnnotationTypeString — suppress object-shape with unknown[] f
   });
 
   it("keeps the annotation when no field is unknown[]", () => {
-    expect(run([["{ a: string, b: number[] }", undefined]], {})).toBe("{ a: string, b: number[] }");
+    expect(run([["{ a: string, b: number[] }", undefined]], {})).toBeTheType(
+      "{ a: string, b: number[] }",
+    );
   });
 
   it("drops a standalone unknown[] (not an object field)", () => {
@@ -332,7 +341,7 @@ describe("computeAnnotationTypeString — length cap", () => {
   it("falls back to the common base when a class-union exceeds the cap", () => {
     expect(
       run(saClasses, { varDecl: true }, false, { ...INFER_DEFAULTS, maxAnnotationChars: 100 }),
-    ).toBe("Mammal");
+    ).toBeTheType("Mammal");
   });
 
   it("fires the common-base fallback even when rewriteCommonBase is off", () => {
@@ -342,7 +351,7 @@ describe("computeAnnotationTypeString — length cap", () => {
         maxAnnotationChars: 100,
         rewriteCommonBase: false,
       }),
-    ).toBe("Mammal");
+    ).toBeTheType("Mammal");
   });
 
   it("still drops an over-cap union with no @sa chain info to collapse", () => {
@@ -397,7 +406,7 @@ describe("computeAnnotationTypeString — a nullish arm is not a payload", () =>
         ],
         {},
       ),
-    ).toBe("null|undefined");
+    ).toBeTheType("null|undefined");
   });
 
   it.each([
@@ -413,7 +422,7 @@ describe("computeAnnotationTypeString — a nullish arm is not a payload", () =>
         ],
         {},
       ),
-    ).toBe(expected);
+    ).toBeTheType(expected);
   });
 
   it("preserves a nullish-arm union in diagnostic mode", () => {
@@ -430,6 +439,6 @@ describe("computeAnnotationTypeString — a nullish arm is not a payload", () =>
           emitDiagnosticComments: true,
         },
       ),
-    ).toBe("Promise<unknown>|null");
+    ).toBeTheType("Promise<unknown>|null");
   });
 });

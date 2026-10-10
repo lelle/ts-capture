@@ -1,7 +1,7 @@
 import ts from "typescript";
 import { expect } from "vitest";
 
-import { canonicalTypeString } from "../type-canonical.js";
+import { canonicalTypeString, sameTypeString } from "../type-canonical.js";
 import { type Applied, nodesOf } from "./applied.js";
 
 // Two questions a spec asks of an applied file, kept apart on purpose. What
@@ -24,6 +24,8 @@ interface AppliedMatchers<R = unknown> {
   toDeclareAlias(name: string, body: string): R;
   /** No diagnostic the input did not already have. */
   toHaveNoNewDiagnostics(): R;
+  /** A type-string, or a list of them, naming the same type(s) in any spelling. */
+  toBeTheType(expected: string | string[]): R;
 }
 
 declare module "vitest" {
@@ -220,6 +222,23 @@ const matchers = {
       pass,
       message: () =>
         `expected type ${name} ${pass ? "not " : ""}to be ${canonical(body)}, but it is ${canonical(has)}`,
+    };
+  },
+
+  toBeTheType(received: unknown, expected: string | string[]): Result {
+    const want = Array.isArray(expected) ? expected : [expected];
+    const got = Array.isArray(received) ? received : [received];
+    const describe = (list: unknown[]): string =>
+      list.map((t) => (typeof t === "string" ? canonical(t) : String(t))).join(", ");
+    const pass =
+      got.length === want.length &&
+      got.every((t, i) => typeof t === "string" && sameTypeString(t, want[i]!));
+    return {
+      pass,
+      message: () =>
+        got.length === want.length
+          ? `expected ${describe(got)} ${pass ? "not " : ""}to be the type ${describe(want)}`
+          : `expected ${want.length} types, ${describe(want)}, but got ${got.length}: ${describe(got)}`,
     };
   },
 
