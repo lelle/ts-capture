@@ -5,6 +5,11 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 
+import {
+  inspected,
+  type Instrumented,
+} from "../../core/src/test-utils/instrumented.js";
+import "../../core/src/test-utils/matchers.js";
 // `index.ts` uses `module.exports = X` (with `module.exports.default = X`)
 // for dual CJS/ESM Babel-plugin compat — Babel's old-style callers expect
 // `require(pkg)` to be the plugin function itself. TS doesn't see this as
@@ -25,46 +30,58 @@ const tsCaptureBabelPlugin =
   (tsCaptureBabelPluginModule as unknown as { default: unknown }).default ??
   tsCaptureBabelPluginModule;
 
-function transform(source: string, filename = "test.ts"): string {
+/** Run Babel with the plugin and hold what it printed against the source. */
+function transform(
+  source: string,
+  filename = "test.ts",
+  options?: object,
+): Instrumented {
   const result = transformSync(source, {
     filename,
     babelrc: false,
     configFile: false,
     presets: ["@babel/preset-typescript"],
-    plugins: [tsCaptureBabelPlugin],
+    plugins: [options ? [tsCaptureBabelPlugin, options] : tsCaptureBabelPlugin],
   });
-  return result?.code ?? "";
+  return inspected(result?.code ?? "", {
+    input: source,
+    filename,
+    additive: true,
+  });
 }
 
 describe("@ts-capture/babel-plugin", () => {
   it("instruments untyped function parameters", () => {
     const out = transform(`function greet(name) { return "Hello " + name; }`);
-    expect(out).toContain("__tscptr__");
-    expect(out).toContain("name");
+    expect(out.text).toContain("__tscptr__");
+    expect(out.text).toContain("name");
+    // Babel resolves the file name, so the call records the absolute path.
+    expect(out).toTrack("name", { in: path.resolve("test.ts") });
+    expect(out).toWrapReturnOf("greet");
   });
 
   it("does not touch non-TS files", () => {
     const out = transform("const x = 1;", "test.js");
-    expect(out).not.toContain("__tscptr__");
+    expect(out.text).not.toContain("__tscptr__");
+    expect(out).toLeaveUnchanged();
   });
 
   it("respects exclude option", () => {
-    const result = transformSync("function f(x) { return x; }", {
-      filename: "src/excluded.ts",
-      babelrc: false,
-      configFile: false,
-      presets: ["@babel/preset-typescript"],
-      plugins: [[tsCaptureBabelPlugin, { exclude: /excluded/ }]],
+    const out = transform("function f(x) { return x; }", "src/excluded.ts", {
+      exclude: /excluded/,
     });
-    expect(result?.code ?? "").not.toContain("__tscptr__");
+    expect(out.text).not.toContain("__tscptr__");
+    expect(out).toLeaveUnchanged();
   });
 
   it("does not emit the declare-namespace block (skipTscptrDeclarations)", () => {
     // The plugin sets skipTscptrDeclarations:true so the runtime __tscptr__ is
     // expected to be supplied by @ts-capture/babel-plugin/runtime, not declared inline.
     const out = transform(`function add(a, b) { return a + b; }`);
-    expect(out).not.toContain("declare namespace");
-    expect(out).not.toContain("declare function __tscptr__");
+    expect(out.text).not.toContain("declare namespace");
+    expect(out.text).not.toContain("declare function __tscptr__");
+    expect(out).toTrack("a");
+    expect(out).not.toDeclareRuntime();
   });
 
   it("preserves comments between header and first declaration", () => {
@@ -74,8 +91,9 @@ describe("@ts-capture/babel-plugin", () => {
       ["// comment before function", "function f(x) { return x; }"].join("\n"),
     );
     // Comment placement isn't strictly defined post-Babel printing, but the
-    // output must remain syntactically valid (the test runner parses it).
-    expect(out).toContain("__tscptr__");
+    // output must remain syntactically valid; transform() rejects one that is not.
+    expect(out.text).toContain("__tscptr__");
+    expect(out).toTrack("x");
   });
 
   // Regression: TS_CAPTURE_TYPES_DIR pointing to a non-existent path used
