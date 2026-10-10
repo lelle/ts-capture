@@ -1242,6 +1242,23 @@ describe("applyTypesToFileCst — TypeChecker verify integration", () => {
     expect(applyTypesToFile(proj.targetSource, typeInfo, opts, program)).toBe(proj.targetSource);
   });
 
+  it("writes observed literals as the imported alias that unites them", () => {
+    const result = applyWithProgram(
+      {
+        "status.ts": 'export type Status = "active" | "inactive";\n',
+        "target.ts":
+          'import type { Status } from "./status.js";\n' +
+          "export function isActive(status) {\n" +
+          '  return status === "active";\n' +
+          "}\n" +
+          "export const seen: Status[] = [];\n",
+      },
+      (src, target) => [entry(target, src.indexOf("(status)") + 7, [['"active"'], ['"inactive"']])],
+      { literal: { ...INFER_DEFAULTS.literal, string: true } },
+    );
+    expect(result).toContain("isActive(status: Status)");
+  });
+
   it("writes an observed tuple as a tuple", () => {
     const src = "export function toPair(key, value) {\n  return [key, value];\n}\n";
     const out = applyTypesToFileCst(

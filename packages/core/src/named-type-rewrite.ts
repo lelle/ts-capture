@@ -278,6 +278,13 @@ export interface NamedTypeIndex {
   named: Map<string, string>;
   /** Required/optional field maps per named type, for subset matches. */
   subset: SubsetNamedTypeIndex;
+  /** Aliases whose body is a union of literals, with their arms sorted. */
+  literalUnions: LiteralUnionAlias[];
+}
+
+export interface LiteralUnionAlias {
+  name: string;
+  arms: string[];
 }
 
 /**
@@ -304,17 +311,123 @@ export function buildNamedTypeIndex(
     if (named && subset) {
       // A match under a name the file cannot reach would fail the emission
       // scope check and take the valid structural annotation down with it.
-      const reachable = scopedTypeNames
-        ? subset.filter((entry) => scopedTypeNames.has(entry.name))
-        : subset;
-      return { named, subset: reachable };
+      const inScope = <T extends { name: string }>(entries: T[]): T[] =>
+        scopedTypeNames ? entries.filter((entry) => scopedTypeNames.has(entry.name)) : entries;
+      return {
+        named,
+        subset: inScope(subset),
+        literalUnions: inScope(buildLiteralUnionIndex(source, program, filename)),
+      };
     }
     // File not in the Program — fall through to same-file only.
   }
   return {
     named: buildSameFileNamedTypeIndex(source),
     subset: buildSameFileSubsetIndex(source),
+    literalUnions: buildLiteralUnionIndex(source),
   };
+}
+
+/**
+ * The arms of a type alias whose body is a union of literals, spelled the way
+ * an observation spells them (`"active"`, `42`, `true`), sorted. Null for any
+ * other body: `"a" | string` accepts every string and is not a set of arms.
+ */
+function literalUnionArms(type: ts.TypeNode): string[] | null {
+  const members = ts.isUnionTypeNode(type) ? type.types : [type];
+  const arms: string[] = [];
+  for (const member of members) {
+    if (!ts.isLiteralTypeNode(member)) return null;
+    const literal = member.literal;
+    if (ts.isStringLiteral(literal) || ts.isNoSubstitutionTemplateLiteral(literal)) {
+      arms.push(JSON.stringify(literal.text));
+    } else if (ts.isNumericLiteral(literal)) {
+      arms.push(literal.text);
+    } else if (ts.isPrefixUnaryExpression(literal) && ts.isNumericLiteral(literal.operand)) {
+      arms.push(`-${literal.operand.text}`);
+    } else if (literal.kind === ts.SyntaxKind.TrueKeyword) {
+      arms.push("true");
+    } else if (literal.kind === ts.SyntaxKind.FalseKeyword) {
+      arms.push("false");
+    } else {
+      return null;
+    }
+  }
+  return [...new Set(arms)].sort();
+}
+
+function buildLiteralUnionIndex(
+  source: string,
+  program?: ts.Program,
+  filename?: string,
+): LiteralUnionAlias[] {
+  const index: LiteralUnionAlias[] = [];
+  const seen = new Set<string>();
+  const add = (decl: ts.TypeAliasDeclaration, name: string): void => {
+    if (decl.typeParameters?.length || seen.has(name)) return;
+    const arms = literalUnionArms(decl.type);
+    if (!arms) return;
+    seen.add(name);
+    index.push({ name, arms });
+  };
+  const sameFile = ts.createSourceFile(
+    "__ts-capture_literal_union_index.ts",
+    source,
+    ts.ScriptTarget.Latest,
+    true,
+    ts.ScriptKind.TS,
+  );
+  for (const stmt of sameFile.statements) {
+    if (ts.isTypeAliasDeclaration(stmt)) add(stmt, stmt.name.text);
+  }
+  const sf = program && filename ? program.getSourceFile(filename) : undefined;
+  if (!program || !sf) return index;
+  const checker = program.getTypeChecker();
+  for (const sym of checker.getSymbolsInScope(sf, ts.SymbolFlags.Type | ts.SymbolFlags.Alias)) {
+    let resolved = sym;
+    if (sym.flags & ts.SymbolFlags.Alias) {
+      try {
+        resolved = checker.getAliasedSymbol(sym);
+      } catch {
+        continue;
+      }
+    }
+    for (const decl of resolved.getDeclarations() ?? []) {
+      const declSf = decl.getSourceFile();
+      if (declSf === sf || declSf.isDeclarationFile) continue;
+      if (ts.isTypeAliasDeclaration(decl)) add(decl, sym.getName());
+    }
+  }
+  return index;
+}
+
+const LITERAL_ARM_RE = /^(?:"(?:[^"\\]|\\.)*"|-?\d+(?:\.\d+)?|true|false)$/;
+
+/**
+ * The alias a union of literals should be written as, or null.
+ *
+ * Every arm the run saw must be an arm of the alias. All of them matching is
+ * the alias by definition; a run that never produced one arm still names the
+ * alias when at least two arms were seen and exactly one alias holds them. A
+ * single literal is too little to tell `"GET"` of `Method` from a string that
+ * happens to read the same. Arms that are not literals (`undefined`, a shape)
+ * stay beside the alias.
+ */
+function literalUnionAlias(emitted: string, aliases: readonly LiteralUnionAlias[]): string | null {
+  if (aliases.length === 0) return null;
+  const arms = splitTopLevelUnion(emitted.trim());
+  const literals = [...new Set(arms.filter((arm) => LITERAL_ARM_RE.test(arm)))].sort();
+  if (literals.length === 0) return null;
+  const others = arms.filter((arm) => !LITERAL_ARM_RE.test(arm));
+  const sameArms = (alias: LiteralUnionAlias): boolean =>
+    alias.arms.length === literals.length && alias.arms.every((arm, i) => arm === literals[i]);
+  let match = aliases.find(sameArms);
+  if (!match && literals.length >= 2) {
+    const holding = aliases.filter((alias) => literals.every((arm) => alias.arms.includes(arm)));
+    if (holding.length === 1) match = holding[0];
+  }
+  if (!match) return null;
+  return [match.name, ...others].join(" | ");
 }
 
 /**
@@ -323,16 +436,10 @@ export function buildNamedTypeIndex(
  * returns the input unchanged.
  */
 export function rewriteToNamedInScope(emitted: string, index?: NamedTypeIndex): string {
-  const namedIndex = index?.named;
-  const subsetIndex = index?.subset;
-  if (!namedIndex && !subsetIndex) return emitted;
-  const direct = namedIndex?.get(emitted);
+  if (!index) return emitted;
+  const direct = index.named.get(emitted);
   if (direct) return direct;
-  // Subset matching only applies to object-literal types — without `{`
-  // there's no structural shape to match against, and tampering with
-  // unions or primitives just reformats them gratuitously.
-  if (!subsetIndex || !emitted.includes("{")) return emitted;
-  return rewriteToNamedRecursive(emitted, namedIndex, subsetIndex);
+  return rewriteToNamedRecursive(emitted, index.named, index.subset, index.literalUnions ?? []);
 }
 
 /**
@@ -373,13 +480,19 @@ function rewriteToNamedRecursive(
   emitted: string,
   namedIndex: Map<string, string> | undefined,
   subsetIndex: SubsetNamedTypeIndex,
+  literalUnions: readonly LiteralUnionAlias[] = [],
 ): string {
-  if (!emitted.includes("{")) return emitted;
+  const asAlias = literalUnionAlias(emitted, literalUnions);
+  if (asAlias) return asAlias;
+  // Without a shape there is nothing structural to match; without a literal
+  // there is no alias to find inside a generic or an array either.
+  const mayHoldLiterals = literalUnions.length > 0 && /["\d]/.test(emitted);
+  if (!emitted.includes("{") && !mayHoldLiterals) return emitted;
   const trimmed = emitted.trim();
   // Array postfix
   if (trimmed.endsWith("[]") && !trimmed.endsWith("][]")) {
     const inner = trimmed.slice(0, -2);
-    const rewritten = rewriteToNamedRecursive(inner, namedIndex, subsetIndex);
+    const rewritten = rewriteToNamedRecursive(inner, namedIndex, subsetIndex, literalUnions);
     if (rewritten === inner) return emitted;
     return rewritten + "[]";
   }
@@ -389,7 +502,7 @@ function rewriteToNamedRecursive(
   if (branches.length > 1) {
     let anyChanged = false;
     const rewrittenBranches = branches.map((b) => {
-      const r = rewriteToNamedRecursive(b, namedIndex, subsetIndex);
+      const r = rewriteToNamedRecursive(b, namedIndex, subsetIndex, literalUnions);
       if (r !== b) anyChanged = true;
       return r;
     });
@@ -407,7 +520,7 @@ function rewriteToNamedRecursive(
     const { name, args } = generic;
     let anyChanged = false;
     const rewrittenArgs = args.map((a) => {
-      const r = rewriteToNamedRecursive(a, namedIndex, subsetIndex);
+      const r = rewriteToNamedRecursive(a, namedIndex, subsetIndex, literalUnions);
       if (r !== a) anyChanged = true;
       return r;
     });
@@ -420,7 +533,7 @@ function rewriteToNamedRecursive(
   let anyFieldChanged = false;
   const rewrittenFields = new Map<string, string>();
   for (const [key, value] of parsed) {
-    const r = rewriteToNamedRecursive(value, namedIndex, subsetIndex);
+    const r = rewriteToNamedRecursive(value, namedIndex, subsetIndex, literalUnions);
     if (r !== value) anyFieldChanged = true;
     rewrittenFields.set(key, r);
   }

@@ -132,6 +132,7 @@ describe("rewriteToNamedInScope — generic-wrapper descent", () => {
 describe("rewriteToNamedInScope — pure, over a NamedTypeIndex value", () => {
   const index: NamedTypeIndex = {
     named: new Map([["{ x: number, y: number }", "Point"]]),
+    literalUnions: [],
     subset: [
       {
         name: "Point",
@@ -152,6 +153,7 @@ describe("rewriteToNamedInScope — pure, over a NamedTypeIndex value", () => {
     // Observation ⊆ named type: all required fields present, no extra fields.
     const withOptional: NamedTypeIndex = {
       named: new Map(),
+      literalUnions: [],
       subset: [
         {
           name: "Config",
@@ -285,5 +287,49 @@ describe("buildNamedTypeIndex — cross-file (with Program)", () => {
     expect(
       buildNamedTypeIndex(source).named.get("{ activeCustomer: string, uniqueId: string }"),
     ).toBeUndefined();
+  });
+});
+
+describe("literal-union aliases", () => {
+  const source = [
+    'type Status = "active" | "inactive";',
+    'type Level = "low" | "mid" | "high";',
+    'type Mode = "low" | "mid" | "high" | "max";',
+    'type Loose = "a" | string;',
+    'type Gen<T> = "x" | T;',
+    "type Flag = 1 | 2;",
+  ].join("\n");
+  const index = buildNamedTypeIndex(source);
+
+  it("indexes an alias whose body is a union of literals, and nothing looser", () => {
+    expect(index.literalUnions).toEqual([
+      { name: "Status", arms: ['"active"', '"inactive"'] },
+      { name: "Level", arms: ['"high"', '"low"', '"mid"'] },
+      { name: "Mode", arms: ['"high"', '"low"', '"max"', '"mid"'] },
+      { name: "Flag", arms: ["1", "2"] },
+    ]);
+  });
+
+  it("writes an exact arm set as the alias", () => {
+    expect(rewriteToNamedInScope('"active" | "inactive"', index)).toBe("Status");
+    expect(rewriteToNamedInScope('"inactive" | "active"', index)).toBe("Status");
+    expect(rewriteToNamedInScope("1 | 2", index)).toBe("Flag");
+  });
+
+  it("writes two or more observed arms of exactly one alias as that alias", () => {
+    expect(rewriteToNamedInScope('"active"', index)).toBe('"active"');
+    expect(rewriteToNamedInScope('"low" | "max"', index)).toBe("Mode");
+    expect(rewriteToNamedInScope('"low" | "mid"', index)).toBe('"low" | "mid"');
+  });
+
+  it("rewrites the literal arms beside other arms, inside fields and generics", () => {
+    expect(rewriteToNamedInScope('"active" | "inactive" | undefined', index)).toBe(
+      "Status | undefined",
+    );
+    expect(rewriteToNamedInScope('{ status: "active" | "inactive" }', index)).toBe(
+      "{ status: Status }",
+    );
+    expect(rewriteToNamedInScope('Promise<"active" | "inactive">', index)).toBe("Promise<Status>");
+    expect(rewriteToNamedInScope("string", index)).toBe("string");
   });
 });
