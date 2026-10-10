@@ -31,6 +31,10 @@ export interface AppliedOptions {
   telemetry?: ApplyTelemetry;
   /** The target's file name in the project; `target.ts` unless given. */
   filename?: string;
+  /** Text put in front of every type written. */
+  prefix?: string;
+  /** Files the applier leaves alone, matched against the target's path. */
+  ignoreFiles?: RegExp[];
 }
 
 export interface Applied {
@@ -59,7 +63,7 @@ export function applied(
   const project = makeProject({ ...options.files, [name]: source });
   const filename = project.pathOf(name);
   const infer = options.infer ?? INFER_DEFAULTS;
-  const telemetry = options.telemetry;
+  const { telemetry, prefix, ignoreFiles } = options;
 
   const before = programOf(project);
   const inputDiagnostics = diagnosticsOf(before);
@@ -77,12 +81,18 @@ export function applied(
       options.applier,
       source,
       entries,
-      { infer, filename, verify, telemetry },
+      { infer, filename, verify, telemetry, prefix, ignoreFiles },
       projectContext.service.getProgram(),
     );
   } else {
     const program = options.project ? before : undefined;
-    text = run(options.applier, source, entries, { infer, filename, telemetry }, program);
+    text = run(
+      options.applier,
+      source,
+      entries,
+      { infer, filename, telemetry, prefix, ignoreFiles },
+      program,
+    );
   }
 
   project.write(name, text);

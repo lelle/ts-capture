@@ -1,39 +1,41 @@
 import ts from "typescript";
 import { describe, expect, it } from "vitest";
 
-import type { DiscoveredType } from "./collector-contract.js";
-import type { CollectedTypeEntry, CollectedTypeInfo, SourceLocation } from "./type-collector.js";
+import type { CollectedTypeInfo } from "./type-collector.js";
 
-import { applyTypesToFile } from "./apply-types.js";
 import { INFER_DEFAULTS } from "./configuration.js";
 import { newApplyTelemetry } from "./contract.js";
+import {
+  applied,
+  type AppliedOptions,
+  entry,
+  nodesOf,
+  parseErrors,
+  reapplied,
+} from "./test-utils/applied.js";
 
-type LooseTypeTuple =
-  [string | undefined] | [string | undefined, SourceLocation | undefined] | DiscoveredType;
-
-// Helper: create a type info entry for a single param observation.
-// Accepts loose 1/2/3-tuple inputs and pads to the canonical 3-tuple shape
-// so call sites can keep using `[["string"]]` without per-test boilerplate.
-function entry(
-  filename: string,
-  offset: number,
-  types: Array<LooseTypeTuple>,
-  opts = {},
-): CollectedTypeEntry {
-  const normalized = types.map((t): DiscoveredType => [t[0], t[1] ?? undefined, t[2]]);
-  return [filename, offset, normalized, opts];
-}
+// The offset applier, driven directly. `applyTypesToFileCst` is the default
+// path and routes what it cannot place through this one; both are run on the
+// same fixtures in apply-types-cst.spec.ts, so what is asserted here is this
+// applier's own reading of each site.
+const OFFSET: AppliedOptions = { applier: "offset" };
+const ANY_NAME: AppliedOptions = {
+  ...OFFSET,
+  infer: { ...INFER_DEFAULTS, requireTypeRefInScope: false },
+};
+const withInfer = (infer: Partial<typeof INFER_DEFAULTS>): AppliedOptions => ({
+  ...OFFSET,
+  infer: { ...INFER_DEFAULTS, ...infer },
+});
+const firstArrow = (out: ReturnType<typeof applied>): ts.ArrowFunction =>
+  nodesOf(out, ts.isArrowFunction)[0];
 
 describe("applyTypesToFile", () => {
   it("inserts a single type annotation", () => {
     // function foo(a) {}
     //               ^14
-    const source = "function foo(a) {}";
-    const typeInfo: CollectedTypeInfo = [entry("test.ts", 14, [["string"]])];
-    const result = applyTypesToFile(source, typeInfo, {
-      infer: { ...INFER_DEFAULTS, requireTypeRefInScope: false },
-    });
-    expect(result).toBe("function foo(a: string) {}");
+    const out = applied("function foo(a) {}", [entry("test.ts", 14, [["string"]])], ANY_NAME);
+    expect(out).toAnnotate("a", "string");
   });
 
   // Regression: nestjs/nest, packages/core/router/router-response-controller.ts.
@@ -44,157 +46,138 @@ describe("applyTypesToFile", () => {
   it("emits one annotation when a position is observed as both a param and a paramReturn", () => {
     // const run = (resolve) => { resolve(); };
     //                     ^20
-    const source = "const run = (resolve) => { resolve(); };";
-    const typeInfo: CollectedTypeInfo = [
-      entry("test.ts", 20, [["Function"]], { arrow: true, fnRetPos: 21 }),
-      entry("test.ts", 20, [["undefined"]], {
-        paramReturn: true,
-        paramReturnMember: "resolve",
-      }),
-    ];
-    const result = applyTypesToFile(source, typeInfo, {
-      infer: { ...INFER_DEFAULTS, requireTypeRefInScope: false },
-    });
-    const parsed = ts.createSourceFile("out.ts", result, ts.ScriptTarget.Latest, true);
-    const diags = (parsed as ts.SourceFile & { parseDiagnostics?: ts.Diagnostic[] })
-      .parseDiagnostics;
-    expect(diags ?? []).toHaveLength(0);
-    // Exactly one annotation on the parameter, never `resolve: A: B`.
-    expect(result).not.toMatch(/resolve\s*:[^,)]*:/);
+    const out = applied(
+      "const run = (resolve) => { resolve(); };",
+      [
+        entry("test.ts", 20, [["Function"]], { arrow: true, fnRetPos: 21 }),
+        entry("test.ts", 20, [["undefined"]], { paramReturn: true, paramReturnMember: "resolve" }),
+      ],
+      ANY_NAME,
+    );
+    expect(parseErrors(out)).toEqual([]);
+    expect(out).toAnnotate("resolve", "Function");
   });
 
   it("inserts annotations for multiple parameters", () => {
     // function foo(a, b) {}
     //               ^14  ^17
-    const source = "function foo(a, b) {}";
-    const typeInfo: CollectedTypeInfo = [
-      entry("test.ts", 14, [["number"]]),
-      entry("test.ts", 17, [["string"]]),
-    ];
-    const result = applyTypesToFile(source, typeInfo, {
-      infer: { ...INFER_DEFAULTS, requireTypeRefInScope: false },
-    });
-    expect(result).toBe("function foo(a: number, b: string) {}");
+    const out = applied(
+      "function foo(a, b) {}",
+      [entry("test.ts", 14, [["number"]]), entry("test.ts", 17, [["string"]])],
+      ANY_NAME,
+    );
+    expect(out).toAnnotate("a", "number");
+    expect(out).toAnnotate("b", "string");
   });
 
   it("creates union types from multiple observations", () => {
-    const source = "function foo(a) {}";
-    const typeInfo: CollectedTypeInfo = [entry("test.ts", 14, [["string"], ["number"]])];
-    const result = applyTypesToFile(source, typeInfo, {
-      infer: { ...INFER_DEFAULTS, requireTypeRefInScope: false },
-    });
-    expect(result).toBe("function foo(a: number | string) {}");
+    const out = applied(
+      "function foo(a) {}",
+      [entry("test.ts", 14, [["string"], ["number"]])],
+      ANY_NAME,
+    );
+    expect(out).toAnnotate("a", "number | string");
   });
 
   it("deduplicates repeated type observations", () => {
-    const source = "function foo(a) {}";
-    const typeInfo: CollectedTypeInfo = [
-      entry("test.ts", 14, [["string"], ["string"], ["number"]]),
-    ];
-    const result = applyTypesToFile(source, typeInfo, {
-      infer: { ...INFER_DEFAULTS, requireTypeRefInScope: false },
-    });
-    expect(result).toBe("function foo(a: number | string) {}");
+    const out = applied(
+      "function foo(a) {}",
+      [entry("test.ts", 14, [["string"], ["string"], ["number"]])],
+      ANY_NAME,
+    );
+    expect(out).toAnnotate("a", "number | string");
   });
 
   it("removes 'undefined' from optional parameter types", () => {
     // function foo(a?) {}
     //               ^14, ? at 14, so pos is 15
-    const source = "function foo(a?) {}";
-    const typeInfo: CollectedTypeInfo = [entry("test.ts", 15, [["number"], ["undefined"]])];
-    const result = applyTypesToFile(source, typeInfo, {
-      infer: { ...INFER_DEFAULTS, requireTypeRefInScope: false },
-    });
-    expect(result).toBe("function foo(a?: number) {}");
+    const out = applied(
+      "function foo(a?) {}",
+      [entry("test.ts", 15, [["number"], ["undefined"]])],
+      ANY_NAME,
+    );
+    expect(out).toAnnotate("a", "number");
+    expect(nodesOf(out, ts.isParameter)[0].questionToken).toBeDefined();
   });
 
   it("skips entry when all types are undefined for optional param", () => {
-    const source = "function foo(a?) {}";
-    const typeInfo: CollectedTypeInfo = [entry("test.ts", 15, [["undefined"]])];
-    const result = applyTypesToFile(source, typeInfo, {
-      infer: { ...INFER_DEFAULTS, requireTypeRefInScope: false },
-    });
-    expect(result).toBe("function foo(a?) {}");
+    const out = applied("function foo(a?) {}", [entry("test.ts", 15, [["undefined"]])], ANY_NAME);
+    expect(out).toLeaveUntyped("a");
   });
 
   it("skips entry when no types observed", () => {
-    const source = "function foo(a) {}";
-    const typeInfo: CollectedTypeInfo = [entry("test.ts", 14, [])];
-    const result = applyTypesToFile(source, typeInfo, {
-      infer: { ...INFER_DEFAULTS, requireTypeRefInScope: false },
-    });
-    expect(result).toBe("function foo(a) {}");
+    const out = applied("function foo(a) {}", [entry("test.ts", 14, [])], ANY_NAME);
+    expect(out).toLeaveUntyped("a");
   });
 
   it("skips entry with only null/undefined type names", () => {
-    const source = "function foo(a) {}";
-    const typeInfo: CollectedTypeInfo = [entry("test.ts", 14, [[undefined]])];
-    const result = applyTypesToFile(source, typeInfo, {
-      infer: { ...INFER_DEFAULTS, requireTypeRefInScope: false },
-    });
-    expect(result).toBe("function foo(a) {}");
+    const out = applied("function foo(a) {}", [entry("test.ts", 14, [[undefined]])], ANY_NAME);
+    expect(out).toLeaveUntyped("a");
   });
 
+  // The prefix is text put in front of the type, so the text is the claim.
   it("adds prefix before type when configured", () => {
-    const source = "function foo(a) {}";
-    const typeInfo: CollectedTypeInfo = [entry("test.ts", 14, [["string"]])];
-    const result = applyTypesToFile(source, typeInfo, { prefix: "/*auto*/" });
-    expect(result).toBe("function foo(a: /*auto*/string) {}");
+    const out = applied("function foo(a) {}", [entry("test.ts", 14, [["string"]])], {
+      ...OFFSET,
+      prefix: "/*auto*/",
+    });
+    expect(out.text).toBe("function foo(a: /*auto*/string) {}");
   });
 
   it("handles arrow function parens option", () => {
     // x => x + 1  (no parens originally)
     // parens: [0, 1] means wrap param range with ()
-    const source = "x => x + 1";
-    const typeInfo: CollectedTypeInfo = [
-      entry("test.ts", 1, [["number"]], { arrow: true, parens: [0, 1] }),
-    ];
-    const result = applyTypesToFile(source, typeInfo, {
-      infer: { ...INFER_DEFAULTS, requireTypeRefInScope: false },
-    });
-    expect(result).toBe("(x: number) => x + 1");
+    const out = applied(
+      "x => x + 1",
+      [entry("test.ts", 1, [["number"]], { arrow: true, parens: [0, 1] })],
+      ANY_NAME,
+    );
+    expect(out).toAnnotate("x", "number");
+    expect(out.text).toBe("(x: number) => x + 1");
   });
 
   it("handles thisType option", () => {
-    const source = "function greet() { return this.text; }";
     // parameters.pos is right after '('  => offset 15
-    const typeInfo: CollectedTypeInfo = [entry("test.ts", 15, [["Date"]], { thisType: true })];
-    const result = applyTypesToFile(source, typeInfo, {
-      infer: { ...INFER_DEFAULTS, requireTypeRefInScope: false },
-    });
-    expect(result).toBe("function greet(this: Date) { return this.text; }");
+    const out = applied(
+      "function greet() { return this.text; }",
+      [entry("test.ts", 15, [["Date"]], { thisType: true })],
+      ANY_NAME,
+    );
+    expect(out).toAnnotate("this", "Date");
   });
 
   it("handles thisNeedsComma with existing params", () => {
-    const source = "function greet(name) { return this.text + name; }";
-    const typeInfo: CollectedTypeInfo = [
-      entry("test.ts", 15, [["Date"]], { thisType: true, thisNeedsComma: true }),
-      entry("test.ts", 19, [["string"]]),
-    ];
-    const result = applyTypesToFile(source, typeInfo, {
-      infer: { ...INFER_DEFAULTS, requireTypeRefInScope: false },
-    });
-    expect(result).toBe("function greet(this: Date, name: string) { return this.text + name; }");
+    const out = applied(
+      "function greet(name) { return this.text + name; }",
+      [
+        entry("test.ts", 15, [["Date"]], { thisType: true, thisNeedsComma: true }),
+        entry("test.ts", 19, [["string"]]),
+      ],
+      ANY_NAME,
+    );
+    expect(parseErrors(out)).toEqual([]);
+    expect(out).toAnnotate("this", "Date");
+    expect(out).toAnnotate("name", "string");
   });
 
   it("returns source unchanged for empty type info", () => {
     const source = "function foo(a) {}";
-    const result = applyTypesToFile(source, [], {});
-    expect(result).toBe("function foo(a) {}");
+    expect(applied(source, [], OFFSET).text).toBe(source);
   });
 
-  it("filters type info to only entries matching the file", () => {
-    const source = "function foo(a) {}";
+  it("annotates the entries it is given", () => {
+    // applyTypesToFile processes every entry it gets; the caller groups by
+    // file. Only this file's entry is passed here.
     const typeInfo: CollectedTypeInfo = [
       entry("other.ts", 14, [["number"]]),
       entry("test.ts", 14, [["string"]]),
     ];
-    // applyTypesToFile processes all entries — caller is responsible for filtering
-    // But entries for other files will insert at wrong positions; the batch function handles grouping
-    // For this test, only pass matching entries
-    const filtered = typeInfo.filter(([f]) => f === "test.ts");
-    const result = applyTypesToFile(source, filtered, {});
-    expect(result).toBe("function foo(a: string) {}");
+    const out = applied(
+      "function foo(a) {}",
+      typeInfo.filter(([f]) => f === "test.ts"),
+      OFFSET,
+    );
+    expect(out).toAnnotate("a", "string");
   });
 });
 
@@ -203,14 +186,12 @@ describe("merging object types for optional properties", () => {
   // annotation. The merge-algebra variations live in `type-merge.spec.ts`
   // ("mergeTypes — object-merge variations"), tested against mergeTypes directly.
   it("merges two object types with overlapping keys into one with optional properties", () => {
-    const source = "function foo(a) {}";
-    const typeInfo: CollectedTypeInfo = [
-      entry("test.ts", 14, [["{ age: number, name: string }"], ["{ name: string }"]]),
-    ];
-    const result = applyTypesToFile(source, typeInfo, {
-      infer: { ...INFER_DEFAULTS, requireTypeRefInScope: false },
-    });
-    expect(result).toBe("function foo(a: { age?: number; name: string }) {}");
+    const out = applied(
+      "function foo(a) {}",
+      [entry("test.ts", 14, [["{ age: number, name: string }"], ["{ name: string }"]])],
+      ANY_NAME,
+    );
+    expect(out).toAnnotate("a", "{ age?: number; name: string }");
   });
 });
 
@@ -221,67 +202,66 @@ describe("discriminated union detection (applier wiring)", () => {
   // pipeline — collapseLiteral, scope / annotation emit, and the final sorted
   // union join.
   it("merges through when no shared-key value is a literal", () => {
-    const source = "function foo(a) {}";
-    const typeInfo: CollectedTypeInfo = [
-      entry("test.ts", 14, [
-        ["{ kind: number, value: number }"],
-        ["{ kind: string, items: string[] }"],
-      ]),
-    ];
-    const result = applyTypesToFile(source, typeInfo, {
-      infer: { ...INFER_DEFAULTS, requireTypeRefInScope: false },
-    });
-    expect(result).toBe(
-      "function foo(a: { items?: string[]; kind: number | string; value?: number }) {}",
+    const out = applied(
+      "function foo(a) {}",
+      [
+        entry("test.ts", 14, [
+          ["{ kind: number, value: number }"],
+          ["{ kind: string, items: string[] }"],
+        ]),
+      ],
+      ANY_NAME,
     );
+    expect(out).toAnnotate("a", "{ items?: string[]; kind: number | string; value?: number }");
   });
 
   it("bails to a flat union when a shared key has literal types", () => {
-    const source = "function foo(a) {}";
-    const typeInfo: CollectedTypeInfo = [
-      entry("test.ts", 14, [['{ kind: "a", value: number }'], ['{ kind: "b", items: string[] }']]),
-    ];
-    const result = applyTypesToFile(source, typeInfo, {
-      infer: {
-        ...INFER_DEFAULTS,
+    const out = applied(
+      "function foo(a) {}",
+      [
+        entry("test.ts", 14, [
+          ['{ kind: "a", value: number }'],
+          ['{ kind: "b", items: string[] }'],
+        ]),
+      ],
+      withInfer({
         requireTypeRefInScope: false,
         literal: { ...INFER_DEFAULTS.literal, string: true },
-      },
-    });
-    expect(result).toBe(
-      'function foo(a: { kind: "a"; value: number } | { kind: "b"; items: string[] }) {}',
+      }),
     );
+    expect(out).toAnnotate("a", '{ kind: "a"; value: number } | { kind: "b"; items: string[] }');
   });
 
   it("recursively merges nested object values end-to-end", () => {
-    const source = "function foo(a) {}";
-    const typeInfo: CollectedTypeInfo = [
-      entry("test.ts", 14, [["{ config: { value: string } }"], ["{ config: { value: number } }"]]),
-    ];
-    const result = applyTypesToFile(source, typeInfo, {
-      infer: { ...INFER_DEFAULTS, requireTypeRefInScope: false },
-    });
-    expect(result).toBe("function foo(a: { config: { value: number | string } }) {}");
+    const out = applied(
+      "function foo(a) {}",
+      [
+        entry("test.ts", 14, [
+          ["{ config: { value: string } }"],
+          ["{ config: { value: number } }"],
+        ]),
+      ],
+      ANY_NAME,
+    );
+    expect(out).toAnnotate("a", "{ config: { value: number | string } }");
   });
 
   it("widens nested literals through the in-pipeline collapse", () => {
-    const source = "function foo(a) {}";
-    const typeInfo: CollectedTypeInfo = [entry("test.ts", 14, [['{ a: "yes", b: 42, c: true }']])];
-    const result = applyTypesToFile(source, typeInfo, {
-      infer: { ...INFER_DEFAULTS, requireTypeRefInScope: false },
-    });
-    expect(result).toBe("function foo(a: { a: string; b: number; c: boolean }) {}");
+    const out = applied(
+      "function foo(a) {}",
+      [entry("test.ts", 14, [['{ a: "yes", b: 42, c: true }']])],
+      ANY_NAME,
+    );
+    expect(out).toAnnotate("a", "{ a: string; b: number; c: boolean }");
   });
 
-  it("sorts the final union when a cross-sample array merges beside a non-array", () => {
-    const source = "function foo(a) {}";
-    const typeInfo: CollectedTypeInfo = [
-      entry("test.ts", 14, [["number[]"], ["string[]"], ["boolean"]]),
-    ];
-    const result = applyTypesToFile(source, typeInfo, {
-      infer: { ...INFER_DEFAULTS, crossSampleArrayMerge: true },
-    });
-    expect(result).toBe("function foo(a: (number | string)[] | boolean) {}");
+  it("merges a cross-sample array beside a non-array", () => {
+    const out = applied(
+      "function foo(a) {}",
+      [entry("test.ts", 14, [["number[]"], ["string[]"], ["boolean"]])],
+      withInfer({ crossSampleArrayMerge: true }),
+    );
+    expect(out).toAnnotate("a", "(number | string)[] | boolean");
   });
 });
 
@@ -295,52 +275,46 @@ describe("applyTypesToFile — outer-annotation skip on typed-RHS var declaratio
   // still emitted for a non-function RHS, and the skip does not block
   // inner-position observations.
   it("skips the outer annotation when the RHS is a function expression", () => {
-    const source = "const fullyTyped = (name: string): string => name;";
-    const typeInfo: CollectedTypeInfo = [
-      entry("test.ts", 16, [["(name: unknown) => unknown"]], { varDecl: true }),
-    ];
-    const result = applyTypesToFile(source, typeInfo, {
-      infer: { ...INFER_DEFAULTS, requireTypeRefInScope: false },
-    });
-    expect(result).toBe(source); // unchanged
+    const out = applied(
+      "const fullyTyped = (name: string): string => name;",
+      [entry("test.ts", 16, [["(name: unknown) => unknown"]], { varDecl: true })],
+      ANY_NAME,
+    );
+    expect(out).toLeaveUntyped("fullyTyped");
   });
 
   it("STILL adds the outer annotation for a non-function RHS value", () => {
-    const source = "const count = 42;";
-    const typeInfo: CollectedTypeInfo = [entry("test.ts", 11, [["number"]], { varDecl: true })];
-    const result = applyTypesToFile(source, typeInfo, {
-      infer: {
-        ...INFER_DEFAULTS,
-        requireTypeRefInScope: false,
-        skipRedundantAnnotations: false,
-      },
-    });
-    expect(result).toBe("const count: number = 42;");
+    const out = applied(
+      "const count = 42;",
+      [entry("test.ts", 11, [["number"]], { varDecl: true })],
+      withInfer({ requireTypeRefInScope: false, skipRedundantAnnotations: false }),
+    );
+    expect(out).toAnnotate("count", "number");
   });
 
   it("skips the outer annotation but still applies an inner-position observation", () => {
     // pos 7 = right after "f"; pos 12 = right after "n"
-    const source = "const f = (n) => n + 1;";
-    const typeInfo: CollectedTypeInfo = [
-      entry("test.ts", 7, [["(n: unknown) => unknown"]], { varDecl: true }),
-      entry("test.ts", 12, [["number"]]),
-    ];
-    const result = applyTypesToFile(source, typeInfo, {
-      infer: { ...INFER_DEFAULTS, requireTypeRefInScope: false },
-    });
-    expect(result).toBe("const f = (n: number) => n + 1;");
+    const out = applied(
+      "const f = (n) => n + 1;",
+      [
+        entry("test.ts", 7, [["(n: unknown) => unknown"]], { varDecl: true }),
+        entry("test.ts", 12, [["number"]]),
+      ],
+      ANY_NAME,
+    );
+    expect(out).toLeaveUntyped("f");
+    expect(out).toAnnotate("n", "number");
   });
 
   it("skips the outer annotation for a class-field arrow (PropertyDeclaration)", () => {
     const source = "class C {\n  setLayout = (l: string) => l + '!';\n}";
     const namePos = source.indexOf("setLayout") + "setLayout".length;
-    const typeInfo: CollectedTypeInfo = [
-      entry("test.ts", namePos, [["(l: unknown) => unknown"]], { varDecl: true }),
-    ];
-    const result = applyTypesToFile(source, typeInfo, {
-      infer: { ...INFER_DEFAULTS, requireTypeRefInScope: false },
-    });
-    expect(result).toBe(source); // unchanged — outer skipped
+    const out = applied(
+      source,
+      [entry("test.ts", namePos, [["(l: unknown) => unknown"]], { varDecl: true })],
+      ANY_NAME,
+    );
+    expect(out).toLeaveUntyped("setLayout");
   });
 });
 
@@ -358,27 +332,16 @@ describe("applyTypesToFile — class field inference from constructor params", (
   // pipeline.
 
   it("infers a single field type from a constructor param assignment", () => {
-    // class Counter {
-    //   count;
-    //   constructor(initial) { this.count = initial; }
-    // }
-    //
-    // Constructor param "initial" observed as number → field "count" gets number.
     const source = `class Counter {
   count;
   constructor(initial) {
     this.count = initial;
   }
 }`;
-    // pos 36 = right after "initial" (param name)
     const initialEnd = source.indexOf("initial)") + "initial".length;
-    const typeInfo: CollectedTypeInfo = [entry("test.ts", initialEnd, [["number"]])];
-    const result = applyTypesToFile(source, typeInfo, {
-      infer: { ...INFER_DEFAULTS, requireTypeRefInScope: false },
-    });
-    // Expect: param annotated AND field annotated
-    expect(result).toContain("constructor(initial: number)");
-    expect(result).toMatch(/^\s*count: number;/m);
+    const out = applied(source, [entry("test.ts", initialEnd, [["number"]])], ANY_NAME);
+    expect(out).toAnnotate("initial", "number");
+    expect(out).toAnnotate("count", "number");
   });
 
   it("infers multiple fields from multiple constructor param assignments", () => {
@@ -392,15 +355,15 @@ describe("applyTypesToFile — class field inference from constructor params", (
 }`;
     const nameEnd = source.indexOf("name, age") + "name".length;
     const ageEnd = source.indexOf(", age)") + ", age".length;
-    const typeInfo: CollectedTypeInfo = [
-      entry("test.ts", nameEnd, [["string"]]),
-      entry("test.ts", ageEnd, [["number"]]),
-    ];
-    const result = applyTypesToFile(source, typeInfo, {
-      infer: { ...INFER_DEFAULTS, requireTypeRefInScope: false },
-    });
-    expect(result).toMatch(/^\s*name: string;/m);
-    expect(result).toMatch(/^\s*age: number;/m);
+    const out = applied(
+      source,
+      [entry("test.ts", nameEnd, [["string"]]), entry("test.ts", ageEnd, [["number"]])],
+      ANY_NAME,
+    );
+    // The fields come first in the source, so the first `name` and `age`
+    // found are the fields.
+    expect(out).toAnnotate("name", "string");
+    expect(out).toAnnotate("age", "number");
   });
 
   it("does not type a field when no matching constructor param assignment exists", () => {
@@ -412,16 +375,11 @@ describe("applyTypesToFile — class field inference from constructor params", (
     this.count = 0;
   }
 }`;
-    const typeInfo: CollectedTypeInfo = [];
-    const result = applyTypesToFile(source, typeInfo, {
-      infer: { ...INFER_DEFAULTS, requireTypeRefInScope: false },
-    });
-    expect(result).toBe(source); // unchanged — no observation, no inference
+    const out = applied(source, [], ANY_NAME);
+    expect(out.text).toBe(source);
   });
 
   it("does not override an explicit field type", () => {
-    // Field is already declared with a type; the field-inference should
-    // not touch it.
     const source = `class Foo {
   count: bigint;
   constructor(initial) {
@@ -429,14 +387,9 @@ describe("applyTypesToFile — class field inference from constructor params", (
   }
 }`;
     const initialEnd = source.indexOf("initial)") + "initial".length;
-    const typeInfo: CollectedTypeInfo = [entry("test.ts", initialEnd, [["number"]])];
-    const result = applyTypesToFile(source, typeInfo, {
-      infer: { ...INFER_DEFAULTS, requireTypeRefInScope: false },
-    });
-    // Param annotated; field's existing `: bigint` stays.
-    expect(result).toContain("constructor(initial: number)");
-    expect(result).toContain("count: bigint;");
-    expect(result).not.toContain("count: number");
+    const out = applied(source, [entry("test.ts", initialEnd, [["number"]])], ANY_NAME);
+    expect(out).toAnnotate("initial", "number");
+    expect(out).toAnnotate("count", "bigint");
   });
 
   it("does not double-handle fields with an initializer (transformer already instruments those)", () => {
@@ -451,26 +404,20 @@ describe("applyTypesToFile — class field inference from constructor params", (
     this.count = initial;
   }
 }`;
-    // The transformer-emitted observation lands at field-name-end (16)
-    // with the runtime-observed type. Simulate that.
     const fieldNameEnd = source.indexOf("count = 0") + "count".length;
     const initialEnd = source.indexOf("initial)") + "initial".length;
-    const typeInfo: CollectedTypeInfo = [
-      // From the transformer's __tscptr__.ret around the initializer 0
-      entry("test.ts", fieldNameEnd, [["number"]], { varDecl: true }),
-      // From the constructor param
-      entry("test.ts", initialEnd, [["number"]]),
-    ];
-    const result = applyTypesToFile(source, typeInfo, {
-      infer: {
-        ...INFER_DEFAULTS,
-        requireTypeRefInScope: false,
-        skipRedundantAnnotations: false,
-      },
-    });
-    expect(result).toContain("count: number = 0;");
-    // Make sure we didn't get `count: number: number = 0;`
-    expect(result.match(/count: number/g)?.length).toBe(1);
+    const out = applied(
+      source,
+      [
+        // From the transformer's __tscptr__.ret around the initializer 0
+        entry("test.ts", fieldNameEnd, [["number"]], { varDecl: true }),
+        // From the constructor param
+        entry("test.ts", initialEnd, [["number"]]),
+      ],
+      withInfer({ requireTypeRefInScope: false, skipRedundantAnnotations: false }),
+    );
+    expect(parseErrors(out)).toEqual([]);
+    expect(out).toAnnotate("count", "number");
   });
 
   it("unions field types across multiple constructor-param assignments", () => {
@@ -484,15 +431,12 @@ describe("applyTypesToFile — class field inference from constructor params", (
 }`;
     const aEnd = source.indexOf("a, b)") + 1;
     const bEnd = source.indexOf(", b)") + 3;
-    const typeInfo: CollectedTypeInfo = [
-      entry("test.ts", aEnd, [["string"]]),
-      entry("test.ts", bEnd, [["number"]]),
-    ];
-    const result = applyTypesToFile(source, typeInfo, {
-      infer: { ...INFER_DEFAULTS, requireTypeRefInScope: false },
-    });
-    // Expect a union of the two assignment sources
-    expect(result).toMatch(/^\s*value: number \| string;/m);
+    const out = applied(
+      source,
+      [entry("test.ts", aEnd, [["string"]]), entry("test.ts", bEnd, [["number"]])],
+      ANY_NAME,
+    );
+    expect(out).toAnnotate("value", "number | string");
   });
 });
 
@@ -506,20 +450,12 @@ describe("applyTypesToFile — idempotency (re-apply on already-applied source)"
   // has changed).
 
   it("does not double-annotate a function param", () => {
-    // function foo(a) — pos 14 (after "a")
-    const source = "function foo(a) {}";
-    const typeInfo: CollectedTypeInfo = [entry("test.ts", 14, [["string"]])];
-
-    const after1 = applyTypesToFile(source, typeInfo, {
-      infer: { ...INFER_DEFAULTS, requireTypeRefInScope: false },
-    });
-    expect(after1).toBe("function foo(a: string) {}");
-
+    const out = applied("function foo(a) {}", [entry("test.ts", 14, [["string"]])], ANY_NAME);
+    expect(out).toAnnotate("a", "string");
     // Re-apply with the SAME typeInfo on the now-modified source.
-    // Position 14 in the modified source is `:`, our idempotency
-    // guard short-circuits, output equals the input.
-    const after2 = applyTypesToFile(after1, typeInfo, {});
-    expect(after2).toBe(after1);
+    // Position 14 in the modified source is `:`, the idempotency guard
+    // short-circuits, output equals the input.
+    expect(reapplied(out)).toBe(out.text);
   });
 
   it.todo(
@@ -531,49 +467,46 @@ describe("applyTypesToFile — idempotency (re-apply on already-applied source)"
   );
 
   it("handles optional params (annotation written as `?:`)", () => {
-    // function foo(a?) — pos 15 (after `?`)
-    const source = "function foo(a?) {}";
-    const typeInfo: CollectedTypeInfo = [entry("test.ts", 15, [["number"], ["undefined"]])];
-
-    const after1 = applyTypesToFile(source, typeInfo, {
-      infer: { ...INFER_DEFAULTS, requireTypeRefInScope: false },
-    });
-    expect(after1).toBe("function foo(a?: number) {}");
-
-    const after2 = applyTypesToFile(after1, typeInfo, {});
-    expect(after2).toBe(after1);
+    const out = applied(
+      "function foo(a?) {}",
+      [entry("test.ts", 15, [["number"], ["undefined"]])],
+      ANY_NAME,
+    );
+    expect(out).toAnnotate("a", "number");
+    expect(reapplied(out)).toBe(out.text);
   });
 
   it("handles thisType annotations", () => {
-    const source = "function greet() { return this.text; }";
-    const typeInfo: CollectedTypeInfo = [entry("test.ts", 15, [["Date"]], { thisType: true })];
-
-    const after1 = applyTypesToFile(source, typeInfo, {
-      infer: { ...INFER_DEFAULTS, requireTypeRefInScope: false },
-    });
-    expect(after1).toBe("function greet(this: Date) { return this.text; }");
-
-    const after2 = applyTypesToFile(after1, typeInfo, {});
-    expect(after2).toBe(after1);
+    const out = applied(
+      "function greet() { return this.text; }",
+      [entry("test.ts", 15, [["Date"]], { thisType: true })],
+      ANY_NAME,
+    );
+    expect(out).toAnnotate("this", "Date");
+    expect(reapplied(out)).toBe(out.text);
   });
 
   it("does not block applying NEW entries on a partially-applied file", () => {
     // First apply only annotates `a`. Second run also has an entry for
     // `b` (a NEW observation that wasn't in the first types.json).
     // Idempotency must skip `a` (already annotated) but apply `b`.
-    const source = "function foo(a, b) {}";
-    const firstTypeInfo: CollectedTypeInfo = [entry("test.ts", 14, [["number"]])];
-    const after1 = applyTypesToFile(source, firstTypeInfo, {});
-    expect(after1).toBe("function foo(a: number, b) {}");
+    const first = applied("function foo(a, b) {}", [entry("test.ts", 14, [["number"]])], OFFSET);
+    expect(first).toAnnotate("a", "number");
+    expect(first).toLeaveUntyped("b");
 
     // Pos for `b` in the MODIFIED source: original was pos 17, now
     // shifted to 25 due to ": number" insertion (8 chars).
-    const secondTypeInfo: CollectedTypeInfo = [
-      entry("test.ts", 14, [["number"]]), // already applied — skipped
-      entry("test.ts", 25, [["string"]]), // new — applied
-    ];
-    const after2 = applyTypesToFile(after1, secondTypeInfo, {});
-    expect(after2).toBe("function foo(a: number, b: string) {}");
+    const second = applied(
+      first.text,
+      [
+        entry("test.ts", 14, [["number"]]), // already applied — skipped
+        entry("test.ts", 25, [["string"]]), // new — applied
+      ],
+      OFFSET,
+    );
+    expect(parseErrors(second)).toEqual([]);
+    expect(second).toAnnotate("a", "number");
+    expect(second).toAnnotate("b", "string");
   });
 
   it.todo(
@@ -590,32 +523,22 @@ describe("applyTypesToFile — infer.ignoreExistingTypes", () => {
   // even at already-typed positions. Output may be syntactically invalid TS
   // (existing `: T` stays alongside the new one) — that's intentional;
   // the use case is grepping/diffing what ts-capture WOULD have emitted,
-  // not producing clean rewrites.
+  // not producing clean rewrites. So the text is the claim.
 
   it("default behaviour unchanged: existing annotations are preserved (offset path)", () => {
     const source = "function foo(a: number) {}";
-    const typeInfo: CollectedTypeInfo = [entry("test.ts", 14, [["string"]])];
-    const result = applyTypesToFile(source, typeInfo, {
-      infer: { ...INFER_DEFAULTS, requireTypeRefInScope: false },
-    });
-    expect(result).toBe(source);
+    expect(applied(source, [entry("test.ts", 14, [["string"]])], ANY_NAME).text).toBe(source);
   });
 
   it("flag on (offset path): apply emits annotation despite existing one", () => {
     const source = "function foo(a: number) {}";
-    const typeInfo: CollectedTypeInfo = [entry("test.ts", 14, [["string"]])];
-    const result = applyTypesToFile(source, typeInfo, {
-      infer: {
-        ...INFER_DEFAULTS,
-        requireTypeRefInScope: false,
-        ignoreExistingTypes: true,
-      },
-    });
-    // The new annotation is emitted at the param position; the existing
-    // `: number` stays in source. Output is intentionally broken TS but
-    // the new annotation is grep-able for divergence measurement.
-    expect(result).toContain(": string");
-    expect(result).not.toBe(source);
+    const out = applied(
+      source,
+      [entry("test.ts", 14, [["string"]])],
+      withInfer({ requireTypeRefInScope: false, ignoreExistingTypes: true }),
+    );
+    expect(out.text).toContain(": string");
+    expect(out.text).not.toBe(source);
   });
 });
 
@@ -631,45 +554,45 @@ describe("applyTypesToFile — RewriteMostSpecificCommonBase (applier wiring)", 
   // before emit, the collapse is gated by the flag, and it reaches class unions
   // nested inside an object value via the recursive merge.
   it("always strips the @sa marker before emit, even with the flag off", () => {
-    const source = "function foo(a) {}";
-    const typeInfo: CollectedTypeInfo = [entry("test.ts", 14, [["Cat /* @sa:Animal */"]])];
-    const result = applyTypesToFile(source, typeInfo, {
-      infer: { ...INFER_DEFAULTS, requireTypeRefInScope: false },
-    });
-    expect(result).toBe("function foo(a: Cat) {}");
+    const out = applied(
+      "function foo(a) {}",
+      [entry("test.ts", 14, [["Cat /* @sa:Animal */"]])],
+      ANY_NAME,
+    );
+    expect(out).toAnnotate("a", "Cat");
+    expect(out.text).not.toContain("@sa");
   });
 
   it("with the flag on — collapses a class union to its shared ancestor", () => {
-    const source = "function foo(a) {}";
-    const typeInfo: CollectedTypeInfo = [
-      entry("test.ts", 14, [["Cat /* @sa:Mammal|Animal */"], ["Dog /* @sa:Mammal|Animal */"]]),
-    ];
-    const result = applyTypesToFile(source, typeInfo, {
-      infer: { ...INFER_DEFAULTS, rewriteCommonBase: true, requireTypeRefInScope: false },
-    });
-    expect(result).toBe("function foo(a: Mammal) {}");
+    const out = applied(
+      "function foo(a) {}",
+      [entry("test.ts", 14, [["Cat /* @sa:Mammal|Animal */"], ["Dog /* @sa:Mammal|Animal */"]])],
+      withInfer({ rewriteCommonBase: true, requireTypeRefInScope: false }),
+    );
+    expect(out).toAnnotate("a", "Mammal");
   });
 
   it("with the flag off — multiple classes stay a flat union (markers stripped)", () => {
-    const source = "function foo(a) {}";
-    const typeInfo: CollectedTypeInfo = [
-      entry("test.ts", 14, [["Cat /* @sa:Animal */"], ["Dog /* @sa:Animal */"]]),
-    ];
-    const result = applyTypesToFile(source, typeInfo, {
-      infer: { ...INFER_DEFAULTS, requireTypeRefInScope: false },
-    });
-    expect(result).toBe("function foo(a: Cat | Dog) {}");
+    const out = applied(
+      "function foo(a) {}",
+      [entry("test.ts", 14, [["Cat /* @sa:Animal */"], ["Dog /* @sa:Animal */"]])],
+      ANY_NAME,
+    );
+    expect(out).toAnnotate("a", "Cat | Dog");
   });
 
   it("collapses a class union nested inside an object value position", () => {
-    const source = "function foo(a) {}";
-    const typeInfo: CollectedTypeInfo = [
-      entry("test.ts", 14, [["{ pet: Cat /* @sa:Animal */ }"], ["{ pet: Dog /* @sa:Animal */ }"]]),
-    ];
-    const result = applyTypesToFile(source, typeInfo, {
-      infer: { ...INFER_DEFAULTS, rewriteCommonBase: true, requireTypeRefInScope: false },
-    });
-    expect(result).toBe("function foo(a: { pet: Animal }) {}");
+    const out = applied(
+      "function foo(a) {}",
+      [
+        entry("test.ts", 14, [
+          ["{ pet: Cat /* @sa:Animal */ }"],
+          ["{ pet: Dog /* @sa:Animal */ }"],
+        ]),
+      ],
+      withInfer({ rewriteCommonBase: true, requireTypeRefInScope: false }),
+    );
+    expect(out).toAnnotate("a", "{ pet: Animal }");
   });
 });
 
@@ -680,55 +603,58 @@ describe("applyTypesToFile — skipRedundantAnnotations (applier wiring)", () =>
   // applier wiring: the suppression is gated on the flag, fires only on a
   // varDecl whose inferred type equals the emitted one, keeps the annotation
   // when the observation is wider, and never touches params / return types.
+  const letX = (types: string[]) => [
+    entry(
+      "test.ts",
+      5,
+      types.map((t) => [t] as [string]),
+      { varDecl: true },
+    ),
+  ];
+
   it("OFF (explicit) — `let x = 5` still gets `: number`", () => {
-    const source = "let x = 5;";
-    const typeInfo: CollectedTypeInfo = [entry("test.ts", 5, [["number"]], { varDecl: true })];
-    const result = applyTypesToFile(source, typeInfo, {
-      infer: {
-        ...INFER_DEFAULTS,
-        requireTypeRefInScope: false,
-        skipRedundantAnnotations: false,
-      },
-    });
-    expect(result).toBe("let x: number = 5;");
+    const out = applied(
+      "let x = 5;",
+      letX(["number"]),
+      withInfer({ requireTypeRefInScope: false, skipRedundantAnnotations: false }),
+    );
+    expect(out).toAnnotate("x", "number");
   });
 
   it("ON — `let x = 5` skips the redundant `: number`", () => {
-    const source = "let x = 5;";
-    const typeInfo: CollectedTypeInfo = [entry("test.ts", 5, [["number"]], { varDecl: true })];
-    const result = applyTypesToFile(source, typeInfo, {
-      infer: { ...INFER_DEFAULTS, skipRedundantAnnotations: true },
-    });
-    expect(result).toBe(source);
+    const out = applied(
+      "let x = 5;",
+      letX(["number"]),
+      withInfer({ skipRedundantAnnotations: true }),
+    );
+    expect(out).toLeaveUntyped("x");
   });
 
   it("ON — keeps the annotation when the observed type is WIDER than the inferred one", () => {
-    const source = "let x = 5;";
-    const typeInfo: CollectedTypeInfo = [
-      entry("test.ts", 5, [["number"], ["string"]], { varDecl: true }),
-    ];
-    const result = applyTypesToFile(source, typeInfo, {
-      infer: { ...INFER_DEFAULTS, skipRedundantAnnotations: true },
-    });
-    expect(result).toBe("let x: number | string = 5;");
+    const out = applied(
+      "let x = 5;",
+      letX(["number", "string"]),
+      withInfer({ skipRedundantAnnotations: true }),
+    );
+    expect(out).toAnnotate("x", "number | string");
   });
 
   it("ON — class field `x = 5` skips the redundant `: number`", () => {
-    const source = "class C { x = 5; }";
-    const typeInfo: CollectedTypeInfo = [entry("test.ts", 11, [["number"]], { varDecl: true })];
-    const result = applyTypesToFile(source, typeInfo, {
-      infer: { ...INFER_DEFAULTS, skipRedundantAnnotations: true },
-    });
-    expect(result).toBe(source);
+    const out = applied(
+      "class C { x = 5; }",
+      [entry("test.ts", 11, [["number"]], { varDecl: true })],
+      withInfer({ skipRedundantAnnotations: true }),
+    );
+    expect(out).toLeaveUntyped("x");
   });
 
   it("ON — a function param is NEVER suppressed (TS does not infer params)", () => {
-    const source = "function foo(a) { return a; }";
-    const typeInfo: CollectedTypeInfo = [entry("test.ts", 14, [["number"]])];
-    const result = applyTypesToFile(source, typeInfo, {
-      infer: { ...INFER_DEFAULTS, skipRedundantAnnotations: true },
-    });
-    expect(result).toBe("function foo(a: number) { return a; }");
+    const out = applied(
+      "function foo(a) { return a; }",
+      [entry("test.ts", 14, [["number"]])],
+      withInfer({ skipRedundantAnnotations: true }),
+    );
+    expect(out).toAnnotate("a", "number");
   });
 });
 
@@ -736,33 +662,30 @@ describe("applyTypesToFile — preferNamedInScope same-file matching (applier wi
   // The same-file index build and the exact / subset rewrite are unit-tested at
   // the boundary in named-type-index.spec.ts. These e2e samples prove the
   // applier wiring: the substitution is gated by preferNamedInScope, and both
-  // the offset and CST paths emit the named form identically.
+  // appliers emit the named form.
+  const source = "interface Foo { a: number }\nfunction f(x) { return x; }";
+  const shapeAtX = [entry("test.ts", 40, [["{ a: number }"]], {})];
+
   it("explicit OFF — the structural type stays structural", () => {
-    const source = "interface Foo { a: number }\nfunction f(x) { return x; }";
-    const typeInfo: CollectedTypeInfo = [entry("test.ts", 40, [["{ a: number }"]], {})];
-    const result = applyTypesToFile(source, typeInfo, {
-      infer: { ...INFER_DEFAULTS, requireTypeRefInScope: false, preferNamedInScope: false },
-    });
-    expect(result).toContain("function f(x: { a: number })");
+    const out = applied(
+      source,
+      shapeAtX,
+      withInfer({ requireTypeRefInScope: false, preferNamedInScope: false }),
+    );
+    expect(out).toAnnotate("x", "{ a: number }");
   });
 
-  it("ON — an exact same-file match substitutes the name (offset path)", () => {
-    const source = "interface Foo { a: number }\nfunction f(x) { return x; }";
-    const typeInfo: CollectedTypeInfo = [entry("test.ts", 40, [["{ a: number }"]], {})];
-    const result = applyTypesToFile(source, typeInfo, {
-      infer: { ...INFER_DEFAULTS, preferNamedInScope: true, cstAware: false },
-    });
-    expect(result).toContain("function f(x: Foo)");
-  });
-
-  it("ON — the CST applier substitutes identically (parity)", () => {
-    const source = "interface Foo { a: number }\nfunction f(x) { return x; }";
-    const typeInfo: CollectedTypeInfo = [entry("test.ts", 40, [["{ a: number }"]], {})];
-    const result = applyTypesToFile(source, typeInfo, {
-      infer: { ...INFER_DEFAULTS, preferNamedInScope: true },
-    });
-    expect(result).toContain("function f(x: Foo)");
-  });
+  it.each(["offset", "cst"] as const)(
+    "ON — an exact same-file match substitutes the name (%s)",
+    (applier) => {
+      const out = applied(source, shapeAtX, {
+        applier,
+        infer: { ...INFER_DEFAULTS, preferNamedInScope: true },
+      });
+      expect(out).toAnnotate("x", { ref: "Foo" });
+      expect(out).toTypeAs("x", "{ a: number }");
+    },
+  );
 });
 
 describe("applyTypesToFile — requireTypeRefInScope (applier wiring)", () => {
@@ -771,39 +694,26 @@ describe("applyTypesToFile — requireTypeRefInScope (applier wiring)", () => {
   // (allTypeRefsInScope, incl. generic / union members) are unit-tested at the
   // boundary in scope-reachability.spec.ts. These e2e samples prove the applier
   // wiring: an out-of-scope ctor name is skipped (unless the flag is off), an
-  // imported name lands, and the CST path enforces the same check.
-  it("ON by default — skips an annotation referencing an unimported type", () => {
-    const source = "function f(x) { return x; }";
-    const typeInfo: CollectedTypeInfo = [entry("test.ts", 12, [["AppLogger"]], {})];
-    const result = applyTypesToFile(source, typeInfo, {
-      infer: { ...INFER_DEFAULTS, cstAware: false },
-    });
-    expect(result).toBe(source);
-  });
+  // imported name lands, and both appliers enforce the same check.
+  const source = "function f(x) { return x; }";
+  const loggerAtX = [entry("test.ts", 12, [["AppLogger"]], {})];
+
+  it.each(["offset", "cst"] as const)(
+    "ON by default — skips an annotation referencing an unimported type (%s)",
+    (applier) => {
+      expect(applied(source, loggerAtX, { applier })).toLeaveUntyped("x");
+    },
+  );
 
   it("OFF — emits the name even when unreachable (back-compat opt-out)", () => {
-    const source = "function f(x) { return x; }";
-    const typeInfo: CollectedTypeInfo = [entry("test.ts", 12, [["AppLogger"]], {})];
-    const result = applyTypesToFile(source, typeInfo, {
-      infer: { ...INFER_DEFAULTS, cstAware: false, requireTypeRefInScope: false },
-    });
-    expect(result).toContain("function f(x: AppLogger)");
+    const out = applied(source, loggerAtX, ANY_NAME);
+    expect(out).toAnnotate("x", { ref: "AppLogger" });
   });
 
   it("ON — keeps the annotation when the name is imported", () => {
-    const source = "import { AppLogger } from './AppLogger';\nfunction f(x) { return x; }";
-    const typeInfo: CollectedTypeInfo = [entry("test.ts", 53, [["AppLogger"]], {})];
-    const result = applyTypesToFile(source, typeInfo, {
-      infer: { ...INFER_DEFAULTS, cstAware: false },
-    });
-    expect(result).toContain("function f(x: AppLogger)");
-  });
-
-  it("ON — the CST applier enforces the same scope check (parity)", () => {
-    const source = "function f(x) { return x; }";
-    const typeInfo: CollectedTypeInfo = [entry("test.ts", 12, [["AppLogger"]], {})];
-    const result = applyTypesToFile(source, typeInfo, {});
-    expect(result).toBe(source);
+    const imported = "import { AppLogger } from './AppLogger';\nfunction f(x) { return x; }";
+    const out = applied(imported, [entry("test.ts", 53, [["AppLogger"]], {})], OFFSET);
+    expect(out).toAnnotate("x", { ref: "AppLogger" });
   });
 });
 
@@ -813,66 +723,36 @@ describe("applyTypesToFile — TypeChecker-aware scope (applier wiring)", () => 
   // scope-reachability.spec.ts. These e2e samples prove the applier wiring: with
   // a Program it uses the TypeChecker scope (lighting up DOM + cross-file
   // imports), and without one it falls back to the text-level scan.
-  function makeProgram(files: Record<string, string>): {
-    program: ts.Program;
-    filename: string;
-  } {
-    const compilerOptions: ts.CompilerOptions = {
-      target: ts.ScriptTarget.ES2022,
-      module: ts.ModuleKind.NodeNext,
-      moduleResolution: ts.ModuleResolutionKind.NodeNext,
-      strict: true,
-    };
-    const host = ts.createCompilerHost(compilerOptions);
-    const realReadFile = host.readFile.bind(host);
-    const realFileExists = host.fileExists.bind(host);
-    const realGetSourceFile = host.getSourceFile.bind(host);
-    host.readFile = (f: string) => files[f] ?? realReadFile(f);
-    host.fileExists = (f: string) => f in files || realFileExists(f);
-    host.getSourceFile = (f: string, target: ts.ScriptTarget) =>
-      files[f] !== undefined
-        ? ts.createSourceFile(f, files[f], target, true)
-        : realGetSourceFile(f, target);
-    const rootNames = Object.keys(files);
-    const program = ts.createProgram(rootNames, compilerOptions, host);
-    return { program, filename: rootNames[0] };
-  }
-
   it("ON — a DOM type (HTMLElement) is in scope via the TypeChecker", () => {
-    const { program, filename } = makeProgram({ "/test.ts": "function f(x) { return x; }" });
-    const typeInfo: CollectedTypeInfo = [entry(filename, 12, [["HTMLElement"]], {})];
-    const result = applyTypesToFile(
+    const out = applied(
       "function f(x) { return x; }",
-      typeInfo,
-      { infer: { ...INFER_DEFAULTS, cstAware: false }, filename },
-      program,
+      [entry("test.ts", 12, [["HTMLElement"]], {})],
+      {
+        ...OFFSET,
+        project: true,
+      },
     );
-    expect(result).toContain("function f(x: HTMLElement)");
+    expect(out).toAnnotate("x", { ref: "HTMLElement" });
   });
 
   it("ON — a direct cross-file import resolves to in-scope", () => {
     const source = "import { InnerType } from './inner.js';\nfunction f(x) { return x; }";
-    const { program } = makeProgram({
-      "/inner.ts": "export interface InnerType { a: number; }",
-      "/test.ts": source,
+    const out = applied(source, [entry("test.ts", 52, [["InnerType"]], {})], {
+      ...OFFSET,
+      project: true,
+      files: { "inner.ts": "export interface InnerType { a: number; }" },
     });
-    const typeInfo: CollectedTypeInfo = [entry("/test.ts", 52, [["InnerType"]], {})];
-    const result = applyTypesToFile(
-      source,
-      typeInfo,
-      { infer: { ...INFER_DEFAULTS, cstAware: false }, filename: "/test.ts" },
-      program,
-    );
-    expect(result).toContain("function f(x: InnerType)");
+    expect(out).toAnnotate("x", { ref: "InnerType" });
+    expect(out).toTypeAs("x", "{ a: number }");
   });
 
   it("ON — without a Program, falls back to the text-level scan (DOM skipped)", () => {
-    const source = "function f(x) { return x; }";
-    const typeInfo: CollectedTypeInfo = [entry("test.ts", 12, [["HTMLElement"]], {})];
-    const result = applyTypesToFile(source, typeInfo, {
-      infer: { ...INFER_DEFAULTS, cstAware: false },
-    });
-    expect(result).toBe(source);
+    const out = applied(
+      "function f(x) { return x; }",
+      [entry("test.ts", 12, [["HTMLElement"]], {})],
+      OFFSET,
+    );
+    expect(out).toLeaveUntyped("x");
   });
 });
 
@@ -882,63 +762,20 @@ describe("applyTypesToFile — preferNamedInScope cross-file (applier wiring)", 
   // unit-tested at the boundary in named-type-index.spec.ts. These e2e samples
   // prove the applier wiring: with a Program an imported interface name is
   // substituted; without one it falls back to same-file-only (no match).
-  function makeProgram(files: Record<string, string>): {
-    program: ts.Program;
-    filename: string;
-  } {
-    const compilerOptions: ts.CompilerOptions = {
-      target: ts.ScriptTarget.ES2022,
-      module: ts.ModuleKind.NodeNext,
-      moduleResolution: ts.ModuleResolutionKind.NodeNext,
-      strict: true,
-    };
-    const host = ts.createCompilerHost(compilerOptions);
-    const realReadFile = host.readFile.bind(host);
-    const realFileExists = host.fileExists.bind(host);
-    const realGetSourceFile = host.getSourceFile.bind(host);
-    host.readFile = (f: string) => files[f] ?? realReadFile(f);
-    host.fileExists = (f: string) => f in files || realFileExists(f);
-    host.getSourceFile = (f: string, target: ts.ScriptTarget) =>
-      files[f] !== undefined
-        ? ts.createSourceFile(f, files[f], target, true)
-        : realGetSourceFile(f, target);
-    const rootNames = Object.keys(files);
-    const program = ts.createProgram(rootNames, compilerOptions, host);
-    return { program, filename: rootNames[0] };
-  }
+  const source = "import { BookingState } from './state.js';\nfunction subscribe(s) { return s; }";
+  const shapeAtS = [entry("test.ts", 63, [["{ activeCustomer: string, uniqueId: string }"]], {})];
+  const files = {
+    "state.ts": "export interface BookingState { activeCustomer: string; uniqueId: string; }",
+  };
 
   it("ON + Program — an imported interface name substitutes the structural type", () => {
-    const source =
-      "import { BookingState } from './state.js';\nfunction subscribe(s) { return s; }";
-    const { program } = makeProgram({
-      "/state.ts": "export interface BookingState { activeCustomer: string; uniqueId: string; }",
-      "/test.ts": source,
-    });
-    const typeInfo: CollectedTypeInfo = [
-      entry("/test.ts", 63, [["{ activeCustomer: string, uniqueId: string }"]], {}),
-    ];
-    const result = applyTypesToFile(
-      source,
-      typeInfo,
-      {
-        infer: { ...INFER_DEFAULTS, preferNamedInScope: true, cstAware: false },
-        filename: "/test.ts",
-      },
-      program,
-    );
-    expect(result).toContain("function subscribe(s: BookingState)");
+    const out = applied(source, shapeAtS, { ...OFFSET, project: true, files });
+    expect(out).toAnnotate("s", { ref: "BookingState" });
   });
 
   it("ON without a Program — falls back to same-file only (no cross-file match)", () => {
-    const source =
-      "import { BookingState } from './state.js';\nfunction subscribe(s) { return s; }";
-    const typeInfo: CollectedTypeInfo = [
-      entry("/test.ts", 63, [["{ activeCustomer: string, uniqueId: string }"]], {}),
-    ];
-    const result = applyTypesToFile(source, typeInfo, {
-      infer: { ...INFER_DEFAULTS, preferNamedInScope: true, cstAware: false },
-    });
-    expect(result).toContain("function subscribe(s: { activeCustomer: string; uniqueId: string })");
+    const out = applied(source, shapeAtS, { ...OFFSET, files });
+    expect(out).toAnnotate("s", "{ activeCustomer: string; uniqueId: string }");
   });
 });
 
@@ -950,49 +787,47 @@ describe("applyTypesToFile — paren-less arrow wrap is per-position", () => {
   // lands at the same pos without `opts.arrow`, the wrap would be
   // missed → `state: T => body` (TS1005). detectParenLessArrowParam
   // is hoisted out of the per-entry gate and computed once per pos;
-  // any landing entry triggers wrap. Dedup via Set<number> of
-  // paramStarts.
+  // any landing entry triggers wrap. The parens are text; the result
+  // parsing with the annotation in place is the claim.
 
   it("returnType-entry alone at paren-less arrow pos: wrap still happens", () => {
     // After preferNamedInScope rejects the arrow-entry, only the
     // returnType lands. Post-undefined-→-void widening, the lone
     // `undefined` return-observation is emitted as `: void`
     // (idiomatic for callbacks that don't intentionally return).
-    const source = "store.subscribe(state => handle(state));";
-    // pos 21 = right after `state`
-    const typeInfo: CollectedTypeInfo = [
-      entry("test.ts", 21, [["undefined"]], { returnType: true }),
-    ];
-    const result = applyTypesToFile(source, typeInfo, {
-      infer: { ...INFER_DEFAULTS, cstAware: false },
-    });
-    // Wrap MUST happen even though no arrow-entry is present.
-    expect(result).toBe("store.subscribe((state): void => handle(state));");
+    const out = applied(
+      "store.subscribe(state => handle(state));",
+      [entry("test.ts", 21, [["undefined"]], { returnType: true })],
+      OFFSET,
+    );
+    expect(parseErrors(out)).toEqual([]);
+    expect(firstArrow(out).type?.getText(out.sf)).toBe("void");
+    expect(out.text).toBe("store.subscribe((state): void => handle(state));");
   });
 
   it("arrow + returnType both land at paren-less pos: wrap once, both annotations land", () => {
-    const source = "arr.map(x => x * 2);";
-    // pos 9 = right after `x`
-    const typeInfo: CollectedTypeInfo = [
-      entry("test.ts", 9, [["number"]], { arrow: true, parens: [8, 9] }),
-      entry("test.ts", 9, [["number"]], { returnType: true }),
-    ];
-    const result = applyTypesToFile(source, typeInfo, {
-      infer: { ...INFER_DEFAULTS, cstAware: false },
-    });
-    // `)` between param annotation and return annotation; no double `(`.
-    expect(result).toBe("arr.map((x: number): number => x * 2);");
+    const out = applied(
+      "arr.map(x => x * 2);",
+      [
+        entry("test.ts", 9, [["number"]], { arrow: true, parens: [8, 9] }),
+        entry("test.ts", 9, [["number"]], { returnType: true }),
+      ],
+      OFFSET,
+    );
+    expect(parseErrors(out)).toEqual([]);
+    expect(out).toAnnotate("x", "number");
+    expect(firstArrow(out).type?.getText(out.sf)).toBe("number");
+    expect(out.text).toBe("arr.map((x: number): number => x * 2);");
   });
 
   it("arrow-entry alone at paren-less pos: regression guard", () => {
-    const source = "arr.map(x => x * 2);";
-    const typeInfo: CollectedTypeInfo = [
-      entry("test.ts", 9, [["number"]], { arrow: true, parens: [8, 9] }),
-    ];
-    const result = applyTypesToFile(source, typeInfo, {
-      infer: { ...INFER_DEFAULTS, cstAware: false },
-    });
-    expect(result).toBe("arr.map((x: number) => x * 2);");
+    const out = applied(
+      "arr.map(x => x * 2);",
+      [entry("test.ts", 9, [["number"]], { arrow: true, parens: [8, 9] })],
+      OFFSET,
+    );
+    expect(out).toAnnotate("x", "number");
+    expect(out.text).toBe("arr.map((x: number) => x * 2);");
   });
 });
 
@@ -1004,47 +839,39 @@ describe("applyTypesToFile — paren-less arrow param wrapping", () => {
   // `parens` is missing (stale types.json, hand-synthesized entry),
   // the offset applier derives paren-less detection from source when
   // `opts.arrow` is set without `parens`.
-
-  it("offset path — entry with arrow:true but no parens still wraps with parens", () => {
-    const source = "arr.map(x => x * 2)";
-    // pos 9 = right after `x` in `arr.map(x => ...)`
-    const typeInfo: CollectedTypeInfo = [
-      entry("test.ts", 9, [["number"]], { arrow: true, requireTypeRefInScope: false } as never),
-    ];
-    const result = applyTypesToFile(source, typeInfo, {
-      infer: { ...INFER_DEFAULTS, cstAware: false },
-    });
-    expect(result).toBe("arr.map((x: number) => x * 2)");
-  });
-
-  it("offset path — paren-less arrow in callback context", () => {
-    const source = "store.subscribe(state => handle(state));";
-    // pos 21 = right after `state`
-    const typeInfo: CollectedTypeInfo = [entry("test.ts", 21, [["number"]], { arrow: true })];
-    const result = applyTypesToFile(source, typeInfo, {
-      infer: { ...INFER_DEFAULTS, cstAware: false },
-    });
-    expect(result).toBe("store.subscribe((state: number) => handle(state));");
-  });
-
-  it("offset path — arrow already wrapped in parens still works (no double-wrap)", () => {
-    const source = "arr.map((x) => x * 2)";
-    // pos 10 = right after `x` in `(x)`
-    const typeInfo: CollectedTypeInfo = [entry("test.ts", 10, [["number"]], { arrow: true })];
-    const result = applyTypesToFile(source, typeInfo, {
-      infer: { ...INFER_DEFAULTS, cstAware: false },
-    });
-    expect(result).toBe("arr.map((x: number) => x * 2)");
-  });
-
-  it("offset path — `const f = x => body` (assigned paren-less)", () => {
-    const source = "const f = x => x * 2;";
-    // pos 11 = right after `x`
-    const typeInfo: CollectedTypeInfo = [entry("test.ts", 11, [["number"]], { arrow: true })];
-    const result = applyTypesToFile(source, typeInfo, {
-      infer: { ...INFER_DEFAULTS, cstAware: false },
-    });
-    expect(result).toBe("const f = (x: number) => x * 2;");
+  it.each([
+    [
+      "an entry with arrow:true but no parens",
+      "arr.map(x => x * 2)",
+      9,
+      "x",
+      "arr.map((x: number) => x * 2)",
+    ],
+    [
+      "a paren-less arrow in callback context",
+      "store.subscribe(state => handle(state));",
+      21,
+      "state",
+      "store.subscribe((state: number) => handle(state));",
+    ],
+    [
+      "an arrow already wrapped in parens (no double-wrap)",
+      "arr.map((x) => x * 2)",
+      10,
+      "x",
+      "arr.map((x: number) => x * 2)",
+    ],
+    [
+      "`const f = x => body` (assigned paren-less)",
+      "const f = x => x * 2;",
+      11,
+      "x",
+      "const f = (x: number) => x * 2;",
+    ],
+  ])("offset path — %s", (_, source, pos, name, expected) => {
+    const out = applied(source, [entry("test.ts", pos, [["number"]], { arrow: true })], OFFSET);
+    expect(out).toAnnotate(name, "number");
+    expect(out.text).toBe(expected);
   });
 });
 
@@ -1054,41 +881,24 @@ describe("applyTypesToFile — honorAsCasts", () => {
   // fights the user's intent. The transformer marks such entries
   // `hasAsCast: true`; apply consults `infer.honorAsCasts` (default
   // ON) and skips the annotation.
+  const cast = [entry("test.ts", 7, [["{ a: number }"]], { varDecl: true, hasAsCast: true })];
 
   it("ON by default — entry with hasAsCast is skipped", () => {
-    const source = "const w = window as MyWindow;";
-    // pos 7 = right after `w`
-    const typeInfo: CollectedTypeInfo = [
-      entry("test.ts", 7, [["{ a: number }"]], { varDecl: true, hasAsCast: true }),
-    ];
-    const result = applyTypesToFile(source, typeInfo, {
-      infer: { ...INFER_DEFAULTS, requireTypeRefInScope: false },
-    });
-    expect(result).toBe(source); // unchanged — cast wins
+    expect(applied("const w = window as MyWindow;", cast, ANY_NAME)).toLeaveUntyped("w");
   });
 
   it("OFF — entry with hasAsCast still gets annotated (back-compat opt-out)", () => {
-    const source = "const w = window as MyWindow;";
-    const typeInfo: CollectedTypeInfo = [
-      entry("test.ts", 7, [["{ a: number }"]], { varDecl: true, hasAsCast: true }),
-    ];
-    const result = applyTypesToFile(source, typeInfo, {
-      infer: { ...INFER_DEFAULTS, honorAsCasts: false },
-    });
-    expect(result).toBe("const w: { a: number } = window as MyWindow;");
+    const out = applied("const w = window as MyWindow;", cast, withInfer({ honorAsCasts: false }));
+    expect(out).toAnnotate("w", "{ a: number }");
   });
 
   it("ON — varDecl WITHOUT hasAsCast still gets annotated normally", () => {
-    const source = "const x = 5;";
-    const typeInfo: CollectedTypeInfo = [entry("test.ts", 7, [["number"]], { varDecl: true })];
-    const result = applyTypesToFile(source, typeInfo, {
-      infer: {
-        ...INFER_DEFAULTS,
-        requireTypeRefInScope: false,
-        skipRedundantAnnotations: false,
-      },
-    });
-    expect(result).toBe("const x: number = 5;");
+    const out = applied(
+      "const x = 5;",
+      [entry("test.ts", 7, [["number"]], { varDecl: true })],
+      withInfer({ requireTypeRefInScope: false, skipRedundantAnnotations: false }),
+    );
+    expect(out).toAnnotate("x", "number");
   });
 });
 
@@ -1102,89 +912,72 @@ describe("applyTypesToFile — returnType undefined widens to void (applier wiri
   // are unit-tested at the boundary in compute-annotation.spec.ts. This e2e
   // sample proves the applier inserts `: void` for a sole-undefined return.
   it("single undefined observation on returnType emits `void`", () => {
-    const source = "store.subscribe(state => handle(state));";
-    const typeInfo: CollectedTypeInfo = [
-      entry("test.ts", 21, [["undefined"]], { returnType: true }),
-    ];
-    const result = applyTypesToFile(source, typeInfo, {
-      infer: { ...INFER_DEFAULTS, requireTypeRefInScope: false },
-    });
-    expect(result).toBe("store.subscribe((state): void => handle(state));");
+    const out = applied(
+      "store.subscribe(state => handle(state));",
+      [entry("test.ts", 21, [["undefined"]], { returnType: true })],
+      ANY_NAME,
+    );
+    expect(firstArrow(out).type?.getText(out.sf)).toBe("void");
   });
 });
 
-// Opt-in diagnostic markers for approximation fallbacks
+// Opt-in diagnostic markers for approximation fallbacks. A marker is a
+// comment beside the type, so the text is the claim.
 describe("applyTypesToFile — emitDiagnosticComments", () => {
+  const DIAGNOSE = withInfer({ requireTypeRefInScope: false, emitDiagnosticComments: true });
+  const genericFn: CollectedTypeInfo = [
+    ["test.ts", 15, [["(x: unknown) => unknown", undefined, "generic-fn"]], {}],
+  ];
+
   it("OFF by default — useless arrows are suppressed", () => {
     // With diagnostic comments OFF, a sole (x: unknown) => unknown
-    // observation is treated as noise and produces no annotation. The
-    // diagnostic-marker behavior moves to emitDiagnosticComments: true,
-    // tested below.
-    const source = "function foo(cb) {}";
-    const typeInfo: CollectedTypeInfo = [
-      ["test.ts", 15, [["(x: unknown) => unknown", undefined, "generic-fn"]], {}],
-    ];
-    const result = applyTypesToFile(source, typeInfo, {
-      infer: { ...INFER_DEFAULTS, requireTypeRefInScope: false },
-    });
-    expect(result).toBe(source); // unchanged
+    // observation is treated as noise and produces no annotation.
+    expect(applied("function foo(cb) {}", genericFn, ANY_NAME)).toLeaveUntyped("cb");
   });
 
   it("ON — generic-fn reason produces `/* @ts-capture:generic-fn */` marker", () => {
-    const source = "function foo(cb) {}";
-    // pos 15 = right after `cb`
-    const typeInfo: CollectedTypeInfo = [
-      ["test.ts", 15, [["(x: unknown) => unknown", undefined, "generic-fn"]], {}],
-    ];
-    const result = applyTypesToFile(source, typeInfo, {
-      infer: { ...INFER_DEFAULTS, requireTypeRefInScope: false, emitDiagnosticComments: true },
-    });
-    expect(result).toBe(
+    const out = applied("function foo(cb) {}", genericFn, DIAGNOSE);
+    expect(out).toAnnotate("cb", "(x: unknown) => unknown");
+    expect(out.text).toBe(
       "function foo(cb: (x: unknown) => unknown /* @ts-capture:generic-fn */) {}",
     );
   });
 
   it("ON — shape-capped reason produces `/* @ts-capture:shape-capped */` marker", () => {
-    const source = "let store = makeStore();";
-    // pos 9 = right after `store`
-    const typeInfo: CollectedTypeInfo = [
-      ["test.ts", 9, [["Record<string, unknown>", undefined, "shape-capped"]], { varDecl: true }],
-    ];
-    const result = applyTypesToFile(source, typeInfo, {
-      infer: { ...INFER_DEFAULTS, requireTypeRefInScope: false, emitDiagnosticComments: true },
-    });
-    expect(result).toContain(": Record<string, unknown> /* @ts-capture:shape-capped */");
+    const out = applied(
+      "let store = makeStore();",
+      [["test.ts", 9, [["Record<string, unknown>", undefined, "shape-capped"]], { varDecl: true }]],
+      DIAGNOSE,
+    );
+    expect(out.text).toContain(": Record<string, unknown> /* @ts-capture:shape-capped */");
   });
 
   it("ON — entry with no reason produces no marker", () => {
-    const source = "function foo(a) {}";
-    const typeInfo: CollectedTypeInfo = [entry("test.ts", 14, [["string"]])];
-    const result = applyTypesToFile(source, typeInfo, {
-      infer: { ...INFER_DEFAULTS, requireTypeRefInScope: false, emitDiagnosticComments: true },
-    });
-    expect(result).toBe("function foo(a: string) {}");
+    const out = applied("function foo(a) {}", [entry("test.ts", 14, [["string"]])], DIAGNOSE);
+    expect(out).toAnnotate("a", "string");
+    expect(out.text).not.toContain("@ts-capture");
   });
 
   it("first-wins on multi-observation entries", () => {
     // Union of two observations — only one has a reason. The reason
     // wins (we report any approximation in the entry, even if some
     // observations were precise).
-    const source = "function foo(a) {}";
-    const typeInfo: CollectedTypeInfo = [
+    const out = applied(
+      "function foo(a) {}",
       [
-        "test.ts",
-        14,
         [
-          ["string", undefined],
-          ["(x: unknown) => unknown", undefined, "generic-fn"],
+          "test.ts",
+          14,
+          [
+            ["string", undefined],
+            ["(x: unknown) => unknown", undefined, "generic-fn"],
+          ],
+          {},
         ],
-        {},
       ],
-    ];
-    const result = applyTypesToFile(source, typeInfo, {
-      infer: { ...INFER_DEFAULTS, requireTypeRefInScope: false, emitDiagnosticComments: true },
-    });
-    expect(result).toContain("/* @ts-capture:generic-fn */");
+      DIAGNOSE,
+    );
+    expect(out.text).toContain("/* @ts-capture:generic-fn */");
   });
 });
 
@@ -1193,30 +986,6 @@ describe("applyTypesToFile — generic ctor arity expansion (applier wiring)", (
   // scope-reachability.spec.ts. These e2e samples prove the applier wires the
   // Program-derived arity map through expandCtorArity to fill a bare generic
   // class name (and does not double-expand an already-parameterized one).
-  function makeProgram(files: Record<string, string>): {
-    program: ts.Program;
-    filename: string;
-  } {
-    const compilerOptions: ts.CompilerOptions = {
-      target: ts.ScriptTarget.ES2022,
-      module: ts.ModuleKind.NodeNext,
-      moduleResolution: ts.ModuleResolutionKind.NodeNext,
-      strict: true,
-    };
-    const host = ts.createCompilerHost(compilerOptions);
-    const realReadFile = host.readFile.bind(host);
-    const realFileExists = host.fileExists.bind(host);
-    const realGetSourceFile = host.getSourceFile.bind(host);
-    host.readFile = (f: string) => files[f] ?? realReadFile(f);
-    host.fileExists = (f: string) => f in files || realFileExists(f);
-    host.getSourceFile = (f: string, target: ts.ScriptTarget) =>
-      files[f] !== undefined
-        ? ts.createSourceFile(f, files[f], target, true)
-        : realGetSourceFile(f, target);
-    const rootNames = Object.keys(files);
-    const program = ts.createProgram(rootNames, compilerOptions, host);
-    return { program, filename: rootNames[0] };
-  }
 
   // Arity expansion exists because bare `Container` is a type error when the
   // class requires an argument — the only valid forms are `Container<unknown>`
@@ -1226,31 +995,22 @@ describe("applyTypesToFile — generic ctor arity expansion (applier wiring)", (
   it("suppresses a bare generic class name rather than expanding it to Name<unknown>", () => {
     const source =
       "class Container<T> { constructor(public value: T) {} }\nfunction f(x) { return x; }";
-    const { program, filename } = makeProgram({ "/test.ts": source });
-    const typeInfo: CollectedTypeInfo = [entry(filename, 67, [["Container"]], {})];
-    const result = applyTypesToFile(
-      source,
-      typeInfo,
-      { infer: { ...INFER_DEFAULTS, cstAware: false }, filename },
-      program,
-    );
-    expect(result).toBe(source);
+    const out = applied(source, [entry("test.ts", 67, [["Container"]], {})], {
+      ...OFFSET,
+      project: true,
+    });
+    expect(out).toLeaveUntyped("x");
   });
 
   it("does not double-expand an already-parameterized generic", () => {
     const source = "class Container<T> {}\nfunction f(x) { return x; }";
-    const { program, filename } = makeProgram({ "/test.ts": source });
     // Payload is `string`, not `unknown`: the subject here is generic expansion,
     // and a vacuous type would be dropped before it got that far.
-    const typeInfo: CollectedTypeInfo = [entry(filename, 34, [["Container<string>"]], {})];
-    const result = applyTypesToFile(
-      source,
-      typeInfo,
-      { infer: { ...INFER_DEFAULTS, cstAware: false }, filename },
-      program,
-    );
-    expect(result).toContain("function f(x: Container<string>)");
-    expect(result).not.toContain("Container<unknown><unknown>");
+    const out = applied(source, [entry("test.ts", 34, [["Container<string>"]], {})], {
+      ...OFFSET,
+      project: true,
+    });
+    expect(out).toAnnotate("x", "Container<string>");
   });
 });
 
@@ -1260,59 +1020,31 @@ describe("applyTypesToFile — generic ctor arity expansion (applier wiring)", (
 // type contracts. Let users exclude them from apply via a regex list
 // instead of sprinkling `// @ts-capture-ignore` throughout.
 describe("ignoreFiles config skips whole files", () => {
-  it("returns source unchanged when filename matches any ignore pattern", () => {
-    const source = "const v = make();";
-    const pos = source.indexOf("const v ") + "const v".length;
-    const typeInfo: CollectedTypeInfo = [
-      entry("/src/utils/logger.ts", pos, [["string"]], { varDecl: true }),
-    ];
-    const result = applyTypesToFile(source, typeInfo, {
-      infer: { ...INFER_DEFAULTS, requireTypeRefInScope: false },
-      filename: "/src/utils/logger.ts",
-      ignoreFiles: [/logger\.ts$/],
+  const source = "const v = make();";
+  const vAt = (file: string) => [
+    entry(file, source.indexOf("const v ") + "const v".length, [["string"]], { varDecl: true }),
+  ];
+  const inFile = (filename: string, ignoreFiles?: RegExp[]) =>
+    applied(source, vAt(filename), {
+      ...ANY_NAME,
+      filename,
+      ...(ignoreFiles ? { ignoreFiles } : {}),
     });
-    expect(result).toBe(source);
+
+  it("returns source unchanged when filename matches any ignore pattern", () => {
+    expect(inFile("src/utils/logger.ts", [/logger\.ts$/])).toLeaveUntyped("v");
   });
 
   it("annotates files that do not match any ignore pattern", () => {
-    const source = "const v = make();";
-    const pos = source.indexOf("const v ") + "const v".length;
-    const typeInfo: CollectedTypeInfo = [
-      entry("/src/utils/helper.ts", pos, [["string"]], { varDecl: true }),
-    ];
-    const result = applyTypesToFile(source, typeInfo, {
-      infer: { ...INFER_DEFAULTS, requireTypeRefInScope: false },
-      filename: "/src/utils/helper.ts",
-      ignoreFiles: [/logger\.ts$/],
-    });
-    expect(result).toContain(": string");
+    expect(inFile("src/utils/helper.ts", [/logger\.ts$/])).toAnnotate("v", "string");
   });
 
   it("skips when ANY of multiple patterns matches", () => {
-    const source = "const v = make();";
-    const pos = source.indexOf("const v ") + "const v".length;
-    const typeInfo: CollectedTypeInfo = [
-      entry("/generated/Schema.ts", pos, [["string"]], { varDecl: true }),
-    ];
-    const result = applyTypesToFile(source, typeInfo, {
-      infer: { ...INFER_DEFAULTS, requireTypeRefInScope: false },
-      filename: "/generated/Schema.ts",
-      ignoreFiles: [/logger\.ts$/, /^\/generated\//],
-    });
-    expect(result).toBe(source);
+    expect(inFile("generated/Schema.ts", [/logger\.ts$/, /\/generated\//])).toLeaveUntyped("v");
   });
 
   it("no-op when ignoreFiles is omitted", () => {
-    const source = "const v = make();";
-    const pos = source.indexOf("const v ") + "const v".length;
-    const typeInfo: CollectedTypeInfo = [
-      entry("/src/utils/logger.ts", pos, [["string"]], { varDecl: true }),
-    ];
-    const result = applyTypesToFile(source, typeInfo, {
-      infer: { ...INFER_DEFAULTS, requireTypeRefInScope: false },
-      filename: "/src/utils/logger.ts",
-    });
-    expect(result).toContain(": string");
+    expect(inFile("src/utils/logger.ts")).toAnnotate("v", "string");
   });
 });
 
@@ -1322,59 +1054,47 @@ describe("ignoreFiles config skips whole files", () => {
 // alone. Matches the prior-art conventions of `// eslint-disable-next-line`
 // and `// @ts-ignore` so the marker is immediately recognisable.
 describe("@ts-capture-ignore comment skip", () => {
+  const vIn = (source: string) => [
+    entry("test.ts", source.indexOf("const v ") + "const v".length, [["string"]], {
+      varDecl: true,
+    }),
+  ];
+
   it("skips varDecl annotation when @ts-capture-ignore comment is on prior line", () => {
     const source = "// @ts-capture-ignore\nconst v = make();";
-    // pos = end of `v` in the source
-    const pos = source.indexOf("const v ") + "const v".length;
-    const typeInfo: CollectedTypeInfo = [entry("test.ts", pos, [["string"]], { varDecl: true })];
-    const result = applyTypesToFile(source, typeInfo, {
-      infer: { ...INFER_DEFAULTS, requireTypeRefInScope: false },
-    });
-    expect(result).toBe(source); // unchanged
+    expect(applied(source, vIn(source), ANY_NAME)).toLeaveUntyped("v");
   });
 
   it("still annotates when no ignore comment is present", () => {
     const source = "const v = make();";
-    const pos = source.indexOf("const v ") + "const v".length;
-    const typeInfo: CollectedTypeInfo = [entry("test.ts", pos, [["string"]], { varDecl: true })];
-    const result = applyTypesToFile(source, typeInfo, {
-      infer: { ...INFER_DEFAULTS, requireTypeRefInScope: false },
-    });
-    expect(result).toContain(": string");
+    expect(applied(source, vIn(source), ANY_NAME)).toAnnotate("v", "string");
   });
 
   it("recognises the marker via leading-comment attachment (not just text scan)", () => {
     // Multi-line comment form on the immediately-preceding line.
     const source = "/* @ts-capture-ignore */\nconst v = make();";
-    const pos = source.indexOf("const v ") + "const v".length;
-    const typeInfo: CollectedTypeInfo = [entry("test.ts", pos, [["string"]], { varDecl: true })];
-    const result = applyTypesToFile(source, typeInfo, {
-      infer: { ...INFER_DEFAULTS, requireTypeRefInScope: false },
-    });
-    expect(result).toBe(source);
+    expect(applied(source, vIn(source), ANY_NAME)).toLeaveUntyped("v");
   });
 
   it("ignore comment further up the file does not affect distant positions", () => {
     const source = "// @ts-capture-ignore\nconst skipped = a();\n\nconst kept = b();";
     const posKept = source.indexOf("const kept ") + "const kept".length;
-    const typeInfo: CollectedTypeInfo = [
-      entry("test.ts", posKept, [["number"]], { varDecl: true }),
-    ];
-    const result = applyTypesToFile(source, typeInfo, {
-      infer: { ...INFER_DEFAULTS, requireTypeRefInScope: false },
-    });
-    expect(result).toContain("const kept: number");
+    const out = applied(
+      source,
+      [entry("test.ts", posKept, [["number"]], { varDecl: true })],
+      ANY_NAME,
+    );
+    expect(out).toAnnotate("kept", "number");
   });
 
   it("skips function param annotation when ignore comment is on prior line", () => {
     const source = "// @ts-capture-ignore\nfunction foo(a) {}";
-    // pos after `a`
-    const pos = source.indexOf("(a") + 2;
-    const typeInfo: CollectedTypeInfo = [entry("test.ts", pos, [["string"]])];
-    const result = applyTypesToFile(source, typeInfo, {
-      infer: { ...INFER_DEFAULTS, requireTypeRefInScope: false },
-    });
-    expect(result).toBe(source);
+    const out = applied(
+      source,
+      [entry("test.ts", source.indexOf("(a") + 2, [["string"]])],
+      ANY_NAME,
+    );
+    expect(out).toLeaveUntyped("a");
   });
 });
 
@@ -1387,42 +1107,39 @@ describe("@ts-capture-ignore comment skip", () => {
 // non-union initializer (.map) is annotated from its single observation.
 describe("skip undefined-narrowing on union-producing initializer (applier wiring)", () => {
   it("skips a `?? undefined` site when the sole observation is undefined", () => {
-    const source = "const v = maybe() ?? undefined;";
-    const typeInfo: CollectedTypeInfo = [entry("test.ts", 7, [["undefined"]], { varDecl: true })];
-    const result = applyTypesToFile(source, typeInfo, {
-      infer: { ...INFER_DEFAULTS, requireTypeRefInScope: false },
-    });
-    expect(result).toBe(source);
+    const out = applied(
+      "const v = maybe() ?? undefined;",
+      [entry("test.ts", 7, [["undefined"]], { varDecl: true })],
+      ANY_NAME,
+    );
+    expect(out).toLeaveUntyped("v");
   });
 
   it("skips a union-producing site on a single non-undefined observation (one branch seen)", () => {
-    const source = "let mainId = flag ? compute() : undefined;";
-    const typeInfo: CollectedTypeInfo = [entry("test.ts", 10, [["number"]], { varDecl: true })];
-    const result = applyTypesToFile(source, typeInfo, {
-      infer: { ...INFER_DEFAULTS, requireTypeRefInScope: false },
-    });
-    expect(result).toBe(source);
+    const out = applied(
+      "let mainId = flag ? compute() : undefined;",
+      [entry("test.ts", 10, [["number"]], { varDecl: true })],
+      ANY_NAME,
+    );
+    expect(out).toLeaveUntyped("mainId");
   });
 
   it("STILL annotates a genuine multi-type union", () => {
-    const source = "const v = maybe() ?? undefined;";
-    const typeInfo: CollectedTypeInfo = [
-      entry("test.ts", 7, [["undefined"], ["string"]], { varDecl: true }),
-    ];
-    const result = applyTypesToFile(source, typeInfo, {
-      infer: { ...INFER_DEFAULTS, requireTypeRefInScope: false },
-    });
-    expect(result).toContain("string");
-    expect(result).toContain("undefined");
+    const out = applied(
+      "const v = maybe() ?? undefined;",
+      [entry("test.ts", 7, [["undefined"], ["string"]], { varDecl: true })],
+      ANY_NAME,
+    );
+    expect(out).toAnnotate("v", "string | undefined");
   });
 
   it("STILL annotates a non-union initializer like `arr.map(...)`", () => {
-    const source = "let v = arr.map(x => x.id);";
-    const typeInfo: CollectedTypeInfo = [entry("test.ts", 5, [["number[]"]], { varDecl: true })];
-    const result = applyTypesToFile(source, typeInfo, {
-      infer: { ...INFER_DEFAULTS, requireTypeRefInScope: false },
-    });
-    expect(result).toContain(": number[]");
+    const out = applied(
+      "let v = arr.map(x => x.id);",
+      [entry("test.ts", 5, [["number[]"]], { varDecl: true })],
+      ANY_NAME,
+    );
+    expect(out).toAnnotate("v", "number[]");
   });
 });
 
@@ -1435,30 +1152,30 @@ describe("skip undefined-narrowing on union-producing initializer (applier wirin
 // observation are still annotated.
 describe("skip sole-undefined on opaque initializers (applier wiring)", () => {
   it("skips `const v = call()` when the sole observation is undefined", () => {
-    const source = "const v = getString(key);";
-    const typeInfo: CollectedTypeInfo = [entry("test.ts", 7, [["undefined"]], { varDecl: true })];
-    const result = applyTypesToFile(source, typeInfo, {
-      infer: { ...INFER_DEFAULTS, requireTypeRefInScope: false },
-    });
-    expect(result).toBe(source);
+    const out = applied(
+      "const v = getString(key);",
+      [entry("test.ts", 7, [["undefined"]], { varDecl: true })],
+      ANY_NAME,
+    );
+    expect(out).toLeaveUntyped("v");
   });
 
   it("STILL annotates a literal `= undefined` initializer", () => {
-    const source = "let v = undefined;";
-    const typeInfo: CollectedTypeInfo = [entry("test.ts", 5, [["undefined"]], { varDecl: true })];
-    const result = applyTypesToFile(source, typeInfo, {
-      infer: { ...INFER_DEFAULTS, requireTypeRefInScope: false },
-    });
-    expect(result).toContain(": undefined");
+    const out = applied(
+      "let v = undefined;",
+      [entry("test.ts", 5, [["undefined"]], { varDecl: true })],
+      ANY_NAME,
+    );
+    expect(out).toAnnotate("v", "undefined");
   });
 
   it("STILL annotates an opaque call when the observation is NOT undefined", () => {
-    const source = "const v = getString(key);";
-    const typeInfo: CollectedTypeInfo = [entry("test.ts", 7, [["string"]], { varDecl: true })];
-    const result = applyTypesToFile(source, typeInfo, {
-      infer: { ...INFER_DEFAULTS, requireTypeRefInScope: false },
-    });
-    expect(result).toContain(": string");
+    const out = applied(
+      "const v = getString(key);",
+      [entry("test.ts", 7, [["string"]], { varDecl: true })],
+      ANY_NAME,
+    );
+    expect(out).toAnnotate("v", "string");
   });
 });
 
@@ -1478,14 +1195,12 @@ describe("subset-match for named-type rewrite (applier wiring)", () => {
       "let v = getFoo();",
     ].join("\n");
     const pos = source.indexOf("let v") + "let v".length;
-    const typeInfo: CollectedTypeInfo = [
-      entry("test.ts", pos, [["{ a: number, b: string }"]], { varDecl: true }),
-    ];
-    const result = applyTypesToFile(source, typeInfo, {
-      infer: { ...INFER_DEFAULTS, requireTypeRefInScope: false },
-    });
-    expect(result).toContain(": Foo");
-    expect(result).not.toContain("{ a:");
+    const out = applied(
+      source,
+      [entry("test.ts", pos, [["{ a: number, b: string }"]], { varDecl: true })],
+      ANY_NAME,
+    );
+    expect(out).toAnnotate("v", { ref: "Foo" });
   });
 });
 
@@ -1503,13 +1218,12 @@ describe("subset rewrite descends into generic wrappers (applier wiring)", () =>
       "let v = fetchResp();",
     ].join("\n");
     const pos = source.indexOf("let v") + "let v".length;
-    const typeInfo: CollectedTypeInfo = [
-      entry("test.ts", pos, [["Promise<{ id: number, name: string }>"]], { varDecl: true }),
-    ];
-    const result = applyTypesToFile(source, typeInfo, {
-      infer: { ...INFER_DEFAULTS, requireTypeRefInScope: false },
-    });
-    expect(result).toContain(": Promise<Resp>");
+    const out = applied(
+      source,
+      [entry("test.ts", pos, [["Promise<{ id: number, name: string }>"]], { varDecl: true })],
+      ANY_NAME,
+    );
+    expect(out).toAnnotate("v", "Promise<Resp>");
   });
 });
 
@@ -1528,15 +1242,17 @@ describe("async function returning Promise doesn't double-wrap (applier wiring)"
   // emits a single Promise<...> with no double-wrap.
   it("unwraps single `Promise<X>` observation under async", () => {
     const source = "async function f() { return fetch(''); }";
-    const pos = source.indexOf(")") + 1;
-    const typeInfo: CollectedTypeInfo = [
-      entry("test.ts", pos, [["Promise<number>"]], { returnType: true, async: true }),
-    ];
-    const result = applyTypesToFile(source, typeInfo, {
-      infer: { ...INFER_DEFAULTS, requireTypeRefInScope: false },
-    });
-    expect(result).toContain(": Promise<number>");
-    expect(result).not.toContain(": Promise<Promise<");
+    const out = applied(
+      source,
+      [
+        entry("test.ts", source.indexOf(")") + 1, [["Promise<number>"]], {
+          returnType: true,
+          async: true,
+        }),
+      ],
+      ANY_NAME,
+    );
+    expect(out).toAnnotate({ returnOf: "f" }, "Promise<number>");
   });
 });
 
@@ -1550,51 +1266,51 @@ describe("skip arrow-param annotation in Array.prototype callbacks (applier wiri
   it("skips a structural param annotation inside `.filter(...)`", () => {
     const source = "const r = arr.filter(product => product.active);";
     const pos = source.indexOf("product") + "product".length;
-    const typeInfo: CollectedTypeInfo = [
-      entry("test.ts", pos, [["{ active: boolean, id: number }"]], {
-        arrow: true,
-        parens: [pos - "product".length, pos],
-      }),
-    ];
-    const result = applyTypesToFile(source, typeInfo, {
-      infer: { ...INFER_DEFAULTS, requireTypeRefInScope: false },
-    });
-    expect(result).not.toContain("active: boolean");
-    expect(result).not.toContain(": {");
+    const out = applied(
+      source,
+      [
+        entry("test.ts", pos, [["{ active: boolean, id: number }"]], {
+          arrow: true,
+          parens: [pos - "product".length, pos],
+        }),
+      ],
+      ANY_NAME,
+    );
+    expect(out).toLeaveUntyped("product");
   });
 
   it("skips a structural returnType annotation inside an array callback", () => {
     const source = "const r = arr.map(p => p.price);";
-    const pos = source.indexOf("p ") + 1;
-    const typeInfo: CollectedTypeInfo = [
-      entry("test.ts", pos, [["{ campaignId: number, vat: number }"]], { returnType: true }),
-    ];
-    const result = applyTypesToFile(source, typeInfo, {
-      infer: { ...INFER_DEFAULTS, requireTypeRefInScope: false },
-    });
-    expect(result).not.toContain(": {");
+    const out = applied(
+      source,
+      [
+        entry("test.ts", source.indexOf("p ") + 1, [["{ campaignId: number, vat: number }"]], {
+          returnType: true,
+        }),
+      ],
+      ANY_NAME,
+    );
+    expect(firstArrow(out).type).toBeUndefined();
   });
 
   it("STILL annotates a primitive returnType inside an array callback", () => {
     const source = "const r = arr.map(p => p.id);";
-    const pos = source.indexOf("p ") + 1;
-    const typeInfo: CollectedTypeInfo = [entry("test.ts", pos, [["number"]], { returnType: true })];
-    const result = applyTypesToFile(source, typeInfo, {
-      infer: { ...INFER_DEFAULTS, requireTypeRefInScope: false },
-    });
-    expect(result).toContain(": number");
+    const out = applied(
+      source,
+      [entry("test.ts", source.indexOf("p ") + 1, [["number"]], { returnType: true })],
+      ANY_NAME,
+    );
+    expect(firstArrow(out).type?.getText(out.sf)).toBe("number");
   });
 
   it("STILL annotates a structural param on a free arrow (not an array callback)", () => {
     const source = "const fn = (x) => x.id;";
-    const pos = source.indexOf("(x)") + 2;
-    const typeInfo: CollectedTypeInfo = [
-      entry("test.ts", pos, [["{ id: number }"]], { arrow: true }),
-    ];
-    const result = applyTypesToFile(source, typeInfo, {
-      infer: { ...INFER_DEFAULTS, requireTypeRefInScope: false },
-    });
-    expect(result).toContain("id: number");
+    const out = applied(
+      source,
+      [entry("test.ts", source.indexOf("(x)") + 2, [["{ id: number }"]], { arrow: true })],
+      ANY_NAME,
+    );
+    expect(out).toAnnotate("x", "{ id: number }");
   });
 });
 
@@ -1612,24 +1328,21 @@ describe("skip varDecl annotation in generic context / with explicit type-args (
       "  return v;\n" +
       "}";
     const pos = source.indexOf("const v = ") + "const v".length;
-    const typeInfo: CollectedTypeInfo = [
-      entry("test.ts", pos, [["number[]|undefined"]], { varDecl: true }),
-    ];
-    const result = applyTypesToFile(source, typeInfo, {
-      infer: { ...INFER_DEFAULTS, requireTypeRefInScope: false },
-    });
-    expect(result).toBe(source);
+    const out = applied(
+      source,
+      [entry("test.ts", pos, [["number[]|undefined"]], { varDecl: true })],
+      ANY_NAME,
+    );
+    expect(out).toLeaveUntyped("v");
   });
 
   it("skips a var-decl annotation when the initializer call has explicit type arguments", () => {
-    const source = "const data = parseModelResponse<MyType>(json);";
-    const typeInfo: CollectedTypeInfo = [
-      entry("test.ts", 10, [["{ a: string, b: number }"]], { varDecl: true }),
-    ];
-    const result = applyTypesToFile(source, typeInfo, {
-      infer: { ...INFER_DEFAULTS, requireTypeRefInScope: false },
-    });
-    expect(result).toBe(source);
+    const out = applied(
+      "const data = parseModelResponse<MyType>(json);",
+      [entry("test.ts", 10, [["{ a: string, b: number }"]], { varDecl: true })],
+      ANY_NAME,
+    );
+    expect(out).toLeaveUntyped("data");
   });
 });
 
@@ -1651,33 +1364,32 @@ describe("maxAnnotationChars cap on final type string (applier wiring)", () => {
   }
 
   it("suppresses annotation when final type exceeds maxAnnotationChars", () => {
-    const source = "let s = giant();";
-    const huge = makeLongShape(500);
-    const typeInfo: CollectedTypeInfo = [entry("test.ts", 5, [[huge]], { varDecl: true })];
-    const result = applyTypesToFile(source, typeInfo, {
-      infer: { ...INFER_DEFAULTS, requireTypeRefInScope: false },
-    });
-    expect(result).toBe(source);
+    const out = applied(
+      "let s = giant();",
+      [entry("test.ts", 5, [[makeLongShape(500)]], { varDecl: true })],
+      ANY_NAME,
+    );
+    expect(out).toLeaveUntyped("s");
   });
 
   it("falls back to common base when a class-union exceeds the cap", () => {
-    const source = "let pet = wild();";
     const classes = Array.from(
       { length: 20 },
       (_, i) => `LongClassNameNumber${i} /* @sa:Mammal|Animal */`,
     );
-    const typeInfo: CollectedTypeInfo = [
-      entry(
-        "test.ts",
-        7,
-        classes.map((c) => [c] as [string]),
-        { varDecl: true },
-      ),
-    ];
-    const result = applyTypesToFile(source, typeInfo, {
-      infer: { ...INFER_DEFAULTS, requireTypeRefInScope: false, maxAnnotationChars: 100 },
-    });
-    expect(result).toBe("let pet: Mammal = wild();");
+    const out = applied(
+      "let pet = wild();",
+      [
+        entry(
+          "test.ts",
+          7,
+          classes.map((c) => [c] as [string]),
+          { varDecl: true },
+        ),
+      ],
+      withInfer({ requireTypeRefInScope: false, maxAnnotationChars: 100 }),
+    );
+    expect(out).toAnnotate("pet", "Mammal");
   });
 });
 
@@ -1691,17 +1403,16 @@ describe("maxAnnotationChars cap on final type string (applier wiring)", () => {
 describe("cartesian-product collapse inside Array<...> (applier wiring)", () => {
   // The cartesian / single-variant / shared-key variants are unit-tested at the
   // boundary in type-merge.spec.ts. This e2e sample proves the applier emits the
-  // collapsed shape through a varDecl, accepting either `{...}[]` or `Array<{...}>`.
+  // collapsed shape through a varDecl.
   it("merges same-keyset object union into field-level unions", () => {
-    const source = "let xs = list();";
     const cartesian =
       "Array<{ a: null, b: null } | { a: null, b: number } | { a: number, b: null } | { a: number, b: number }>";
-    const typeInfo: CollectedTypeInfo = [entry("test.ts", 6, [[cartesian]], { varDecl: true })];
-    const result = applyTypesToFile(source, typeInfo, {
-      infer: { ...INFER_DEFAULTS, requireTypeRefInScope: false },
-    });
-    // a and b should both end up as null|number, not as 4-way object union.
-    expect(result).toContain("let xs: { a: number | null; b: number | null }[]");
+    const out = applied(
+      "let xs = list();",
+      [entry("test.ts", 6, [[cartesian]], { varDecl: true })],
+      ANY_NAME,
+    );
+    expect(out).toAnnotate("xs", "{ a: number | null; b: number | null }[]");
   });
 });
 
@@ -1713,29 +1424,25 @@ describe("cartesian-product collapse inside Array<...> (applier wiring)", () => 
 // field's value is `unknown[]`.
 describe("unknown[] handling (applier wiring)", () => {
   it("drops unknown[] from a union when a concrete T[] is present", () => {
-    const source = "let xs = list();";
-    const typeInfo: CollectedTypeInfo = [
-      entry("test.ts", 6, [["unknown[]"], ["string[]"]], { varDecl: true }),
-    ];
-    const result = applyTypesToFile(source, typeInfo, {
-      infer: { ...INFER_DEFAULTS, requireTypeRefInScope: false },
-    });
-    expect(result).toContain("let xs: string[]");
-    expect(result).not.toContain("unknown[]");
+    const out = applied(
+      "let xs = list();",
+      [entry("test.ts", 6, [["unknown[]"], ["string[]"]], { varDecl: true })],
+      ANY_NAME,
+    );
+    expect(out).toAnnotate("xs", "string[]");
   });
 
   it("writes no annotation when an object field's value is unknown[]", () => {
-    const source = "const colorMap = build();";
-    const typeInfo: CollectedTypeInfo = [
-      entry("test.ts", 14, [["{ outline: unknown[], primary: string[], white: string[] }"]], {
-        varDecl: true,
-      }),
-    ];
-    const result = applyTypesToFile(source, typeInfo, {
-      infer: { ...INFER_DEFAULTS, requireTypeRefInScope: false },
-    });
-    // Original source unchanged — no annotation written.
-    expect(result).toBe(source);
+    const out = applied(
+      "const colorMap = build();",
+      [
+        entry("test.ts", 14, [["{ outline: unknown[], primary: string[], white: string[] }"]], {
+          varDecl: true,
+        }),
+      ],
+      ANY_NAME,
+    );
+    expect(out).toLeaveUntyped("colorMap");
   });
 });
 
@@ -1748,14 +1455,12 @@ describe("useless-arrow suppression on varDecl (applier wiring)", () => {
   // compute-annotation.spec.ts. This e2e sample proves the applier writes no
   // annotation when the sole observation is a useless `(arg: unknown) => unknown`.
   it("does not annotate when sole observation is (arg: unknown) => unknown", () => {
-    const source = "let cb = registerHandler();";
-    const typeInfo: CollectedTypeInfo = [
-      entry("test.ts", 6, [["(arg: unknown) => unknown"]], { varDecl: true }),
-    ];
-    const result = applyTypesToFile(source, typeInfo, {
-      infer: { ...INFER_DEFAULTS, requireTypeRefInScope: false },
-    });
-    expect(result).toBe(source); // unchanged
+    const out = applied(
+      "let cb = registerHandler();",
+      [entry("test.ts", 6, [["(arg: unknown) => unknown"]], { varDecl: true })],
+      ANY_NAME,
+    );
+    expect(out).toLeaveUntyped("cb");
   });
 });
 
@@ -1778,20 +1483,18 @@ describe("skip annotation when offset falls inside an ImportDeclaration", () => 
       "const x = true;",
     ].join("\n");
     // Offset 68 lands between "import" and "{" in the second import.
-    const typeInfo: CollectedTypeInfo = [entry("test.tsx", 68, [["boolean"]], { varDecl: true })];
-    const result = applyTypesToFile(source, typeInfo, {});
-    // The import block must be left intact.
-    expect(result).toContain("import {\n    defaultCompanySectors,\n} from");
-    expect(result).not.toContain("import:");
+    const out = applied(source, [entry("test.tsx", 68, [["boolean"]], { varDecl: true })], {
+      ...OFFSET,
+      filename: "test.tsx",
+    });
+    expect(out.text).toBe(source);
   });
 
   it("does not annotate position inside single-line import", () => {
     const source = "import { foo } from './bar';\nconst x = true;";
     // Offset 7 is inside `import { foo }`.
-    const typeInfo: CollectedTypeInfo = [entry("test.ts", 7, [["string"]], { varDecl: true })];
-    const result = applyTypesToFile(source, typeInfo, {});
-    expect(result).toContain("import { foo } from './bar';");
-    expect(result).not.toMatch(/import.*:/);
+    const out = applied(source, [entry("test.ts", 7, [["string"]], { varDecl: true })], OFFSET);
+    expect(out.text).toBe(source);
   });
 
   it("still annotates legitimate varDecl elsewhere in same file", () => {
@@ -1799,13 +1502,12 @@ describe("skip annotation when offset falls inside an ImportDeclaration", () => 
     // are still annotated as before.
     const source = "import { foo } from './bar';\nconst x = true;";
     const declStart = source.indexOf("const x") + "const x".length;
-    const typeInfo: CollectedTypeInfo = [
-      entry("test.ts", declStart, [["boolean"]], { varDecl: true }),
-    ];
-    const result = applyTypesToFile(source, typeInfo, {
-      infer: { ...INFER_DEFAULTS, skipRedundantAnnotations: false },
-    });
-    expect(result).toContain("const x: boolean = true;");
+    const out = applied(
+      source,
+      [entry("test.ts", declStart, [["boolean"]], { varDecl: true })],
+      withInfer({ skipRedundantAnnotations: false }),
+    );
+    expect(out).toAnnotate("x", "boolean");
   });
 });
 
@@ -1823,32 +1525,31 @@ describe("skip varDecl annotation when offset is not a valid name-end position",
   it("does not annotate offset between `const` keyword and identifier", () => {
     const source = "export const TasksList = () => null;\n";
     // Position 12 == end of "const" keyword, before the space + identifier.
-    const typeInfo: CollectedTypeInfo = [entry("test.tsx", 12, [["string"]], { varDecl: true })];
-    const result = applyTypesToFile(source, typeInfo, {});
-    expect(result).toBe(source);
+    const out = applied(source, [entry("test.tsx", 12, [["string"]], { varDecl: true })], {
+      ...OFFSET,
+      filename: "test.tsx",
+    });
+    expect(out.text).toBe(source);
   });
 
   it("does not annotate offset between `export` keyword and `const`", () => {
     const source = "export const x = 1;\n";
     // Position 6 == end of "export" keyword.
-    const typeInfo: CollectedTypeInfo = [entry("test.ts", 6, [["number"]], { varDecl: true })];
-    const result = applyTypesToFile(source, typeInfo, {});
-    expect(result).toBe(source);
+    const out = applied(source, [entry("test.ts", 6, [["number"]], { varDecl: true })], OFFSET);
+    expect(out.text).toBe(source);
   });
 
   it("still annotates at the correct identifier-end position", () => {
     // Use a non-arrow RHS to avoid colliding with the existing
     // function-expression skip rule.
     const source = "export const taskCount = 5;\n";
-    // Position == end of "taskCount" identifier.
     const declEnd = source.indexOf("taskCount") + "taskCount".length;
-    const typeInfo: CollectedTypeInfo = [
-      entry("test.ts", declEnd, [["number"]], { varDecl: true }),
-    ];
-    const result = applyTypesToFile(source, typeInfo, {
-      infer: { ...INFER_DEFAULTS, skipRedundantAnnotations: false },
-    });
-    expect(result).toContain("const taskCount: number = ");
+    const out = applied(
+      source,
+      [entry("test.ts", declEnd, [["number"]], { varDecl: true })],
+      withInfer({ skipRedundantAnnotations: false }),
+    );
+    expect(out).toAnnotate("taskCount", "number");
   });
 });
 
@@ -1866,25 +1567,28 @@ describe("apply refuses to emit ungrammatical type strings", () => {
     // The exact garbage string the runtime produced in the react-admin
     // eval (Bug 4b). Even at a legitimate varDecl name-end, apply must
     // refuse to write this.
-    const typeInfo: CollectedTypeInfo = [
-      entry("t.ts", declEnd, [["(request: eObject: {request: e: unknown}) => unknown"]], {
-        varDecl: true,
-      }),
-    ];
-    const result = applyTypesToFile(source, typeInfo, {
-      infer: { ...INFER_DEFAULTS, requireTypeRefInScope: false },
-    });
-    expect(result).toBe(source);
+    const out = applied(
+      source,
+      [
+        entry("t.ts", declEnd, [["(request: eObject: {request: e: unknown}) => unknown"]], {
+          varDecl: true,
+        }),
+      ],
+      ANY_NAME,
+    );
+    expect(out).toLeaveUntyped("handler");
+    expect(parseErrors(out)).toEqual([]);
   });
 
   it("still emits when the type is parseable", () => {
     const source = "const count = compute();\n";
     const declEnd = source.indexOf("count") + "count".length;
-    const typeInfo: CollectedTypeInfo = [entry("t.ts", declEnd, [["number"]], { varDecl: true })];
-    const result = applyTypesToFile(source, typeInfo, {
-      infer: { ...INFER_DEFAULTS, requireTypeRefInScope: false },
-    });
-    expect(result).toContain("const count: number = ");
+    const out = applied(
+      source,
+      [entry("t.ts", declEnd, [["number"]], { varDecl: true })],
+      ANY_NAME,
+    );
+    expect(out).toAnnotate("count", "number");
   });
 });
 
@@ -1899,23 +1603,24 @@ describe("regression — JSX attribute / component name offsets are rejected", (
   // These tests pin that coverage explicitly so a future regression in
   // the guard would surface as a JSX-shaped test failure. See
   // REPORT.md §Bug 3.
+  const TSX: AppliedOptions = { ...OFFSET, filename: "t.tsx" };
 
   it("rejects offset that lands at a JSX attribute name end", () => {
     const source = `function C() { return <Box display="flex" />; }\n`;
     const attrEnd = source.indexOf("display") + "display".length;
-    const typeInfo: CollectedTypeInfo = [entry("t.tsx", attrEnd, [["string"]], { varDecl: true })];
-    const result = applyTypesToFile(source, typeInfo, {});
-    expect(result).toBe(source);
+    const out = applied(source, [entry("t.tsx", attrEnd, [["string"]], { varDecl: true })], TSX);
+    expect(out.text).toBe(source);
   });
 
   it("rejects offset that lands at a JSX component name end", () => {
     const source = `function C() { return <CardActions sx={{}} />; }\n`;
     const compEnd = source.indexOf("CardActions") + "CardActions".length;
-    const typeInfo: CollectedTypeInfo = [
-      entry("t.tsx", compEnd, [["() => unknown"]], { varDecl: true }),
-    ];
-    const result = applyTypesToFile(source, typeInfo, {});
-    expect(result).toBe(source);
+    const out = applied(
+      source,
+      [entry("t.tsx", compEnd, [["() => unknown"]], { varDecl: true })],
+      TSX,
+    );
+    expect(out.text).toBe(source);
   });
 
   it("still annotates a real varDecl whose name happens to match a JSX attribute name", () => {
@@ -1927,180 +1632,129 @@ describe("regression — JSX attribute / component name offsets are rejected", (
 function C() { return <Box display="flex" />; }
 `;
     const declEnd = source.indexOf("display") + "display".length;
-    const typeInfo: CollectedTypeInfo = [
-      entry("t.tsx", declEnd, [["{ later: number }"]], { varDecl: true }),
-    ];
-    const result = applyTypesToFile(source, typeInfo, {
-      infer: { ...INFER_DEFAULTS, skipRedundantAnnotations: false },
-    });
-    expect(result).toContain("const display: { later: number } = ");
+    const out = applied(
+      source,
+      [entry("t.tsx", declEnd, [["{ later: number }"]], { varDecl: true })],
+      {
+        ...TSX,
+        infer: { ...INFER_DEFAULTS, skipRedundantAnnotations: false },
+      },
+    );
+    expect(out).toAnnotate("display", "{ later: number }");
     // The JSX attribute must not have been touched.
-    expect(result).toContain(`<Box display="flex" />`);
+    expect(nodesOf(out, ts.isJsxAttribute)[0].getText(out.sf)).toBe('display="flex"');
   });
 });
 
 describe("extension: skip outer varDecl annotation when RHS is an object of methods", () => {
-  // The `objectLiteralHasMethodProperty` heuristic for both
-  // method-property detection and spread-assignment detection
-  // was removed. Both cases produce consumer-side type
-  // errors when the annotated narrow shape conflicts with the
-  // expected interface — caught by the oracle directly (one surfaces via
-  // same-file property-access TS2339; the other via the transitive scan
-  // when a consumer typechecks against an interface). Oracle-based
-  // regression tests live in apply-types-cst.spec.ts under
-  // "TypeChecker verify integration".
+  // The heuristics that once skipped method-bearing objects, spread RHSs,
+  // `return undefined` branches, satisfies contexts and useless Promises were
+  // removed: each produced a type error the oracle catches directly, and the
+  // oracle-based regression tests live in apply-types-cst.spec.ts under
+  // "TypeChecker verify integration". These are the controls: the plain cases
+  // each heuristic had to leave alone must still be annotated.
 
   it("STILL annotates a plain-data object (no method properties)", () => {
-    // Defensive: an object with only data values is fair game for
-    // annotation — there's no contextual-typing tension because the
-    // declared type wouldn't be a provider-style interface.
     const source = "const config = { url: '/api', timeout: 5000 };\n";
     const declEnd = source.indexOf("config") + "config".length;
-    const typeInfo: CollectedTypeInfo = [
-      entry("t.ts", declEnd, [["{ url: string, timeout: number }"]], { varDecl: true }),
-    ];
-    const result = applyTypesToFile(source, typeInfo, {
-      infer: { ...INFER_DEFAULTS, requireTypeRefInScope: false },
-    });
-    expect(result).toContain("const config: { url: string; timeout: number } = ");
+    const out = applied(
+      source,
+      [entry("t.ts", declEnd, [["{ url: string, timeout: number }"]], { varDecl: true })],
+      ANY_NAME,
+    );
+    expect(out).toAnnotate("config", "{ url: string; timeout: number }");
   });
 
-  // `emittedHasUselessArrowMethod` was removed — the real
-  // regression (annotating a structural object of useless-arrow
-  // methods burns away contextual typing against a consumer's
-  // declared interface like `DataProvider`) is now caught by the
-  // TypeChecker oracle via the transitive importer scan. The
-  // oracle-based regression test lives in apply-types-cst.spec.ts
-  // under "TypeChecker verify integration".
-
   it("STILL annotates plain object with no useless-arrow methods", () => {
-    // Defensive: object types that are pure data, or that contain
-    // arrow methods with REAL signatures, should still annotate.
     const source = "const result = compute();\n";
     const declEnd = source.indexOf("result") + "result".length;
-    const typeInfo: CollectedTypeInfo = [
-      entry(
-        "t.ts",
-        declEnd,
-        [["{ score: number, label: string, format: (n: number) => string }"]],
-        { varDecl: true },
-      ),
-    ];
-    const result = applyTypesToFile(source, typeInfo, {
-      infer: { ...INFER_DEFAULTS, requireTypeRefInScope: false },
-    });
-    expect(result).toContain(
-      "const result: { score: number; label: string; format: (n: number) => string } = ",
+    const out = applied(
+      source,
+      [
+        entry(
+          "t.ts",
+          declEnd,
+          [["{ score: number, label: string, format: (n: number) => string }"]],
+          { varDecl: true },
+        ),
+      ],
+      ANY_NAME,
+    );
+    expect(out).toAnnotate(
+      "result",
+      "{ score: number; label: string; format: (n: number) => string }",
     );
   });
 
-  // The `narrowingReturnTypeFns` heuristic + supporting helpers
-  // (`expressionCanBeUndefined`, `fnBodyReturnsUndefinedOrNull`) were
-  // removed. The real regression — writing a narrow returnType
-  // on a function whose body has `return undefined;` causes TS2322 at
-  // the function's own `return undefined` line — fires AT the function
-  // itself, so the oracle catches it directly (no transitive scan
-  // needed). Oracle-based regression test lives in
-  // apply-types-cst.spec.ts under "TypeChecker verify integration".
-
   it("STILL annotates returnType when all branches return the same shape", () => {
-    // Defensive: function with exactly one return shape gets annotated.
     const source = `function compute(x: number) {
     return x * 2;
 }
 `;
-    const paramsClose = source.indexOf(")") + 1;
-    const typeInfo: CollectedTypeInfo = [
-      entry("t.ts", paramsClose, [["number"]], { returnType: true }),
-    ];
-    const result = applyTypesToFile(source, typeInfo, {
-      infer: { ...INFER_DEFAULTS, requireTypeRefInScope: false },
-    });
-    expect(result).toContain("function compute(x: number): number {");
+    const out = applied(
+      source,
+      [entry("t.ts", source.indexOf(")") + 1, [["number"]], { returnType: true })],
+      ANY_NAME,
+    );
+    expect(out).toAnnotate({ returnOf: "compute" }, "number");
   });
-
-  // The `satisfiesContextPositions` + `hasSatisfiesAncestor`
-  // heuristic was removed. The real regression — annotating
-  // an arrow's param with a structural shape that doesn't satisfy
-  // the satisfies clause makes the `satisfies` expression itself
-  // fail type-check — fires AT the satisfies expression (same file
-  // as the annotation), so the oracle catches it directly. Oracle
-  // regression test lives in apply-types-cst.spec.ts under
-  // "TypeChecker verify integration".
 
   it("STILL annotates an arrow outside any satisfies / typed context", () => {
-    // Defensive: arrows not inside a satisfies / typed context should
-    // still get annotations.
     const source = "const compute = (x) => x * 2;\n";
-    const paramEnd = source.indexOf("x)") + 1;
-    const typeInfo: CollectedTypeInfo = [entry("t.ts", paramEnd, [["number"]], { arrow: true })];
-    const result = applyTypesToFile(source, typeInfo, {
-      infer: { ...INFER_DEFAULTS, requireTypeRefInScope: false },
-    });
-    expect(result).toContain("(x: number)");
+    const out = applied(
+      source,
+      [entry("t.ts", source.indexOf("x)") + 1, [["number"]], { arrow: true })],
+      ANY_NAME,
+    );
+    expect(out).toAnnotate("x", "number");
   });
-
-  // The `isUselessPromise` heuristic was removed — the real
-  // regression (annotating `: Promise<unknown>` on a slot typed
-  // `() => Promise<void>` breaks contextual typing) is now caught
-  // directly by the TypeChecker oracle through the transitive
-  // importer scan. The oracle-based regression test lives in
-  // apply-types-cst.spec.ts under "TypeChecker verify integration".
 
   it("STILL annotates returnType when emitted is a useful Promise<T>", () => {
     const source = `const fetchUser = () => fetchAPI();\n`;
     const paramsClose = source.indexOf("()") + 2;
-    const typeInfo: CollectedTypeInfo = [
-      entry("t.ts", paramsClose, [["Promise<{ id: number, name: string }>"]], {
-        returnType: true,
-        async: true,
-        fnRetPos: paramsClose,
-      }),
-    ];
-    const result = applyTypesToFile(source, typeInfo, {
-      infer: { ...INFER_DEFAULTS, requireTypeRefInScope: false },
-    });
-    expect(result).toContain(": Promise<{ id: number; name: string }>");
+    const out = applied(
+      source,
+      [
+        entry("t.ts", paramsClose, [["Promise<{ id: number, name: string }>"]], {
+          returnType: true,
+          async: true,
+          fnRetPos: paramsClose,
+        }),
+      ],
+      ANY_NAME,
+    );
+    expect(out).toAnnotate({ returnOf: "fetchUser" }, "Promise<{ id: number; name: string }>");
   });
-
-  // The spread-RHS detection and the shorthand-method variant were removed
-  // along with `objectLiteralHasMethodProperty`. See the
-  // describe-block header above for where the oracle-based regression
-  // tests live.
 });
 
 describe("irDedupUnion fn-paren at apply boundary", () => {
-  // The `union-member` SerializeCtx wraps
-  // fn types in parens when they appear as union members in IR. The
-  // fix was complete inside type-ir.ts. But `irDedupUnion` calls
-  // `serializeType` at the default `top` context and returns a
-  // `string[]`; the outer caller in apply-types.ts then joins those
-  // strings with `|`, reintroducing the precedence ambiguity that the
-  // E fix was meant to prevent.
+  // The `union-member` SerializeCtx wraps fn types in parens when they appear
+  // as union members in IR. `irDedupUnion` calls `serializeType` at the
+  // default `top` context and returns a `string[]`; the outer caller then
+  // joins those strings with `|`, which would reintroduce the precedence
+  // ambiguity: `(a: string) => number|string` parses as a function returning
+  // `number | string`.
   it("wraps fn members in parens when joined with non-fn members at the apply boundary", () => {
     // Two fn observations where the wider-param fn is subsumed by the
     // narrower one (contravariant param: `string|number` ⊆ `string` in
     // fn-subtype terms — fewer-input fn is the subtype). A plain
     // `string` observation is also in the union. After irDedupUnion
     // drops the broader fn and re-serializes, the kept members are
-    // [(a: string) => number, string]. Without per-member context
-    // awareness at the join site, this comes out as
-    // `(a: string) => number|string` which TS parses as
-    // `(a: string) => (number | string)`.
-    const source = "function foo(a) {}";
-    const typeInfo: CollectedTypeInfo = [
-      entry("test.ts", 14, [
-        ["(a: string | number) => number"],
-        ["(a: string) => number"],
-        ["string"],
-      ]),
-    ];
-    const result = applyTypesToFile(source, typeInfo, {
-      infer: { ...INFER_DEFAULTS, requireTypeRefInScope: false },
-    });
-    // Expected: fn wrapped in parens before the `|`.
-    expect(result).toContain("((a: string) => number)");
-    expect(result).not.toMatch(/=> number \| string/);
+    // [(a: string) => number, string].
+    const out = applied(
+      "function foo(a) {}",
+      [
+        entry("test.ts", 14, [
+          ["(a: string | number) => number"],
+          ["(a: string) => number"],
+          ["string"],
+        ]),
+      ],
+      ANY_NAME,
+    );
+    // Read back as a union of a function and a string, not as a function
+    // returning a union.
+    expect(out).toAnnotate("a", "((a: string) => number) | string");
   });
 });
 
@@ -2110,19 +1764,13 @@ describe("applyTypesToFile — lub fallback (applier wiring)", () => {
   // the applier-level wiring: disjoint shapes that lub collapses to `unknown` get
   // the polymorphic-position diagnostic marker when diagnostics are enabled.
   it("(lubFallback on + diagnostic comments) disjoint shapes get polymorphic-position marker", () => {
-    const source = "function foo(a) {}";
-    const typeInfo: CollectedTypeInfo = [
-      entry("test.ts", 14, [["{ a: number }"], ["{ b: string }"]]),
-    ];
-    const result = applyTypesToFile(source, typeInfo, {
-      infer: {
-        ...INFER_DEFAULTS,
-        requireTypeRefInScope: false,
-        lubFallback: true,
-        emitDiagnosticComments: true,
-      },
-    });
-    expect(result).toContain("unknown /* @ts-capture:polymorphic-position */");
+    const out = applied(
+      "function foo(a) {}",
+      [entry("test.ts", 14, [["{ a: number }"], ["{ b: string }"]])],
+      withInfer({ requireTypeRefInScope: false, lubFallback: true, emitDiagnosticComments: true }),
+    );
+    expect(out).toAnnotate("a", "unknown");
+    expect(out.text).toContain("unknown /* @ts-capture:polymorphic-position */");
   });
 });
 
@@ -2135,34 +1783,21 @@ describe("applyTypesToFile — built-in shape recognition (applier wiring)", () 
   // escape — users who turn it on are asking to see where coverage is thin —
   // and it keeps this test on its actual subject: that the recognized named
   // ref reaches the applier at all.
+  const promiseShape = [
+    entry("test.ts", 14, [["{ then: (cb: unknown) => unknown, catch: (cb: unknown) => unknown }"]]),
+  ];
+
   it("rewrites Promise structural shape to Promise<unknown> (diagnostic mode)", () => {
-    const source = "function foo(a) {}";
-    const typeInfo: CollectedTypeInfo = [
-      entry("test.ts", 14, [
-        ["{ then: (cb: unknown) => unknown, catch: (cb: unknown) => unknown }"],
-      ]),
-    ];
-    const result = applyTypesToFile(source, typeInfo, {
-      infer: {
-        ...INFER_DEFAULTS,
-        requireTypeRefInScope: false,
-        emitDiagnosticComments: true,
-      },
-    });
-    expect(result).toContain("Promise<unknown>");
+    const out = applied(
+      "function foo(a) {}",
+      promiseShape,
+      withInfer({ requireTypeRefInScope: false, emitDiagnosticComments: true }),
+    );
+    expect(out).toAnnotate("a", "Promise<unknown>");
   });
 
   it("suppresses the recognized ref by default — it describes no payload", () => {
-    const source = "function foo(a) {}";
-    const typeInfo: CollectedTypeInfo = [
-      entry("test.ts", 14, [
-        ["{ then: (cb: unknown) => unknown, catch: (cb: unknown) => unknown }"],
-      ]),
-    ];
-    const result = applyTypesToFile(source, typeInfo, {
-      infer: { ...INFER_DEFAULTS, requireTypeRefInScope: false },
-    });
-    expect(result).toBe(source);
+    expect(applied("function foo(a) {}", promiseShape, ANY_NAME)).toLeaveUntyped("a");
   });
 });
 
@@ -2171,31 +1806,17 @@ describe("ApplyTelemetry", () => {
   // one telemetry object and threads it through every apply call.
 
   it("counts emit + idempotent + total on a mixed run (offset path)", () => {
-    // Three entries:
-    //   - one fresh param annotation (emit)
-    //   - one already-typed param at the same position re-applied (idempotent)
-    //   - one position that would collapse to no annotation via existing
-    //     heuristics → falls under 'other' / not emit / not idempotent
-    const source = "function foo(a) {}";
-    const typeInfo: CollectedTypeInfo = [entry("test.ts", 14, [["string"]])];
-
+    const typeInfo = [entry("test.ts", 14, [["string"]])];
     const t = newApplyTelemetry();
-    applyTypesToFile(source, typeInfo, {
-      infer: { ...INFER_DEFAULTS, requireTypeRefInScope: false },
-      telemetry: t,
-    });
+    applied("function foo(a) {}", typeInfo, { ...ANY_NAME, telemetry: t });
     expect(t.totalEntries).toBe(1);
     expect(t.emitted).toBe(1);
     expect(t.idempotent).toBe(0);
 
     // Re-apply on the now-typed source: the same entry hits the
     // idempotent skip.
-    const sourceAfter = "function foo(a: string) {}";
     const t2 = newApplyTelemetry();
-    applyTypesToFile(sourceAfter, typeInfo, {
-      infer: { ...INFER_DEFAULTS, requireTypeRefInScope: false },
-      telemetry: t2,
-    });
+    applied("function foo(a: string) {}", typeInfo, { ...ANY_NAME, telemetry: t2 });
     expect(t2.totalEntries).toBe(1);
     expect(t2.idempotent).toBe(1);
     expect(t2.emitted).toBe(0);
@@ -2203,12 +1824,9 @@ describe("ApplyTelemetry", () => {
 
   it("counts positionMismatch when offset is stale", () => {
     // Source has `foo(a)` but our typeInfo points at pos 99 — past EOF.
-    const source = "function foo(a) {}";
-    const typeInfo: CollectedTypeInfo = [entry("test.ts", 99, [["string"]])];
-
     const t = newApplyTelemetry();
-    applyTypesToFile(source, typeInfo, {
-      infer: { ...INFER_DEFAULTS, requireTypeRefInScope: false },
+    applied("function foo(a) {}", [entry("test.ts", 99, [["string"]])], {
+      ...ANY_NAME,
       telemetry: t,
     });
     expect(t.totalEntries).toBe(1);
