@@ -14,6 +14,7 @@ const TEST_COMPILER_OPTIONS = {
   target: "ES2022",
   module: "ES2022",
   moduleResolution: "Bundler",
+  jsx: "preserve",
   skipLibCheck: true,
   noEmit: true,
 } as const;
@@ -52,7 +53,7 @@ afterAll(() => {
  */
 export function makeProject(files: Record<string, string>): TestProject {
   const dir = fs.mkdtempSync(path.join(tmpRoot(), "p-"));
-  const tsconfig = { compilerOptions: TEST_COMPILER_OPTIONS, include: ["**/*.ts"] };
+  const tsconfig = { compilerOptions: TEST_COMPILER_OPTIONS, include: ["**/*.ts", "**/*.tsx"] };
   fs.writeFileSync(path.join(dir, "tsconfig.json"), JSON.stringify(tsconfig));
   for (const [name, content] of Object.entries(files)) {
     fs.mkdirSync(path.dirname(path.join(dir, name)), { recursive: true });
