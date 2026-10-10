@@ -3,13 +3,53 @@ import type { CollectedTypeInfo } from "@ts-capture/core";
 import { getTypeName } from "@ts-capture/core";
 import { describe, expect, it } from "vitest";
 
+import {
+  inspected,
+  type Instrumented,
+} from "../../core/src/test-utils/instrumented.js";
+import "../../core/src/test-utils/matchers.js";
 import { applySvelteTypesToFile } from "./apply.js";
-import { sveltePlugin, sveltePreprocessor } from "./index.js";
+import {
+  sveltePlugin,
+  sveltePreprocessor,
+  type SveltePreprocessorOptions,
+} from "./index.js";
 import { attachPeek } from "./runes.js";
 
 // ---------------------------------------------------------------------------
 // sveltePreprocessor
 // ---------------------------------------------------------------------------
+
+/**
+ * Preprocess a `lang="ts"` script block and hold the result against its
+ * content: it parses, records at sites of the content, and is the content
+ * plus calls.
+ */
+function preprocessed(
+  content: string,
+  block: {
+    filename?: string;
+    context?: "module";
+    options?: SveltePreprocessorOptions;
+  } = {},
+): Instrumented {
+  const attributes: Record<string, string> = { lang: "ts" };
+  if (block.context) attributes.context = block.context;
+  const { code } = sveltePreprocessor(block.options).script({
+    content,
+    attributes,
+    filename: block.filename,
+  });
+  const base = block.filename ?? "component.svelte";
+  const suffix = block.context === "module" ? "__module" : "__script";
+  return inspected(code, {
+    input: content,
+    filename: `${base}${suffix}.ts`,
+    additive: true,
+  });
+}
+
+const IN_COMP = { filename: "comp.svelte" };
 
 describe("sveltePreprocessor", () => {
   it("instruments a function parameter", () => {
@@ -21,6 +61,9 @@ describe("sveltePreprocessor", () => {
     });
     expect(code).toContain("__tscptr__");
     expect(code).toContain('"comp.svelte__script.ts"');
+    expect(preprocessed("function foo(a) {}", IN_COMP)).toTrack("a", {
+      in: "comp.svelte__script.ts",
+    });
   });
 
   it("uses __module suffix for context=module blocks", () => {
@@ -31,6 +74,9 @@ describe("sveltePreprocessor", () => {
       filename: "comp.svelte",
     });
     expect(code).toContain('"comp.svelte__module.ts"');
+    expect(
+      preprocessed("export const x = 1", { ...IN_COMP, context: "module" }),
+    ).toWrapInitializerOf("x", { in: "comp.svelte__module.ts" });
   });
 
   it("returns content unchanged when lang attribute is absent", () => {
@@ -67,6 +113,9 @@ describe("sveltePreprocessor", () => {
       attributes: { lang: "ts" },
     });
     expect(code).toContain('"component.svelte__script.ts"');
+    expect(preprocessed("let x = 1")).toWrapInitializerOf("x", {
+      in: "component.svelte__script.ts",
+    });
   });
 
   it("does not modify markup outside the script block", () => {
@@ -98,6 +147,12 @@ describe("sveltePreprocessor", () => {
       });
       expect(code).toMatch(/let visibleAlerts = \$derived\(/);
       expect(code).not.toMatch(/__tscptr__\.ret\(\s*\$derived/);
+      expect(
+        preprocessed(
+          "let visibleAlerts = $derived(items.slice(0, 3));",
+          IN_COMP,
+        ),
+      ).not.toWrapInitializerOf("visibleAlerts");
     });
 
     it("does NOT wrap $state(...)", () => {
@@ -109,6 +164,9 @@ describe("sveltePreprocessor", () => {
       });
       expect(code).toMatch(/let count = \$state\(0\)/);
       expect(code).not.toMatch(/__tscptr__\.ret\(\s*\$state/);
+      expect(
+        preprocessed("let count = $state(0);", IN_COMP),
+      ).not.toWrapInitializerOf("count");
     });
 
     it("does NOT wrap rune member calls ($state.raw, $derived.by)", () => {
@@ -122,6 +180,12 @@ describe("sveltePreprocessor", () => {
       expect(code).toMatch(/let by = \$derived\.by\(/);
       expect(code).not.toMatch(/__tscptr__\.ret\(\s*\$state/);
       expect(code).not.toMatch(/__tscptr__\.ret\(\s*\$derived/);
+      const out = preprocessed(
+        "let frozen = $state.raw(0); let by = $derived.by(() => 1);",
+        IN_COMP,
+      );
+      expect(out).not.toWrapInitializerOf("frozen");
+      expect(out).not.toWrapInitializerOf("by");
     });
 
     it("does NOT wrap class field initialized with a rune", () => {
@@ -133,6 +197,9 @@ describe("sveltePreprocessor", () => {
       });
       expect(code).toMatch(/count = \$state\(0\)/);
       expect(code).not.toMatch(/__tscptr__\.ret\(\s*\$state/);
+      expect(
+        preprocessed("class C { count = $state(0); }", IN_COMP),
+      ).not.toWrapInitializerOf("count");
     });
 
     it("STILL wraps non-rune initializers (regression)", () => {
@@ -143,6 +210,9 @@ describe("sveltePreprocessor", () => {
         filename: "comp.svelte",
       });
       expect(code).toMatch(/__tscptr__\.ret\(computeValue\(\)/);
+      expect(
+        preprocessed("let x = computeValue();", IN_COMP),
+      ).toWrapInitializerOf("x");
     });
 
     it("composes with caller-provided skipInitializerCalleeWhen", () => {
@@ -160,6 +230,16 @@ describe("sveltePreprocessor", () => {
       expect(code).not.toMatch(/__tscptr__\.ret\(\s*myFn/);
       // not skipped
       expect(code).toMatch(/__tscptr__\.ret\(other\(\)/);
+      const out = preprocessed(
+        "let a = $state(0); let b = myFn(1); let c = other();",
+        {
+          ...IN_COMP,
+          options: { skipInitializerCalleeWhen: (name) => name === "myFn" },
+        },
+      );
+      expect(out).not.toWrapInitializerOf("a");
+      expect(out).not.toWrapInitializerOf("b");
+      expect(out).toWrapInitializerOf("c");
     });
   });
 });
