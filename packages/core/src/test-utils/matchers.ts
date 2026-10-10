@@ -37,8 +37,11 @@ interface AppliedMatchers<R = unknown> {
 // question about the calls in the output; what running it observes is a
 // question for the sandbox. Neither is a question about how a call is spelled.
 
-/** The options a call must carry, as a subset, and `in` for the file it names. */
-export type TrackedWith = Partial<ExtraOptions> & { in?: string };
+/**
+ * The options a call must carry, as a subset, with `in` for the file it names
+ * and `at` for the offset it records at.
+ */
+export type TrackedWith = Partial<ExtraOptions> & { in?: string; at?: number };
 
 interface InstrumentedMatchers<R = unknown> {
   /** A parameter call that records the name. */
@@ -49,10 +52,14 @@ interface InstrumentedMatchers<R = unknown> {
   toWrapReturnOf(fn: string, expected?: TrackedWith): R;
   /** The initializer of a variable or class field is recorded, by the declared name. */
   toWrapInitializerOf(name: string, expected?: TrackedWith): R;
+  /** The value a callback parameter returns when the function calls it is recorded. */
+  toWrapCallsOf(parameter: string, expected?: TrackedWith): R;
+  /** A function declaration is registered, by its name. */
+  toRegisterFunction(name: string, expected?: TrackedWith): R;
   /** A call argument is tracked, by its text. */
   toTrackArgument(text: string): R;
-  /** The output declares `__tscptr__`. */
-  toDeclareRuntime(): R;
+  /** The output declares `__tscptr__`, and the member of its namespace when one is named. */
+  toDeclareRuntime(member?: string): R;
   /** No call, and the program of the input. */
   toLeaveUnchanged(): R;
   /** The type(s) recorded at a site of the input when the output ran, as one union. */
@@ -289,10 +296,11 @@ const matchers = {
 };
 
 function matchingProblem(call: TrackedCall, expected: TrackedWith): string | undefined {
-  const { in: filename, ...options } = expected;
+  const { in: filename, at, ...options } = expected;
   if (filename !== undefined && call.filename !== filename) {
     return `in ${filename}, but it is recorded in ${call.filename}`;
   }
+  if (at !== undefined && call.pos !== at) return `at ${at}, but it is recorded at ${call.pos}`;
   const has = call.options as Record<string, unknown>;
   const differing = Object.entries(options).filter(
     ([key, value]) => JSON.stringify(has[key]) !== JSON.stringify(value),
@@ -427,6 +435,26 @@ const instrumentedMatchers = {
     );
   },
 
+  toWrapCallsOf(out: Instrumented, parameter: string, expected: TrackedWith = {}): Result {
+    const callbacks = out.calls.filter((call) => call.form === "ret" && call.options.paramReturn);
+    return foundAmong(
+      callbacks.filter((call) => call.options.paramReturnMember === parameter),
+      expected,
+      `what ${parameter} returns`,
+      `recorded, but no __tscptr__.ret call wraps a call of it; wrapped callbacks: ${list(callbacks.map((c) => c.options.paramReturnMember))}`,
+    );
+  },
+
+  toRegisterFunction(out: Instrumented, name: string, expected: TrackedWith = {}): Result {
+    const registered = out.calls.filter((call) => call.form === "registerFn");
+    return foundAmong(
+      registered.filter((call) => call.valueText === name),
+      expected,
+      `the function ${name}`,
+      `registered, but no __tscptr__.registerFn call names it; registered: ${list(registered.map((c) => c.valueText))}`,
+    );
+  },
+
   toTrackArgument(out: Instrumented, text: string): Result {
     const tracked = out.calls.filter((call) => call.form === "track");
     return foundAmong(
@@ -437,14 +465,23 @@ const instrumentedMatchers = {
     );
   },
 
-  toDeclareRuntime(out: Instrumented): Result {
-    const pass = out.sf.statements.some(
-      (statement) => ts.isFunctionDeclaration(statement) && isRuntimeDeclaration(statement),
-    );
+  toDeclareRuntime(out: Instrumented, member?: string): Result {
+    const declarations = out.sf.statements.filter(isRuntimeDeclaration);
+    const members = declarations
+      .filter(ts.isModuleDeclaration)
+      .flatMap((namespace) =>
+        namespace.body && ts.isModuleBlock(namespace.body) ? namespace.body.statements : [],
+      )
+      .filter(ts.isFunctionDeclaration)
+      .map((declared) => declared.name?.text);
+    const pass =
+      member === undefined ? declarations.some(ts.isFunctionDeclaration) : members.includes(member);
+    const what = member === undefined ? "__tscptr__" : `__tscptr__.${member}`;
     return {
       pass,
       message: () =>
-        `expected the output ${pass ? "not " : ""}to declare __tscptr__, but it ${pass ? "does" : "does not"}:\n${out.text}`,
+        `expected the output ${pass ? "not " : ""}to declare ${what}, but it ${pass ? "does" : "does not"}` +
+        (declarations.length > 0 ? `; it declares ${list(members)}` : ""),
     };
   },
 
