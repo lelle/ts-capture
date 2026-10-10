@@ -66,10 +66,17 @@ export interface Observed {
   entries: CollectedTypeInfo;
 }
 
-export function instrumented(source: string, options: InstrumentedOptions = {}): Instrumented {
+/** An output whose input is known, as every output of `instrumented()` is. */
+export type InstrumentedSource = Instrumented & { input: string };
+
+export function instrumented(
+  source: string,
+  options: InstrumentedOptions = {},
+): InstrumentedSource {
   const filename = options.filename ?? "test.ts";
   const text = instrumentSource(source, filename, options.options);
-  return inspected(text, { input: source, filename, additive: true, allow: options.allow });
+  const out = inspected(text, { input: source, filename, additive: true, allow: options.allow });
+  return { ...out, input: source };
 }
 
 /** An output produced elsewhere, such as by a plugin or a bundler, held the same way. */
