@@ -9,6 +9,8 @@ import { describe, expect, it, vi } from "vitest";
 
 import type { BrowserTransport } from "./index.js";
 
+import { inspected, type Instrumented } from "../../core/src/test-utils/instrumented.js";
+import "../../core/src/test-utils/matchers.js";
 import { getCollectorSnippet, resolveTransports, tsCapturePlugin } from "./index.js";
 
 describe("tsCapturePlugin", () => {
@@ -113,12 +115,21 @@ describe("tsCapturePlugin", () => {
   });
 
   describe("transform", () => {
+    const SOURCE = "function foo(a) { return a; }";
+
+    /** What the plugin's transform hook returns for SOURCE at `id`, or null when it skips the file. */
+    function transformed(plugin: Plugin, id: string): Instrumented | null {
+      const result = (plugin.transform as Function)(SOURCE, id) as { code: string } | null;
+      return result && inspected(result.code, { input: SOURCE, filename: id });
+    }
+
     it("instruments .ts files", () => {
       const plugin = tsCapturePlugin() as Plugin;
       const transform = plugin.transform as Function;
       const result = transform("function foo(a) { return a; }", "/src/app.ts");
       expect(result).toBeDefined();
       expect(result.code).toContain("__tscptr__");
+      expect(transformed(plugin, "/src/app.ts")).toTrack("a", { in: "/src/app.ts" });
     });
 
     it("instruments .tsx files", () => {
@@ -127,6 +138,7 @@ describe("tsCapturePlugin", () => {
       const result = transform("function foo(a) { return a; }", "/src/app.tsx");
       expect(result).toBeDefined();
       expect(result.code).toContain("__tscptr__");
+      expect(transformed(plugin, "/src/app.tsx")).toTrack("a", { in: "/src/app.tsx" });
     });
 
     it("skips non-ts files", () => {
@@ -153,6 +165,7 @@ describe("tsCapturePlugin", () => {
       const result = transform("function foo(a) { return a; }", "/src/lib/foo.ts");
       expect(result).toBeDefined();
       expect(result.code).toContain("__tscptr__");
+      expect(transformed(plugin, "/src/lib/foo.ts")).toTrack("a");
     });
 
     it("skips files NOT matching include pattern", () => {
@@ -172,6 +185,7 @@ describe("tsCapturePlugin", () => {
       expect(transform("function foo(a){return a}", "/src/lib/foo.ts").code).toContain(
         "__tscptr__",
       );
+      expect(transformed(plugin, "/src/lib/foo.ts")).toTrack("a");
       // In lib/, but a spec — skipped (exclude wins)
       expect(transform("function foo(a){return a}", "/src/lib/foo.spec.ts")).toBeNull();
       // Not in lib/ — skipped (include doesn't match)
@@ -187,6 +201,8 @@ describe("tsCapturePlugin", () => {
       expect(transform("function foo(a){return a}", "/src/routes/foo.ts").code).toContain(
         "__tscptr__",
       );
+      expect(transformed(plugin, "/src/lib/foo.ts")).toTrack("a");
+      expect(transformed(plugin, "/src/routes/foo.ts")).toTrack("a");
     });
 
     it("injects collector snippet on entry module", () => {
@@ -195,6 +211,7 @@ describe("tsCapturePlugin", () => {
       // First .ts file transformed gets the collector
       const result = transform("function foo(a) { return a; }", "/src/main.ts");
       expect(result.code).toContain("__tscptr__");
+      expect(transformed(tsCapturePlugin() as Plugin, "/src/main.ts")).toTrack("a");
     });
   });
 
