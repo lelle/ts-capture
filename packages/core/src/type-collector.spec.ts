@@ -9,6 +9,7 @@ import {
   getTypeName,
   upgradeObjectMemberFn,
 } from "./type-collector.js";
+import "./test-utils/matchers.js";
 
 describe("getTypeName", () => {
   describe("primitives", () => {
@@ -248,7 +249,7 @@ describe("getTypeName", () => {
       };
       const result = getTypeName(obj);
       expect(result).not.toContain("__tscptr__");
-      expect(result).toContain("realProperty");
+      expect(result).toBeTheType("{ realProperty: string }");
     });
 
     it("omits __tscptr__* helpers from walked-object types", () => {
@@ -260,7 +261,7 @@ describe("getTypeName", () => {
       };
       const result = getTypeName(obj);
       expect(result).not.toContain("__tscptr__");
-      expect(result).toContain("keep");
+      expect(result).toBeTheType("{ keep: number }");
     });
   });
 
@@ -371,8 +372,7 @@ describe("getTypeName", () => {
       // emit as a structural walk, not as IterableIterator.
       const plain = { next() {}, value: 1 };
       const result = getTypeName(plain);
-      expect(result).not.toBe("IterableIterator<unknown>");
-      expect(result).toContain("value: number");
+      expect(result).toBeTheType("{ next(): unknown; value: number }");
     });
 
     it("does not override Map / Set / Array branches", () => {
@@ -453,8 +453,7 @@ describe("getTypeName", () => {
       // "$$typeof" property is just data — fall through to structural walk.
       const fake = { $$typeof: "react.element", a: 1 };
       const result = getTypeName(fake);
-      expect(result).not.toBe("React.ReactElement");
-      expect(result).toContain("a: number");
+      expect(result).toBeTheType("{ $$typeof: string; a: number }");
     });
 
     it("emits 'React.ReactElement' inside a containing object's member type", () => {
@@ -527,8 +526,7 @@ describe("getTypeName", () => {
     it("respects depth limit for generic contents", () => {
       const map = new Map([["key", { a: { b: { c: 1 } } }]]);
       const result = getTypeName(map, 3);
-      expect(result).toContain("Map<");
-      expect(result).toContain("unknown");
+      expect(result).toBeTheType("Map<string, { a: { b: unknown } }>");
     });
 
     it("returns constructor name for non-iterable class instances", () => {
@@ -608,9 +606,7 @@ describe("getTypeName", () => {
       // 6 levels deep — innermost truncated, but outer levels resolve
       const deep = { a: { b: { c: { d: { e: { f: 1 } } } } } };
       const result = getTypeName(deep);
-      expect(result).not.toBeNull();
-      expect(result).toContain("a:");
-      expect(result).toContain("unknown");
+      expect(result).toBeTheType("{ a: { b: { c: { d: { e: unknown } } } } }");
     });
   });
 
@@ -839,8 +835,7 @@ describe("CollectionContext", () => {
     const collected = ctx.getCollectedTypes();
     expect(collected.length).toBeGreaterThan(0);
     const types = collected[0][2] as Array<[string, unknown]>;
-    expect(types[0][0]).toContain("foo:");
-    expect(types[0][0]).toContain("bar:");
+    expect(types[0][0]).toBeTheType("{ foo: number; bar: string }");
   });
 
   it("falls through cleanly when Symbol.for('ts-capture.peek') throws", () => {
@@ -897,8 +892,7 @@ describe("circular references", () => {
     const a: any = {};
     a.b = { a };
     const result = getTypeName(a);
-    expect(result).not.toBeNull();
-    expect(result).toContain("b:");
+    expect(result).toBeTheType("{ b: { a: unknown } }");
   });
 
   it("does not crash on getter-induced reentrancy", () => {
