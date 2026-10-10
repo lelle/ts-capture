@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 
+import { instrumentBundle } from "../bundle/instrument-bundle.js";
 import { collect } from "./collected.js";
 import { endOf, inspected, instrumented, spanOf } from "./instrumented.js";
 import "./matchers.js";
@@ -51,6 +52,24 @@ describe("instrumented", () => {
     const src = "function foo(a) { return a; }";
     const out = inspected(instrumented(src).text, { input: src });
     expect(out).toTrack("a");
+  });
+});
+
+describe("the call the bundle instrumenter writes", () => {
+  const src = "function add(a, b) { return a + b; }";
+
+  it("is decoded as tracking a name, recorded where the name starts", () => {
+    const out = inspected(instrumentBundle(src, "t.js").code, { input: src, filename: "t.js" });
+    expect(out.calls.map((call) => call.form)).toEqual(["bundle", "bundle"]);
+    expect(out).toTrack("b", { at: endOf(src, "a, "), in: "t.js" });
+    expect(() => expect(out).toLeaveUntracked("a")).toThrow(/__tscptr__\("a",a,13/);
+  });
+
+  it("is rejected when its offset is not the start of its name", () => {
+    const moved = 'function add(a, b) { globalThis.__tscptr__("b", b, 13, "t.js"); return a + b; }';
+    expect(() => inspected(moved, { input: src, filename: "t.js" })).toThrow(
+      /offset 13, but b does not start there/,
+    );
   });
 });
 

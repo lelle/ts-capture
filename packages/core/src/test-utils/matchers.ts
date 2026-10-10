@@ -371,13 +371,16 @@ function declarationOffsets(input: string, filename: string, name: string): Set<
   return offsets;
 }
 
+const recordsAName = (call: TrackedCall): boolean =>
+  call.form === "param" || call.form === "bundle";
+
 const recordsADeclaration = (call: TrackedCall): boolean =>
   call.form === "param" ||
   (call.form === "ret" && (call.options.varDecl === true || call.options.paramReturn === true));
 
 const instrumentedMatchers = {
   toTrack(out: Instrumented, name: string, expected: TrackedWith = {}): Result {
-    const parameters = out.calls.filter((call) => call.form === "param");
+    const parameters = out.calls.filter(recordsAName);
     const named = parameters.filter((call) => call.name === name);
     return foundAmong(
       named,
@@ -394,7 +397,7 @@ const instrumentedMatchers = {
         : declarationOffsets(out.input, out.filename, name);
     const recording = out.calls.find(
       (call) =>
-        (call.form === "param" && call.name === name) ||
+        (recordsAName(call) && call.name === name) ||
         (recordsADeclaration(call) && call.name !== "this" && offsets.has(call.pos)),
     );
     return {

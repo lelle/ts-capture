@@ -14,7 +14,7 @@ import { type CallForm, callFormOf, stripInstrumentation } from "./strip-instrum
 
 export interface TrackedCall {
   form: CallForm;
-  /** The first argument of a parameter call; the other forms carry no name. */
+  /** The first argument of a `param` or `bundle` call; the other forms carry no name. */
   name?: string;
   /** The offset in the input the call records at. */
   pos: number;
@@ -145,6 +145,7 @@ const LAYOUT: Record<CallForm, { value: number; pos: number; filename: number; o
     track: { value: 0, pos: 2, filename: 1 },
     regFn: { value: 0, pos: 1, filename: 2 },
     registerFn: { value: 0, pos: 1, filename: 2 },
+    bundle: { value: 1, pos: 2, filename: 3 },
   };
 
 function decode(node: ts.CallExpression, form: CallForm): TrackedCall {
@@ -170,7 +171,7 @@ function decode(node: ts.CallExpression, form: CallForm): TrackedCall {
   };
   return {
     form,
-    name: form === "param" ? text(0) : undefined,
+    name: form === "param" || form === "bundle" ? text(0) : undefined,
     pos: number(layout.pos),
     filename: text(layout.filename),
     options: layout.options === undefined ? {} : (JSON.parse(text(layout.options)) as ExtraOptions),
@@ -244,7 +245,10 @@ function assertPositions(
   const sites = sitesOf(input, filename);
   const isReturn = (pos: number): boolean => sites.returns.has(pos) || input[pos - 1] === ")";
   for (const call of calls) {
-    const problem = positionProblem(call, sites, isReturn);
+    const problem =
+      call.form === "bundle"
+        ? bundlePositionProblem(call, input)
+        : positionProblem(call, sites, isReturn);
     if (problem) {
       throw new Error(
         `${callText(call)} records at offset ${call.pos}, but ${problem}:\n${input}\n` +
@@ -252,6 +256,11 @@ function assertPositions(
       );
     }
   }
+}
+
+function bundlePositionProblem(call: TrackedCall, input: string): string | undefined {
+  const name = call.name!;
+  return input.startsWith(name, call.pos) ? undefined : `${name} does not start there`;
 }
 
 function positionProblem(
