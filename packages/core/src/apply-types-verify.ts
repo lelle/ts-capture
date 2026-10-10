@@ -546,18 +546,30 @@ export function commitReplacements(
 
 /**
  * Lightweight variant of `commitReplacements`: swap the in-memory
- * source for the target file without re-baselining diagnostics. Used
+ * source for the target file without the cross-file re-baseline. Used
  * when a multi-phase applier (e.g. CST → offset-based pass-through)
  * needs subsequent verify probes to see the same source string the
  * pass-through is editing into. Skips the expensive cross-file
  * diagnostic scan — caller is responsible for ensuring the new source
  * doesn't introduce diagnostics that should re-baseline (typically by
  * having already filtered through `filterAcceptedReplacements`).
+ *
+ * The target file's own diagnostics are read again: a baseline identity
+ * holds an offset, and an edit moves every diagnostic after it. The caller
+ * has already established that the new text adds none, so what the file
+ * reports now is the old set where it sits now.
  */
 export function advanceCurrentSource(ctx: VerificationContext, newSource: string): void {
   if (ctx.currentSource === newSource) return;
   ctx.currentSource = newSource;
-  ctx.project.host.setFileSnapshot(ctx.filename, newSource);
+  const { service, host, baselineDiagnostics } = ctx.project;
+  host.setFileSnapshot(ctx.filename, newSource);
+  for (const d of service.getSemanticDiagnostics(ctx.filename)) {
+    baselineDiagnostics.add(diagnosticIdentity(d));
+  }
+  for (const d of service.getSyntacticDiagnostics(ctx.filename)) {
+    baselineDiagnostics.add(diagnosticIdentity(d));
+  }
 }
 
 // --- internals ---

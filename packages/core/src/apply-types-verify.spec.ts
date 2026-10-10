@@ -5,6 +5,7 @@ import ts from "typescript";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import {
+  advanceCurrentSource,
   commitReplacements,
   createProjectVerificationContext,
   createVerificationContext,
@@ -264,6 +265,23 @@ describe("apply-types-verify", () => {
     // Both contexts share the same graph (identity comparison) — no
     // rebuild between them.
     expect(ctx1.project.reverseImportGraph).toBe(ctx2.project.reverseImportGraph);
+  });
+
+  // A file's own diagnostics move with its text. A second pass over a file
+  // the first pass has edited must not take the ones that moved for new.
+  it("keeps a diagnostic the file already had when the text before it moves", () => {
+    const src = 'export const n: number = "x";\n';
+    const proj = makeProject({ "target.ts": src });
+    const project = createProjectVerificationContext(
+      proj.fileNames,
+      proj.compilerOptions,
+      proj.dir,
+    );
+    const ctx = createVerificationContext(project, proj.target, src);
+    advanceCurrentSource(ctx, "type T = { a: number };\n\n" + src);
+    expect(wouldIntroduceErrors(ctx, [{ start: 0, end: 0, text: "export const m = 1;\n" }])).toBe(
+      false,
+    );
   });
 
   // An annotation that names a type apply is about to declare only
