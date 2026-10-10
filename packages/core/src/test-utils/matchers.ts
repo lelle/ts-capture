@@ -1,9 +1,8 @@
 import ts from "typescript";
 import { expect } from "vitest";
 
-import type { Applied } from "./applied.js";
-
 import { canonicalTypeString } from "../type-canonical.js";
+import { type Applied, nodesOf } from "./applied.js";
 
 // Two questions a spec asks of an applied file, kept apart on purpose. What
 // was written is a question about the AST: the annotation's node, its name
@@ -81,6 +80,14 @@ function functionName(fn: ts.SignatureDeclaration): string | undefined {
 }
 
 function annotationNode(out: Applied, site: Site): ts.TypeNode | undefined {
+  // A `this` parameter exists only when something wrote it, so its absence is
+  // the untyped case rather than a missing site.
+  if (
+    site === "this" &&
+    !nodesOf(out, ts.isParameter).some((p) => p.name.getText(out.sf) === "this")
+  ) {
+    return undefined;
+  }
   const node = findSite(out, site);
   return (node as { type?: ts.TypeNode }).type;
 }

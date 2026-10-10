@@ -8,6 +8,7 @@ import { applyTypesToFileCst } from "../apply-types-cst.js";
 import {
   createProjectVerificationContext,
   createVerificationContext,
+  type VerificationContext,
 } from "../apply-types-verify.js";
 import { applyTypesToFile } from "../apply-types.js";
 import { INFER_DEFAULTS, type InferOptions } from "../configuration.js";
@@ -45,6 +46,8 @@ export interface Applied {
   options: AppliedOptions;
   /** Diagnostics in the output that the input did not have, by code and message. */
   newDiagnostics: ts.Diagnostic[];
+  /** The oracle's context, when `verify` was asked for. */
+  verify?: VerificationContext;
 }
 
 export function applied(
@@ -62,13 +65,14 @@ export function applied(
   const inputDiagnostics = diagnosticsOf(before);
 
   let text: string;
+  let verify: VerificationContext | undefined;
   if (options.verify) {
     const projectContext = createProjectVerificationContext(
       project.fileNames,
       project.compilerOptions,
       project.dir,
     );
-    const verify = createVerificationContext(projectContext, filename, source);
+    verify = createVerificationContext(projectContext, filename, source);
     text = run(
       options.applier,
       source,
@@ -98,6 +102,7 @@ export function applied(
     entries,
     options,
     newDiagnostics,
+    verify,
   };
 }
 

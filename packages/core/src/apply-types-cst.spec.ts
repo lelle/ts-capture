@@ -1,18 +1,10 @@
-import * as fs from "node:fs";
-import * as os from "node:os";
-import * as path from "node:path";
 import ts from "typescript";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { describe, expect, it } from "vitest";
 
 import type { DiscoveredType } from "./collector-contract.js";
 import type { CollectedTypeEntry, CollectedTypeInfo, SourceLocation } from "./type-collector.js";
 
 import { applyTypesToFileCst } from "./apply-types-cst.js";
-import {
-  createProjectVerificationContext,
-  createVerificationContext,
-} from "./apply-types-verify.js";
-import { applyTypesToFile } from "./apply-types.js";
 import { INFER_DEFAULTS } from "./configuration.js";
 import { newApplyTelemetry } from "./contract.js";
 import {
@@ -736,24 +728,9 @@ describe("applyTypesToFileCst — paren-less arrow params + thisType (final rout
 });
 
 describe("applyTypesToFileCst — TypeChecker verify integration", () => {
-  // Mirrors apply-types-verify.spec.ts: drive the CST applier with a
-  // real LanguageService-backed verify context built from a tiny
-  // on-disk project. Accept / reject / mixed-batch coverage to prove
-  // the slice-2b pattern landed correctly inside applyTypesToFileCst.
-
-  let tmpRoot: string;
-
-  beforeAll(() => {
-    tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), "ts-capture-cst-verify-"));
-  });
-
-  afterAll(() => {
-    try {
-      fs.rmSync(tmpRoot, { recursive: true, force: true });
-    } catch {
-      // best-effort cleanup
-    }
-  });
+  // Mirrors apply-types-verify.spec.ts: drive the CST applier with a real
+  // LanguageService-backed verify context built from a tiny on-disk project,
+  // or with a Program alone for the checker-backed gates.
 
   // --- checker-backed redundancy suppression -------------------------------
   //
@@ -762,34 +739,21 @@ describe("applyTypesToFileCst — TypeChecker verify integration", () => {
   // annotations TypeScript already implies, at all three site kinds, and must
   // keep the ones that carry information the checker does not have.
 
-  function applyWithProgram(
-    files: Record<string, string>,
-    typeInfoFor: (src: string, target: string) => CollectedTypeInfo,
-    infer?: Partial<typeof INFER_DEFAULTS>,
-  ): string {
-    const proj = makeProject(files);
-    const program = ts.createProgram(proj.fileNames, proj.compilerOptions);
-    return applyTypesToFileCst(
-      proj.targetSource,
-      typeInfoFor(proj.targetSource, proj.target),
-      { filename: proj.target, ...(infer ? { infer: { ...INFER_DEFAULTS, ...infer } } : {}) },
-      program,
-    );
-  }
-
   // Deliberately NOT a literal initializer: `inferTypeFromInitializer` already
   // suppresses those syntactically, so a literal fixture would pass with the
   // checker disabled and prove nothing. A call expression is invisible to the
   // syntactic path — only the checker knows `g()` returns a string.
   it("drops a varDecl annotation the checker already infers from a call", () => {
-    const result = applyWithProgram(
+    const src = 'function g(): string {\n  return "x";\n}\nexport const v = g();\n';
+    const out = applied(
+      src,
+      [entry("target.ts", src.indexOf("const v") + 7, [["string"]], { varDecl: true })],
       {
-        "target.ts": 'function g(): string {\n  return "x";\n}\nexport const v = g();\n',
+        project: true,
       },
-      (src, target) => [entry(target, src.indexOf("const v") + 7, [["string"]], { varDecl: true })],
     );
-    expect(result).not.toContain("v: string");
-    expect(result).toBe('function g(): string {\n  return "x";\n}\nexport const v = g();\n');
+    expect(out).toLeaveUntyped("v");
+    expect(out).toTypeAs("v", "string");
   });
 
   // The gate covered params, return types and bindings, and `this` sites got
@@ -799,21 +763,25 @@ describe("applyTypesToFileCst — TypeChecker verify integration", () => {
   // rule exists to refuse: every subclass caller gets the base back.
   it("drops a `this` annotation where the checker has polymorphic `this`", () => {
     const src = "export class Builder {\n  x = 1;\n  run() {\n    return this.x;\n  }\n}\n";
-    const result = applyWithProgram({ "target.ts": src }, (source, target) => [
-      entry(target, source.indexOf("run(") + "run(".length, [["Builder"]], { thisType: true }),
-    ]);
-    expect(result).not.toContain("this: Builder");
-    expect(result).toBe(src);
+    const out = applied(
+      src,
+      [entry("target.ts", src.indexOf("run(") + "run(".length, [["Builder"]], { thisType: true })],
+      { project: true },
+    );
+    expect(out).toLeaveUntyped("this");
+    expect(out.text).toBe(src);
   });
 
   // The mirror: a loose function has no polymorphic `this` to lose — the
   // checker types it `any`, which is the hole ts-capture exists to fill.
   it("keeps a `this` annotation the checker has nothing better for", () => {
     const src = "export function greet() {\n  return this.text;\n}\n";
-    const result = applyWithProgram({ "target.ts": src }, (source, target) => [
-      entry(target, source.indexOf("greet(") + "greet(".length, [["Date"]], { thisType: true }),
-    ]);
-    expect(result).toContain("greet(this: Date)");
+    const out = applied(
+      src,
+      [entry("target.ts", src.indexOf("greet(") + "greet(".length, [["Date"]], { thisType: true })],
+      { project: true },
+    );
+    expect(out).toAnnotate("this", "Date");
   });
 
   // `emitConflictComments` is documented as a flag about *notes* — the site
@@ -823,19 +791,23 @@ describe("applyTypesToFileCst — TypeChecker verify integration", () => {
   // determined contradicts the project's own types. Quieting the output must
   // not change the code.
   it("suppresses a contradicted annotation even with notes turned off", () => {
-    const files = { "target.ts": "declare const s: string;\nexport const a = s;\n" };
-    const pos = (src: string): number => src.indexOf("const a") + "const a".length;
-    const info = (src: string, target: string): CollectedTypeInfo => [
-      entry(target, pos(src), [["string|undefined"]], { varDecl: true }),
+    const src = "declare const s: string;\nexport const a = s;\n";
+    const info = [
+      entry("target.ts", src.indexOf("const a") + "const a".length, [["string|undefined"]], {
+        varDecl: true,
+      }),
     ];
 
-    const withNotes = applyWithProgram(files, info);
-    expect(withNotes).toContain("@ts-capture[conflict]");
-    expect(withNotes).not.toContain("a: string | undefined");
+    const withNotes = applied(src, info, { project: true });
+    expect(withNotes.text).toContain("@ts-capture[conflict]");
+    expect(withNotes).toLeaveUntyped("a");
 
-    const quiet = applyWithProgram(files, info, { emitConflictComments: false });
-    expect(quiet).not.toContain("@ts-capture");
-    expect(quiet).not.toContain("a: string | undefined");
+    const quiet = applied(src, info, {
+      project: true,
+      infer: { ...INFER_DEFAULTS, emitConflictComments: false },
+    });
+    expect(quiet.text).not.toContain("@ts-capture");
+    expect(quiet).toLeaveUntyped("a");
   });
 
   // Apply owns every line carrying the marker: it removes the ones it finds
@@ -860,24 +832,31 @@ describe("applyTypesToFileCst — TypeChecker verify integration", () => {
   });
 
   it("drops a contextually typed Array.prototype callback param", () => {
-    const result = applyWithProgram(
+    const src = "const xs: string[] = [];\nexport const ys = xs.map(v => v.length);\n";
+    const out = applied(
+      src,
+      [entry("target.ts", src.indexOf("(v =>") + 2, [["string"]], { arrow: true })],
       {
-        "target.ts": "const xs: string[] = [];\nexport const ys = xs.map(v => v.length);\n",
+        project: true,
       },
-      (src, target) => [entry(target, src.indexOf("(v =>") + 2, [["string"]], { arrow: true })],
     );
-    expect(result).not.toContain("v: string");
+    expect(out).toLeaveUntyped("v");
+    expect(out).toTypeAs("v", "string");
     // ...and no orphaned parens either: wrapping `v` without annotating it is
     // pure diff noise.
-    expect(result).toBe("const xs: string[] = [];\nexport const ys = xs.map(v => v.length);\n");
+    expect(out.text).toBe(src);
   });
 
   it("drops a return-type annotation the body already implies", () => {
-    const result = applyWithProgram(
-      { "target.ts": 'export function greet() {\n  return "hi";\n}\n' },
-      (src, target) => [entry(target, src.indexOf("()") + 2, [["string"]], { returnType: true })],
+    const src = 'export function greet() {\n  return "hi";\n}\n';
+    const out = applied(
+      src,
+      [entry("target.ts", src.indexOf("()") + 2, [["string"]], { returnType: true })],
+      {
+        project: true,
+      },
     );
-    expect(result).not.toContain("): string");
+    expect(out).toLeaveUntyped({ returnOf: "greet" });
   });
 
   // The wrap for a paren-less arrow is emitted separately from the annotation
@@ -885,13 +864,15 @@ describe("applyTypesToFileCst — TypeChecker verify integration", () => {
   // nothing lands at that position the parens are pure noise — 175 such lines
   // in a nest run, 36% of the whole diff.
   it("does not wrap a paren-less arrow param when the annotation is suppressed", () => {
-    const result = applyWithProgram(
-      { "target.ts": "const xs: { a: number }[] = [];\nexport const ys = xs.map(v => v.a);\n" },
-      (src, target) => [
-        entry(target, src.indexOf("(v =>") + 2, [["{ a: number }"]], { arrow: true }),
-      ],
+    const src = "const xs: { a: number }[] = [];\nexport const ys = xs.map(v => v.a);\n";
+    const out = applied(
+      src,
+      [entry("target.ts", src.indexOf("(v =>") + 2, [["{ a: number }"]], { arrow: true })],
+      {
+        project: true,
+      },
     );
-    expect(result).toBe("const xs: { a: number }[] = [];\nexport const ys = xs.map(v => v.a);\n");
+    expect(out.text).toBe(src);
   });
 
   // The guard on the guard: a paren-less arrow whose *param* annotation is
@@ -901,129 +882,76 @@ describe("applyTypesToFileCst — TypeChecker verify integration", () => {
   it("still wraps a paren-less arrow when a sibling annotation lands", () => {
     const source = "const ys = xs.map(v => v.length);";
     const paramPos = source.indexOf("(v =>") + 2;
-    const typeInfo: CollectedTypeInfo = [
+    const out = applied(source, [
       // Rejected: `Unknowable` is not a type name in scope.
       entry("test.ts", paramPos, [["Unknowable"]], { arrow: true }),
       // Accepted, and lands at the same offset.
       entry("test.ts", paramPos, [["number"]], { returnType: true }),
-    ];
-    const result = applyTypesToFileCst(source, typeInfo, {});
-    expect(result).toContain("(v): number =>");
-    const parsed = ts.createSourceFile("o.ts", result, ts.ScriptTarget.Latest, true);
-    const diags = (parsed as ts.SourceFile & { parseDiagnostics?: ts.Diagnostic[] })
-      .parseDiagnostics;
-    expect(diags ?? []).toHaveLength(0);
+    ]);
+    expect(out).toLeaveUntyped("v");
+    expect(nodesOf(out, ts.isArrowFunction)[0].type?.getText(out.sf)).toBe("number");
+    expect(out.text).toContain("(v): number =>");
+    expect(parseErrors(out)).toEqual([]);
   });
 
   it("still annotates a parameter the checker only knows as any", () => {
-    const result = applyWithProgram(
-      { "target.ts": "export function use(p) {\n  return p;\n}\n" },
-      (src, target) => [entry(target, src.indexOf("(p)") + 2, [["string"]])],
-    );
-    expect(result).toContain("p: string");
+    const src = "export function use(p) {\n  return p;\n}\n";
+    const out = applied(src, [entry("target.ts", src.indexOf("(p)") + 2, [["string"]])], {
+      project: true,
+    });
+    expect(out).toAnnotate("p", "string");
   });
 
   it("still annotates when the run observed more than the checker infers", () => {
-    const result = applyWithProgram(
-      { "target.ts": "export function use(p) {\n  return p;\n}\n" },
-      (src, target) => [entry(target, src.indexOf("(p)") + 2, [["string"], ["number"]])],
+    const src = "export function use(p) {\n  return p;\n}\n";
+    const out = applied(
+      src,
+      [entry("target.ts", src.indexOf("(p)") + 2, [["string"], ["number"]])],
+      {
+        project: true,
+      },
     );
-    expect(result).toMatch(/p: (number \| string|string \| number)/);
+    expect(out).toAnnotate("p", "number | string");
   });
 
-  function makeProject(files: Record<string, string>): {
-    dir: string;
-    target: string;
-    targetSource: string;
-    fileNames: string[];
-    compilerOptions: ts.CompilerOptions;
-  } {
-    const dir = fs.mkdtempSync(path.join(tmpRoot, "p-"));
-    const tsconfig = {
-      compilerOptions: {
-        strict: true,
-        target: "ES2022",
-        module: "ES2022",
-        moduleResolution: "Bundler",
-        skipLibCheck: true,
-        noEmit: true,
-      },
-      include: ["**/*.ts"],
-    };
-    fs.writeFileSync(path.join(dir, "tsconfig.json"), JSON.stringify(tsconfig));
-    for (const [name, content] of Object.entries(files)) {
-      fs.writeFileSync(path.join(dir, name), content);
-    }
-    const parsed = ts.parseJsonConfigFileContent(tsconfig, ts.sys, dir);
-    const fileNames = parsed.fileNames;
-    const target = fileNames.find((f) => f.endsWith("target.ts"));
-    if (!target) {
-      throw new Error("test must include a `target.ts` file");
-    }
-    const targetSource = fs.readFileSync(target, "utf-8");
-    return { dir, target, targetSource, fileNames, compilerOptions: parsed.options };
-  }
-
   it("accepts a sound annotation through the CST path", () => {
-    const proj = makeProject({ "target.ts": "function id(a) { return a; }\n" });
-    const projectCtx = createProjectVerificationContext(
-      proj.fileNames,
-      proj.compilerOptions,
-      proj.dir,
-    );
-    const verifyCtx = createVerificationContext(projectCtx, proj.target, proj.targetSource);
-    // pos = name.end of `a` (1-based after `function id(`).
-    const aEnd = proj.targetSource.indexOf("(a)") + 2;
+    const src = "function id(a) { return a; }\n";
     // `string`, not `unknown`: the subject is the CST verify path, and a
     // vacuous type is dropped before verify ever sees it.
-    const typeInfo: CollectedTypeInfo = [entry(proj.target, aEnd, [["string"]])];
-    const result = applyTypesToFileCst(proj.targetSource, typeInfo, {
-      verify: verifyCtx,
+    const out = applied(src, [entry("target.ts", src.indexOf("(a)") + 2, [["string"]])], {
+      verify: true,
     });
-    expect(result).toBe("function id(a: string) { return a; }\n");
+    expect(out).toAnnotate("a", "string");
   });
 
   it("rejects an annotation that introduces a type error (varDecl narrowed below value)", () => {
     // `const x = 1` cannot be annotated `: string` — TS rejects.
-    const proj = makeProject({ "target.ts": "const x = 1;\n" });
-    const projectCtx = createProjectVerificationContext(
-      proj.fileNames,
-      proj.compilerOptions,
-      proj.dir,
+    const src = "const x = 1;\n";
+    const out = applied(
+      src,
+      [entry("target.ts", src.indexOf("x") + 1, [["string"]], { varDecl: true })],
+      {
+        verify: true,
+      },
     );
-    const verifyCtx = createVerificationContext(projectCtx, proj.target, proj.targetSource);
-    const xEnd = proj.targetSource.indexOf("x") + 1;
-    const typeInfo: CollectedTypeInfo = [entry(proj.target, xEnd, [["string"]], { varDecl: true })];
-    const result = applyTypesToFileCst(proj.targetSource, typeInfo, { verify: verifyCtx });
-    // Annotation rejected → source unchanged.
-    expect(result).toBe(proj.targetSource);
+    expect(out).toLeaveUntyped("x");
+    expect(out.text).toBe(src);
   });
 
   it("mixed batch: accepted candidates land, rejected ones drop", () => {
     // Two annotations in one file: `a: number` is legal, `b: string`
     // is illegal (b's initializer is 2). Verify must accept a, drop b.
-    const proj = makeProject({
-      "target.ts": "const a = 1;\nconst b = 2;\n",
-    });
-    const projectCtx = createProjectVerificationContext(
-      proj.fileNames,
-      proj.compilerOptions,
-      proj.dir,
+    const src = "const a = 1;\nconst b = 2;\n";
+    const out = applied(
+      src,
+      [
+        entry("target.ts", src.indexOf("a") + 1, [["number"]], { varDecl: true }),
+        entry("target.ts", src.indexOf("b") + 1, [["string"]], { varDecl: true }),
+      ],
+      { ...KEEP_INFERABLE, verify: true },
     );
-    const verifyCtx = createVerificationContext(projectCtx, proj.target, proj.targetSource);
-    const aEnd = proj.targetSource.indexOf("a") + 1;
-    const bEnd = proj.targetSource.indexOf("b") + 1;
-    const typeInfo: CollectedTypeInfo = [
-      entry(proj.target, aEnd, [["number"]], { varDecl: true }),
-      entry(proj.target, bEnd, [["string"]], { varDecl: true }),
-    ];
-    const result = applyTypesToFileCst(proj.targetSource, typeInfo, {
-      ...KEEP_INFERABLE,
-      verify: verifyCtx,
-    });
-    expect(result).toContain("const a: number = 1");
-    expect(result).toContain("const b = 2");
-    expect(result).not.toContain("const b: string");
+    expect(out).toAnnotate("a", "number");
+    expect(out).toLeaveUntyped("b");
   });
 
   it("oracle catches Promise<unknown> returnType-vs-parent-interface narrowing via transitive importer scan", () => {
@@ -1036,39 +964,36 @@ describe("applyTypesToFileCst — TypeChecker verify integration", () => {
     // this (consumer is 2 hops away); the transitive scan picks
     // it up. The `isUselessPromise` heuristic was removed
     // because the oracle now covers it.
-    const proj = makeProject({
-      "target.ts":
-        "export const provider = { fetch: () => Promise.resolve(42) };\n" +
-        "export type Provider = typeof provider;\n",
-      "index.ts": "export * from './target';\n",
-      "consumer.ts":
-        "import { Provider } from './index';\n" +
-        "declare const p: Provider;\n" +
-        "async function use() { const n: number = await p.fetch(); return n; }\n",
-    });
-    const projectCtx = createProjectVerificationContext(
-      proj.fileNames,
-      proj.compilerOptions,
-      proj.dir,
-    );
-    const verifyCtx = createVerificationContext(projectCtx, proj.target, proj.targetSource);
+    const src =
+      "export const provider = { fetch: () => Promise.resolve(42) };\n" +
+      "export type Provider = typeof provider;\n";
     // Insert `: Promise<unknown>` as the return type of `fetch`'s arrow.
     // pos = the `)` of `()` in `fetch: () =>`.
-    const fetchIdx = proj.targetSource.indexOf("fetch: ()");
-    const paramsClose = proj.targetSource.indexOf(")", fetchIdx) + 1;
-    const typeInfo: CollectedTypeInfo = [
-      entry(proj.target, paramsClose, [["Promise<unknown>"]], {
-        returnType: true,
-        async: true,
-        fnRetPos: paramsClose,
-      }),
-    ];
-    const result = applyTypesToFileCst(proj.targetSource, typeInfo, { verify: verifyCtx });
+    const paramsClose = src.indexOf(")", src.indexOf("fetch: ()")) + 1;
+    const out = applied(
+      src,
+      [
+        entry("target.ts", paramsClose, [["Promise<unknown>"]], {
+          returnType: true,
+          async: true,
+          fnRetPos: paramsClose,
+        }),
+      ],
+      {
+        verify: true,
+        files: {
+          "index.ts": "export * from './target';\n",
+          "consumer.ts":
+            "import { Provider } from './index';\n" +
+            "declare const p: Provider;\n" +
+            "async function use() { const n: number = await p.fetch(); return n; }\n",
+        },
+      },
+    );
     // Oracle rejects via the transitive scan: consumer.ts's
     // `const n: number = await p.fetch()` would fail if fetch is
     // typed `Promise<unknown>`. Source unchanged.
-    expect(result).toBe(proj.targetSource);
-    expect(result).not.toContain("Promise<unknown>");
+    expect(out.text).toBe(src);
   });
 
   it("oracle catches the emit-quality regression where a structural object of useless-arrow methods narrows binding", () => {
@@ -1078,35 +1003,36 @@ describe("applyTypesToFileCst — TypeChecker verify integration", () => {
     // shadows the consumer's declared interface (DataProvider /
     // AuthProvider). With the transitive scan the oracle
     // catches the resulting consumer-side type errors directly.
-    const proj = makeProject({
-      "target.ts":
-        "interface Provider { create: () => string; getList: () => number[]; }\n" +
-        "declare function makeProvider(): Provider;\n" +
-        "export const provider = makeProvider();\n",
-      "index.ts": "export * from './target';\n",
-      "consumer.ts":
-        "import { provider } from './index';\n" + "const result: number[] = provider.getList();\n",
-    });
-    const projectCtx = createProjectVerificationContext(
-      proj.fileNames,
-      proj.compilerOptions,
-      proj.dir,
-    );
-    const verifyCtx = createVerificationContext(projectCtx, proj.target, proj.targetSource);
+    const src =
+      "interface Provider { create: () => string; getList: () => number[]; }\n" +
+      "declare function makeProvider(): Provider;\n" +
+      "export const provider = makeProvider();\n";
     // Probe: annotate `provider` with a structural object that drops
     // `getList`. Consumer breaks because `provider.getList` no longer
     // exists on the narrower type.
-    const providerEnd = proj.targetSource.indexOf("provider = ") + "provider".length;
-    const typeInfo: CollectedTypeInfo = [
-      entry(proj.target, providerEnd, [["{ create: (resource: unknown) => unknown }"]], {
-        varDecl: true,
-      }),
-    ];
-    const result = applyTypesToFileCst(proj.targetSource, typeInfo, { verify: verifyCtx });
-    // Oracle rejects via transitive scan — consumer.ts's
-    // `provider.getList()` call would fail on the narrower type.
-    expect(result).toBe(proj.targetSource);
-    expect(result).not.toContain("(resource: unknown)");
+    const out = applied(
+      src,
+      [
+        entry(
+          "target.ts",
+          src.indexOf("provider = ") + "provider".length,
+          [["{ create: (resource: unknown) => unknown }"]],
+          {
+            varDecl: true,
+          },
+        ),
+      ],
+      {
+        verify: true,
+        files: {
+          "index.ts": "export * from './target';\n",
+          "consumer.ts":
+            "import { provider } from './index';\n" +
+            "const result: number[] = provider.getList();\n",
+        },
+      },
+    );
+    expect(out).toLeaveUntyped("provider");
   });
 
   it("oracle catches returnType narrowing below a `return undefined` branch", () => {
@@ -1116,33 +1042,26 @@ describe("applyTypesToFileCst — TypeChecker verify integration", () => {
     // those positions. The TS2322 error fires AT the function's own
     // `return undefined` line — same file as the annotation — so the
     // oracle catches it directly without the transitive scan.
-    const proj = makeProject({
-      "target.ts":
-        "export function transformFilter(f: number | null) {\n" +
-        "    if (f === null) return undefined;\n" +
-        "    return { id: f };\n" +
-        "}\n",
-    });
-    const projectCtx = createProjectVerificationContext(
-      proj.fileNames,
-      proj.compilerOptions,
-      proj.dir,
-    );
-    const verifyCtx = createVerificationContext(projectCtx, proj.target, proj.targetSource);
+    const src =
+      "export function transformFilter(f: number | null) {\n" +
+      "    if (f === null) return undefined;\n" +
+      "    return { id: f };\n" +
+      "}\n";
     // Probe: insert `: { id: number }` returnType — the narrow shape
     // ts-capture would observe from a successful call. Function's own
     // `return undefined;` then fails TS2322.
-    const paramsClose = proj.targetSource.indexOf(")") + 1;
-    const typeInfo: CollectedTypeInfo = [
-      entry(proj.target, paramsClose, [["{ id: number }"]], {
-        returnType: true,
-        fnRetPos: paramsClose,
-      }),
-    ];
-    const result = applyTypesToFileCst(proj.targetSource, typeInfo, { verify: verifyCtx });
-    // Oracle rejects: source unchanged.
-    expect(result).toBe(proj.targetSource);
-    expect(result).not.toContain(": { id: number }");
+    const paramsClose = src.indexOf(")") + 1;
+    const out = applied(
+      src,
+      [
+        entry("target.ts", paramsClose, [["{ id: number }"]], {
+          returnType: true,
+          fnRetPos: paramsClose,
+        }),
+      ],
+      { verify: true },
+    );
+    expect(out).toLeaveUntyped({ returnOf: "transformFilter" });
   });
 
   it("oracle catches a param annotation broader than its satisfies clause", () => {
@@ -1153,30 +1072,30 @@ describe("applyTypesToFileCst — TypeChecker verify integration", () => {
     // one specific call where the runtime value also carried extra
     // fields, so apply emitted a BROADER param shape that broke the
     // satisfies clause via function param contravariance.
-    const proj = makeProject({
-      "target.ts":
-        "const cbs = [{\n" +
-        "    handle: (params) => params.id,\n" +
-        "} satisfies { handle: (p: { id: number }) => unknown }];\n",
-    });
-    const projectCtx = createProjectVerificationContext(
-      proj.fileNames,
-      proj.compilerOptions,
-      proj.dir,
-    );
-    const verifyCtx = createVerificationContext(projectCtx, proj.target, proj.targetSource);
+    const src =
+      "const cbs = [{\n" +
+      "    handle: (params) => params.id,\n" +
+      "} satisfies { handle: (p: { id: number }) => unknown }];\n";
     // Probe: insert `: { id: number; tags: number[] }` — broader
     // than the satisfies clause's `{ id: number }`. Function param
     // contravariance: satisfies side's `{ id: number }` not
     // assignable to annotation's `{ id: number; tags: number[] }`.
     // satisfies expression fails type-check at the same file.
-    const paramEnd = proj.targetSource.indexOf("params)") + "params".length;
-    const typeInfo: CollectedTypeInfo = [
-      entry(proj.target, paramEnd, [["{ id: number; tags: number[] }"]], { arrow: true }),
-    ];
-    const result = applyTypesToFileCst(proj.targetSource, typeInfo, { verify: verifyCtx });
-    // Oracle rejects: source unchanged.
-    expect(result).toBe(proj.targetSource);
+    const out = applied(
+      src,
+      [
+        entry(
+          "target.ts",
+          src.indexOf("params)") + "params".length,
+          [["{ id: number; tags: number[] }"]],
+          {
+            arrow: true,
+          },
+        ),
+      ],
+      { verify: true },
+    );
+    expect(out).toLeaveUntyped("params");
   });
 
   it("oracle catches a spread RHS narrowing below same-file property access", () => {
@@ -1185,31 +1104,26 @@ describe("applyTypesToFileCst — TypeChecker verify integration", () => {
     // because the captured shape misses fields that arrive via the
     // spread. The downstream TS2339 fires AT a property-access line
     // in the same file — oracle catches it directly.
-    const proj = makeProject({
-      "target.ts":
-        "declare const data: { tags: number[]; company_id: number };\n" +
-        "function f() {\n" +
-        "    const newData = { ...data };\n" +
-        "    return newData.company_id;\n" +
-        "}\n" +
-        "f();\n",
-    });
-    const projectCtx = createProjectVerificationContext(
-      proj.fileNames,
-      proj.compilerOptions,
-      proj.dir,
-    );
-    const verifyCtx = createVerificationContext(projectCtx, proj.target, proj.targetSource);
+    const src =
+      "declare const data: { tags: number[]; company_id: number };\n" +
+      "function f() {\n" +
+      "    const newData = { ...data };\n" +
+      "    return newData.company_id;\n" +
+      "}\n" +
+      "f();\n";
     // Probe: annotate `newData` as `: { tags: number[] }`. The spread
     // brings in `company_id` but the narrow annotation drops it —
     // the subsequent `newData.company_id` access fails TS2339.
-    const newDataEnd = proj.targetSource.indexOf("newData") + "newData".length;
-    const typeInfo: CollectedTypeInfo = [
-      entry(proj.target, newDataEnd, [["{ tags: number[] }"]], { varDecl: true }),
-    ];
-    const result = applyTypesToFileCst(proj.targetSource, typeInfo, { verify: verifyCtx });
-    // Oracle rejects: source unchanged.
-    expect(result).toBe(proj.targetSource);
+    const out = applied(
+      src,
+      [
+        entry("target.ts", src.indexOf("newData") + "newData".length, [["{ tags: number[] }"]], {
+          varDecl: true,
+        }),
+      ],
+      { verify: true },
+    );
+    expect(out).toLeaveUntyped("newData");
   });
 
   it("oracle catches an object literal of useless-arrow methods vs parent interface", () => {
@@ -1220,101 +1134,74 @@ describe("applyTypesToFileCst — TypeChecker verify integration", () => {
     // breaks contextual typing against a parent interface like
     // `DataProvider` — surfaces at the consumer, caught by the
     // transitive scan.
-    const proj = makeProject({
-      "target.ts":
-        "interface Provider { create: (resource: string) => Promise<number>; }\n" +
-        "export const provider = { create: (resource) => Promise.resolve(1) };\n",
-      "index.ts": "export * from './target';\n",
-      "consumer.ts":
-        "import { provider } from './index';\n" +
-        "const dp: Provider = provider;\n" +
-        "// typecheck-only: provider must structurally satisfy Provider.\n",
-    });
-    // Add Provider to the consumer file too via re-import so the test
-    // is self-consistent.
-    const consumerPath = proj.fileNames.find((f) => f.endsWith("consumer.ts"))!;
-    const consumerSource =
-      "import { provider } from './index';\n" +
+    const src =
       "interface Provider { create: (resource: string) => Promise<number>; }\n" +
-      "const dp: Provider = provider;\n" +
-      "void dp;\n";
-    fs.writeFileSync(consumerPath, consumerSource);
-    const projectCtx = createProjectVerificationContext(
-      proj.fileNames,
-      proj.compilerOptions,
-      proj.dir,
-    );
-    const verifyCtx = createVerificationContext(projectCtx, proj.target, proj.targetSource);
+      "export const provider = { create: (resource) => Promise.resolve(1) };\n";
     // Probe: annotate `provider` with the literal shape having
     // `(r: unknown) => unknown` — too broad on params (function
     // param contravariance: `string` not assignable to `unknown`'s
     // contravariant input position when we look at the OTHER
     // direction) and too narrow on return (unknown vs Promise<number>).
-    const providerEnd = proj.targetSource.indexOf("provider = ") + "provider".length;
-    const typeInfo: CollectedTypeInfo = [
-      entry(proj.target, providerEnd, [["{ create: (resource: unknown) => unknown }"]], {
-        varDecl: true,
-      }),
-    ];
-    const result = applyTypesToFileCst(proj.targetSource, typeInfo, { verify: verifyCtx });
+    const out = applied(
+      src,
+      [
+        entry(
+          "target.ts",
+          src.indexOf("provider = ") + "provider".length,
+          [["{ create: (resource: unknown) => unknown }"]],
+          {
+            varDecl: true,
+          },
+        ),
+      ],
+      {
+        verify: true,
+        files: {
+          "index.ts": "export * from './target';\n",
+          "consumer.ts":
+            "import { provider } from './index';\n" +
+            "interface Provider { create: (resource: string) => Promise<number>; }\n" +
+            "const dp: Provider = provider;\n" +
+            "void dp;\n",
+        },
+      },
+    );
     // Oracle rejects via transitive scan — consumer.ts's
     // `const dp: Provider = provider` would fail.
-    expect(result).toBe(proj.targetSource);
+    expect(out).toLeaveUntyped("provider");
   });
 
   it("steady-state re-apply produces zero verify probes (AST idempotency)", () => {
-    // Verifies the steady-state acceptance: a second apply on
-    // already-annotated source must NOT exercise the verify path at
-    // all. The CST applier's AST-native idempotency check
-    // (`node.type !== undefined`) skips already-typed sites BEFORE
-    // they enter `annotationCandidates`, so `filterAcceptedReplacements`
-    // sees an empty array and never calls `wouldIntroduceErrors`.
-    //
-    // Instrument by spying on the verify context's
-    // `filterAcceptedReplacements` indirectly: count probes via a
-    // wrapped service. Simplest signal: re-apply on annotated source
-    // must return the source unchanged AND `currentSource` must equal
-    // the input (no `advanceCurrentSource` either — pass-through is
-    // also empty when nothing is left to apply).
-    const proj = makeProject({
-      "target.ts": "export function id(a: unknown): unknown { return a; }\n",
-    });
-    const projectCtx = createProjectVerificationContext(
-      proj.fileNames,
-      proj.compilerOptions,
-      proj.dir,
+    // A second apply on already-annotated source must NOT exercise the verify
+    // path at all. The CST applier's AST-native idempotency check
+    // (`node.type !== undefined`) skips already-typed sites BEFORE they enter
+    // the candidate list, so the batch is empty and never probes. Simplest
+    // signal: the source comes back unchanged AND the context's
+    // `currentSource` still equals the input (no `advanceCurrentSource`
+    // either — pass-through is also empty when nothing is left to apply).
+    const src = "export function id(a: unknown): unknown { return a; }\n";
+    const out = applied(
+      src,
+      [
+        entry("target.ts", src.indexOf("a:") + 1, [["unknown"]]),
+        entry("target.ts", src.indexOf(")") + 1, [["unknown"]], { returnType: true }),
+      ],
+      { verify: true },
     );
-    const verifyCtx = createVerificationContext(projectCtx, proj.target, proj.targetSource);
-    // pos = `a`'s name.end (already typed in source).
-    const aEnd = proj.targetSource.indexOf("a:") + 1;
-    const paramsClose = proj.targetSource.indexOf(")") + 1;
-    const typeInfo: CollectedTypeInfo = [
-      entry(proj.target, aEnd, [["unknown"]]),
-      entry(proj.target, paramsClose, [["unknown"]], { returnType: true }),
-    ];
-    const result = applyTypesToFileCst(proj.targetSource, typeInfo, { verify: verifyCtx });
-    // Both entries hit existing annotations → AST idempotency skips
-    // both before they reach the verify batch. No probes, no source
-    // mutation.
-    expect(result).toBe(proj.targetSource);
-    expect(verifyCtx.currentSource).toBe(proj.targetSource);
+    expect(out.text).toBe(src);
+    expect(out.verify?.currentSource).toBe(src);
   });
 
   it("does not mutate verify context when all candidates are rejected", () => {
-    const proj = makeProject({ "target.ts": "const x = 1;\n" });
-    const projectCtx = createProjectVerificationContext(
-      proj.fileNames,
-      proj.compilerOptions,
-      proj.dir,
+    const src = "const x = 1;\n";
+    const out = applied(
+      src,
+      [entry("target.ts", src.indexOf("x") + 1, [["string"]], { varDecl: true })],
+      {
+        verify: true,
+      },
     );
-    const verifyCtx = createVerificationContext(projectCtx, proj.target, proj.targetSource);
-    const xEnd = proj.targetSource.indexOf("x") + 1;
-    const typeInfo: CollectedTypeInfo = [entry(proj.target, xEnd, [["string"]], { varDecl: true })];
-    applyTypesToFileCst(proj.targetSource, typeInfo, { verify: verifyCtx });
-    // currentSource untouched (advanceCurrentSource only fires when
-    // pass-through is non-empty, and even then only if afterCst !==
-    // source — which it doesn't when all candidates were rejected).
-    expect(verifyCtx.currentSource).toBe(proj.targetSource);
+    expect(out.verify?.currentSource).toBe(src);
   });
 
   // `skipRedundantAnnotations` reads as a redundancy switch, and its
@@ -1323,56 +1210,57 @@ describe("applyTypesToFileCst — TypeChecker verify integration", () => {
   // including this one, which refuses a type *narrower* than the inferred one.
   // That direction does not remove an error, it introduces one.
   it("refuses a narrowing annotation even with the redundancy flag off", () => {
-    const proj = makeProject({
-      "target.ts":
-        "declare const k: string | symbol;\n" +
-        "export function f() {\n" +
-        "  const key = k;\n" +
-        "  return key;\n" +
-        "}\n",
-    });
-    const program = createProjectVerificationContext(
-      proj.fileNames,
-      proj.compilerOptions,
-      proj.dir,
-    ).service.getProgram();
-    const keyEnd = proj.targetSource.indexOf("const key") + "const key".length;
-    const typeInfo: CollectedTypeInfo = [
-      entry(proj.target, keyEnd, [["string"]], { varDecl: true }),
+    const src =
+      "declare const k: string | symbol;\n" +
+      "export function f() {\n" +
+      "  const key = k;\n" +
+      "  return key;\n" +
+      "}\n";
+    const typeInfo = [
+      entry("target.ts", src.indexOf("const key") + "const key".length, [["string"]], {
+        varDecl: true,
+      }),
     ];
-    const opts = {
-      filename: proj.target,
-      infer: { ...INFER_DEFAULTS, skipRedundantAnnotations: false },
-    };
-    expect(applyTypesToFileCst(proj.targetSource, typeInfo, opts, program)).toBe(proj.targetSource);
-    expect(applyTypesToFile(proj.targetSource, typeInfo, opts, program)).toBe(proj.targetSource);
+    for (const applier of ["cst", "offset"] as const) {
+      const out = applied(src, typeInfo, {
+        project: true,
+        applier,
+        infer: { ...INFER_DEFAULTS, skipRedundantAnnotations: false },
+      });
+      expect(out).toLeaveUntyped("key");
+    }
   });
 
   it("writes observed literals as the imported alias that unites them", () => {
-    const result = applyWithProgram(
+    const src =
+      'import type { Status } from "./status.js";\n' +
+      "export function isActive(status) {\n" +
+      '  return status === "active";\n' +
+      "}\n" +
+      "export const seen: Status[] = [];\n";
+    const out = applied(
+      src,
+      [entry("target.ts", src.indexOf("(status)") + 7, [['"active"'], ['"inactive"']])],
       {
-        "status.ts": 'export type Status = "active" | "inactive";\n',
-        "target.ts":
-          'import type { Status } from "./status.js";\n' +
-          "export function isActive(status) {\n" +
-          '  return status === "active";\n' +
-          "}\n" +
-          "export const seen: Status[] = [];\n",
+        project: true,
+        files: { "status.ts": 'export type Status = "active" | "inactive";\n' },
+        infer: { ...INFER_DEFAULTS, literal: { ...INFER_DEFAULTS.literal, string: true } },
       },
-      (src, target) => [entry(target, src.indexOf("(status)") + 7, [['"active"'], ['"inactive"']])],
-      { literal: { ...INFER_DEFAULTS.literal, string: true } },
     );
-    expect(result).toContain("isActive(status: Status)");
+    expect(out).toAnnotate("status", { ref: "Status" });
+    expect(out).toTypeAs("status", '"active" | "inactive"');
   });
 
   it("writes an observed tuple as a tuple", () => {
     const src = "export function toPair(key, value) {\n  return [key, value];\n}\n";
-    const out = applyTypesToFileCst(
+    const out = applied(
       src,
       [entry("t.ts", src.indexOf("value)") + 6, [["[string, number]"]], { returnType: true })],
-      { filename: "t.ts" },
+      {
+        filename: "t.ts",
+      },
     );
-    expect(out).toContain("toPair(key, value): [string, number] {");
+    expect(out).toAnnotate({ returnOf: "toPair" }, "[string, number]");
   });
 
   // Redundancy used to be judged against the program as it stood before apply:
@@ -1443,22 +1331,25 @@ describe("applyTypesToFileCst — TypeChecker verify integration", () => {
     });
   });
 
+  // --- notes: text is the claim --------------------------------------------
+  //
+  // A note is a comment, and where it lands and what it says is the point of
+  // the test. These assert the text of the output on purpose.
+
   // A line start inside a multi-line template is inside the *string*. Writing
   // a note there makes it text, and its backticks close the template early.
   // Found by looking at applied output, not by a test — nest has no
   // annotation site inside a template literal.
   it("writes no note where the line start is inside a template literal", () => {
     const src = "const items = [{ id: 1 }];\nconst s = `\n  ${items.map(x => x.id)}\n`;\n";
-    const xEnd = src.indexOf("x =>") + 1;
-    const typeInfo: CollectedTypeInfo = [entry("t.ts", xEnd, [["number"]])];
-    const out = applyTypesToFileCst(src, typeInfo, {
+    const out = applied(src, [entry("t.ts", src.indexOf("x =>") + 1, [["number"]])], {
       infer: { ...INFER_DEFAULTS, outputMode: "both" },
       filename: "t.ts",
     });
-    expect(out).not.toContain("@ts-capture");
+    expect(out.text).not.toContain("@ts-capture");
     // The annotation itself is unaffected — it goes inside the interpolation,
     // which is code.
-    expect(out).toContain("(x: number)");
+    expect(out).toAnnotate("x", "number");
   });
 
   // The dialect matters: parsing a `.ts` file as TSX reads `<` as a JSX tag,
@@ -1467,13 +1358,16 @@ describe("applyTypesToFileCst — TypeChecker verify integration", () => {
   // is not inside anything.
   it("writes a note in a .ts file that uses angle brackets", () => {
     const src = "const parts = collect<string>(input);\nconst first = parts[0];\n";
-    const firstEnd = src.indexOf("const first") + "const first".length;
-    const typeInfo: CollectedTypeInfo = [entry("t.ts", firstEnd, [["string"]], { varDecl: true })];
-    const out = applyTypesToFileCst(src, typeInfo, {
-      infer: { ...INFER_DEFAULTS, outputMode: "comments" },
-      filename: "t.ts",
-    });
-    expect(out).toContain("// @ts-capture[proposal]: `first` would be `string`");
+    const out = applied(
+      src,
+      [
+        entry("t.ts", src.indexOf("const first") + "const first".length, [["string"]], {
+          varDecl: true,
+        }),
+      ],
+      { infer: { ...INFER_DEFAULTS, outputMode: "comments" }, filename: "t.ts" },
+    );
+    expect(out.text).toContain("// @ts-capture[proposal]: `first` would be `string`");
   });
 
   // The checker's view is held in one variable shared by every branch, and the
@@ -1481,132 +1375,103 @@ describe("applyTypesToFileCst — TypeChecker verify integration", () => {
   // entry had asked about. Here that is `v`, a binding in another function two
   // lines up. A note that names the wrong position is worse than no note.
   it("does not let a preview claim a type from another site", () => {
-    const proj = makeProject({
-      "target.ts":
-        "declare const n: number;\n" +
-        "export function g() {\n" +
-        "  const v = n;\n" +
-        "  return v;\n" +
-        "}\n" +
-        "export function needsThis(x) {\n" +
-        "  return x;\n" +
-        "}\n",
-    });
-    const program = createProjectVerificationContext(
-      proj.fileNames,
-      proj.compilerOptions,
-      proj.dir,
-    ).service.getProgram();
-    const vEnd = proj.targetSource.indexOf("const v") + "const v".length;
-    const parensPos = proj.targetSource.indexOf("needsThis(") + "needsThis(".length;
-    const typeInfo: CollectedTypeInfo = [
-      entry(proj.target, vEnd, [["number"]], { varDecl: true }),
-      entry(proj.target, parensPos, [["string"]], { thisType: true }),
-    ];
-    const out = applyTypesToFileCst(
-      proj.targetSource,
-      typeInfo,
-      { filename: proj.target, infer: { ...INFER_DEFAULTS, outputMode: "comments" } },
-      program,
+    const src =
+      "declare const n: number;\n" +
+      "export function g() {\n" +
+      "  const v = n;\n" +
+      "  return v;\n" +
+      "}\n" +
+      "export function needsThis(x) {\n" +
+      "  return x;\n" +
+      "}\n";
+    const out = applied(
+      src,
+      [
+        entry("target.ts", src.indexOf("const v") + "const v".length, [["number"]], {
+          varDecl: true,
+        }),
+        entry("target.ts", src.indexOf("needsThis(") + "needsThis(".length, [["string"]], {
+          thisType: true,
+        }),
+      ],
+      { project: true, infer: { ...INFER_DEFAULTS, outputMode: "comments" } },
     );
-    expect(out).toContain("`this` would be `string`");
-    expect(out).not.toContain("TypeScript infers `number`");
+    expect(out.text).toContain("`this` would be `string`");
+    expect(out.text).not.toContain("TypeScript infers `number`");
   });
 
-  // The CST applier hands its pass-through entries to the offset applier along
-  // with the source it has already rewritten — notes included. If the second
-  // pass stripped as well, it would delete what the first one just wrote.
+  const UNPLACEABLE =
+    "export function f(): string {\n" +
+    "  return 'x';\n" +
+    "}\n" +
+    "export const t = `\n" +
+    "head ${(() => { const p = f(); return p; })()} tail\n" +
+    "`;\n";
+  const contradictedP = (src: string) =>
+    entry("target.ts", src.indexOf("const p") + "const p".length, [["string|undefined"]], {
+      varDecl: true,
+    });
+
   // A note cannot be written on a line whose start is inside template text —
   // the comment would become part of the string. The contradiction is still
   // real, so the annotation is still refused: apply reports rather than fixes,
   // and a contradiction it cannot report is not a licence to write.
-  it("writes neither note nor annotation when the note cannot be placed", () => {
-    const proj = makeProject({
-      "target.ts":
-        "export function f(): string {\n" +
-        "  return 'x';\n" +
-        "}\n" +
-        "export const t = `\n" +
-        "head ${(() => { const p = f(); return p; })()} tail\n" +
-        "`;\n",
-    });
-    const program = createProjectVerificationContext(
-      proj.fileNames,
-      proj.compilerOptions,
-      proj.dir,
-    ).service.getProgram();
-    const pEnd = proj.targetSource.indexOf("const p") + "const p".length;
-    const typeInfo: CollectedTypeInfo = [
-      entry(proj.target, pEnd, [["string|undefined"]], { varDecl: true }),
-    ];
-    const opts = { filename: proj.target };
-    expect(applyTypesToFileCst(proj.targetSource, typeInfo, opts, program)).toBe(proj.targetSource);
-    expect(applyTypesToFile(proj.targetSource, typeInfo, opts, program)).toBe(proj.targetSource);
-  });
+  it.each(["cst", "offset"] as const)(
+    "writes neither note nor annotation when the note cannot be placed (%s)",
+    (applier) => {
+      const out = applied(UNPLACEABLE, [contradictedP(UNPLACEABLE)], { project: true, applier });
+      expect(out.text).toBe(UNPLACEABLE);
+    },
+  );
 
   // Regression: the offset applier used `break` where it meant "skip this
   // site", so one unplaceable note abandoned the entry loop and every later
   // annotation in the file was lost silently.
-  it("keeps annotating later sites after a note it could not place", () => {
-    const proj = makeProject({
-      "target.ts":
-        "export function f(): string {\n" +
-        "  return 'x';\n" +
-        "}\n" +
-        "export const t = `\n" +
-        "head ${(() => { const p = f(); return p; })()} tail\n" +
-        "`;\n" +
-        "export function later(a) {\n" +
-        "  return a;\n" +
-        "}\n",
-    });
-    const program = createProjectVerificationContext(
-      proj.fileNames,
-      proj.compilerOptions,
-      proj.dir,
-    ).service.getProgram();
-    const pEnd = proj.targetSource.indexOf("const p") + "const p".length;
-    const aPos = proj.targetSource.indexOf("later(a)") + "later(a".length;
-    const typeInfo: CollectedTypeInfo = [
-      entry(proj.target, pEnd, [["string|undefined"]], { varDecl: true }),
-      entry(proj.target, aPos, [["number"]]),
-    ];
-    const opts = { filename: proj.target };
-    expect(applyTypesToFile(proj.targetSource, typeInfo, opts, program)).toContain(
-      "export function later(a: number) {",
-    );
-    expect(applyTypesToFileCst(proj.targetSource, typeInfo, opts, program)).toContain(
-      "export function later(a: number) {",
-    );
-  });
+  it.each(["cst", "offset"] as const)(
+    "keeps annotating later sites after a note it could not place (%s)",
+    (applier) => {
+      const src = UNPLACEABLE + "export function later(a) {\n  return a;\n}\n";
+      const out = applied(
+        src,
+        [
+          contradictedP(src),
+          entry("target.ts", src.indexOf("later(a)") + "later(a".length, [["number"]]),
+        ],
+        { project: true, applier },
+      );
+      expect(out).toAnnotate("a", "number");
+    },
+  );
 
   // Both appliers place notes by one rule, and that rule lives in
   // `noteReplacements` — the only place that knows whether a line is crowded
   // and the note therefore goes at the site rather than above it. An early
   // check in one applier answered the leading-line question for notes that
   // never became leading lines, and dropped them.
-  it("places the same notes from either applier on a crowded line inside a template", () => {
-    const src = "const t = `\nhead ${[1].map((a) => [2].map((b) => a + b))} tail\n`;\n";
-    const typeInfo: CollectedTypeInfo = [
-      entry("t.ts", src.indexOf("(a)") + 2, [["number"]]),
-      entry("t.ts", src.indexOf("(b)") + 2, [["number"]]),
-    ];
-    const opts = {
-      filename: "t.ts",
-      infer: { ...INFER_DEFAULTS, outputMode: "comments" as const },
-    };
-    const count = (out: string) => (out.match(/@ts-capture/g) ?? []).length;
-    expect(count(applyTypesToFileCst(src, typeInfo, opts))).toBe(2);
-    expect(count(applyTypesToFile(src, typeInfo, opts))).toBe(2);
-  });
+  it.each(["cst", "offset"] as const)(
+    "places the same notes from either applier on a crowded line inside a template (%s)",
+    (applier) => {
+      const src = "const t = `\nhead ${[1].map((a) => [2].map((b) => a + b))} tail\n`;\n";
+      const out = applied(
+        src,
+        [
+          entry("t.ts", src.indexOf("(a)") + 2, [["number"]]),
+          entry("t.ts", src.indexOf("(b)") + 2, [["number"]]),
+        ],
+        { filename: "t.ts", applier, infer: { ...INFER_DEFAULTS, outputMode: "comments" } },
+      );
+      expect(out.text.match(/@ts-capture/g) ?? []).toHaveLength(2);
+    },
+  );
 
   // `this` has no single value to write down — the same loss the return-type
   // rule above refuses, arriving through a contextually typed parameter. The
   // offset applier already refused it; the CST applier, which is the default,
   // did not.
-  it("never annotates a param the checker infers as `this`", () => {
-    const proj = makeProject({
-      "target.ts":
+  it.each(["cst", "offset"] as const)(
+    "never annotates a param the checker infers as `this` (%s)",
+    (applier) => {
+      const src =
         "export class Box {\n" +
         "  each(fn: (self: this) => void) {\n" +
         "    fn(this);\n" +
@@ -1614,215 +1479,126 @@ describe("applyTypesToFileCst — TypeChecker verify integration", () => {
         "  go() {\n" +
         "    this.each((s) => s.go());\n" +
         "  }\n" +
-        "}\n",
-    });
-    const program = createProjectVerificationContext(
-      proj.fileNames,
-      proj.compilerOptions,
-      proj.dir,
-    ).service.getProgram();
-    const sPos = proj.targetSource.indexOf("((s)") + "((s".length;
-    const typeInfo: CollectedTypeInfo = [entry(proj.target, sPos, [["Box"]], { arrow: true })];
-    const opts = { filename: proj.target };
-    expect(applyTypesToFileCst(proj.targetSource, typeInfo, opts, program)).toBe(proj.targetSource);
-    expect(applyTypesToFile(proj.targetSource, typeInfo, opts, program)).toBe(proj.targetSource);
-  });
+        "}\n";
+      const out = applied(
+        src,
+        [entry("target.ts", src.indexOf("((s)") + "((s".length, [["Box"]], { arrow: true })],
+        {
+          project: true,
+          applier,
+        },
+      );
+      expect(out).toLeaveUntyped("s");
+    },
+  );
 
-  it("never annotates a return type the checker infers as `this`", () => {
-    // A builder that returns `this` keeps working in a subclass. The run only
-    // ever sees the concrete instance, so ts-capture writes the class name and
-    // every subclass caller gets the base class back. Eight nest methods, all
-    // builders, were annotated that way.
-    const proj = makeProject({
-      "target.ts":
+  // A builder that returns `this` keeps working in a subclass. The run only
+  // ever sees the concrete instance, so ts-capture writes the class name and
+  // every subclass caller gets the base class back. Eight nest methods, all
+  // builders, were annotated that way.
+  it.each(["cst", "offset"] as const)(
+    "never annotates a return type the checker infers as `this` (%s)",
+    (applier) => {
+      const src =
         "export class Builder {\n" +
         "  addValidator() {\n" +
         "    return this;\n" +
         "  }\n" +
-        "}\n",
-    });
-    const projectCtx = createProjectVerificationContext(
-      proj.fileNames,
-      proj.compilerOptions,
-      proj.dir,
-    );
-    const paramsClose = proj.targetSource.indexOf("addValidator()") + "addValidator()".length;
-    const typeInfo: CollectedTypeInfo = [
-      entry(proj.target, paramsClose, [["Builder"]], {
-        returnType: true,
-        fnRetPos: paramsClose,
-      }),
-    ];
-    // The checker index needs `program` + `filename`; without them neither
-    // applier can ask what the return type is inferred as.
-    const program = projectCtx.service.getProgram();
-    const opts = { filename: proj.target };
-    expect(applyTypesToFileCst(proj.targetSource, typeInfo, opts, program)).toBe(proj.targetSource);
-    expect(applyTypesToFile(proj.targetSource, typeInfo, opts, program)).toBe(proj.targetSource);
-  });
+        "}\n";
+      const paramsClose = src.indexOf("addValidator()") + "addValidator()".length;
+      const out = applied(
+        src,
+        [
+          entry("target.ts", paramsClose, [["Builder"]], {
+            returnType: true,
+            fnRetPos: paramsClose,
+          }),
+        ],
+        { project: true, applier },
+      );
+      expect(out).toLeaveUntyped({ returnOf: "addValidator" });
+    },
+  );
+
+  const CONTRADICTED =
+    "export function f(): string {\n" +
+    "  return 'x';\n" +
+    "}\n" +
+    "export function g() {\n" +
+    "  const p = f();\n" +
+    "  return p;\n" +
+    "}\n";
 
   // The run saw a value the position's own type says cannot occur. Apply
   // reports it and leaves the code alone: whether the right fix is to widen the
   // type or to stop producing `undefined` is not something an observation can
-  // decide.
-  it("writes a note instead of an annotation when the run contradicts the checker", () => {
-    const proj = makeProject({
-      "target.ts":
-        "export function f(): string {\n" +
-        "  return 'x';\n" +
-        "}\n" +
-        "export function g() {\n" +
-        "  const p = f();\n" +
-        "  return p;\n" +
-        "}\n",
-    });
-    const program = createProjectVerificationContext(
-      proj.fileNames,
-      proj.compilerOptions,
-      proj.dir,
-    ).service.getProgram();
-    const pEnd = proj.targetSource.indexOf("const p") + "const p".length;
-    const typeInfo: CollectedTypeInfo = [
-      entry(proj.target, pEnd, [["string|undefined"]], { varDecl: true }),
-    ];
-    const result = applyTypesToFileCst(
-      proj.targetSource,
-      typeInfo,
-      { filename: proj.target },
-      program,
-    );
-    expect(result).toContain(
-      "  // @ts-capture[conflict]: `p` observed `undefined`, TypeScript infers `string`\n  const p = f();",
-    );
-    expect(result).not.toContain("const p: string | undefined");
-  });
-
-  it("writes a note from the offset applier too, driven directly", () => {
-    const proj = makeProject({
-      "target.ts":
-        "export function f(): string {\n" +
-        "  return 'x';\n" +
-        "}\n" +
-        "export function g() {\n" +
-        "  const p = f();\n" +
-        "  return p;\n" +
-        "}\n",
-    });
-    const program = createProjectVerificationContext(
-      proj.fileNames,
-      proj.compilerOptions,
-      proj.dir,
-    ).service.getProgram();
-    const pEnd = proj.targetSource.indexOf("const p") + "const p".length;
-    const typeInfo: CollectedTypeInfo = [
-      entry(proj.target, pEnd, [["string|undefined"]], { varDecl: true }),
-    ];
-    const result = applyTypesToFile(
-      proj.targetSource,
-      typeInfo,
-      { filename: proj.target },
-      program,
-    );
-    expect(result).toContain(
-      "  // @ts-capture[conflict]: `p` observed `undefined`, TypeScript infers `string`\n  const p = f();",
-    );
-    expect(result).not.toContain("const p: string | undefined");
-  });
+  // decide. Driven directly, the offset applier has to reach the same answer.
+  it.each(["cst", "offset"] as const)(
+    "writes a note instead of an annotation when the run contradicts the checker (%s)",
+    (applier) => {
+      const out = applied(CONTRADICTED, [contradictedP(CONTRADICTED)], { project: true, applier });
+      expect(out.text).toContain(
+        "  // @ts-capture[conflict]: `p` observed `undefined`, TypeScript infers `string`\n  const p = f();",
+      );
+      expect(out).toLeaveUntyped("p");
+    },
+  );
 
   // The CST applier hands its pass-through entries to the offset applier along
   // with the source it has already rewritten — notes included. If the second
   // pass stripped as well, it would delete what the first one just wrote.
   it("does not strip the notes the CST pass just wrote", () => {
-    const proj = makeProject({
-      "target.ts":
-        "export function f(): string {\n" +
-        "  return 'x';\n" +
-        "}\n" +
-        "export function g() {\n" +
-        "  const p = f();\n" +
-        "  return p;\n" +
-        "}\n",
-    });
-    const program = createProjectVerificationContext(
-      proj.fileNames,
-      proj.compilerOptions,
-      proj.dir,
-    ).service.getProgram();
-    const pEnd = proj.targetSource.indexOf("const p") + "const p".length;
-    const typeInfo: CollectedTypeInfo = [
-      entry(proj.target, pEnd, [["string|undefined"]], { varDecl: true }),
-      // A pass-through entry: no CST site owns this offset, so it is handed to
-      // the offset applier in a second pass.
-      entry(proj.target, 1, [["string"]], {}),
-    ];
-    const result = applyTypesToFileCst(
-      proj.targetSource,
-      typeInfo,
-      { filename: proj.target },
-      program,
+    const out = applied(
+      CONTRADICTED,
+      [
+        contradictedP(CONTRADICTED),
+        // A pass-through entry: no CST site owns this offset, so it is handed to
+        // the offset applier in a second pass.
+        entry("target.ts", 1, [["string"]], {}),
+      ],
+      { project: true },
     );
-    expect(result).toContain("// @ts-capture[conflict]: `p` observed `undefined`");
+    expect(out.text).toContain("// @ts-capture[conflict]: `p` observed `undefined`");
   });
 
   describe("outputMode", () => {
-    const project = () => {
-      const proj = makeProject({
-        "target.ts": "export function f(x) {\n  return x.length;\n}\nf('a');\nf('b');\n",
-      });
-      const program = createProjectVerificationContext(
-        proj.fileNames,
-        proj.compilerOptions,
-        proj.dir,
-      ).service.getProgram();
-      const xEnd = proj.targetSource.indexOf("(x)") + 2;
+    const SEEN_TWICE = "export function f(x) {\n  return x.length;\n}\nf('a');\nf('b');\n";
+    const seenTwice = (src: string): CollectedTypeInfo => {
       const seen: [string] = ["string"];
-      const typeInfo: CollectedTypeInfo = [entry(proj.target, xEnd, [seen, seen])];
-      return { proj, program, typeInfo };
+      return [entry("target.ts", src.indexOf("(x)") + 2, [seen, seen])];
     };
+    const inMode = (outputMode: "annotations" | "comments" | "both") =>
+      applied(SEEN_TWICE, seenTwice(SEEN_TWICE), {
+        project: true,
+        infer: { ...INFER_DEFAULTS, outputMode },
+      });
 
     it("annotations: writes the type and no note", () => {
-      const { proj, program, typeInfo } = project();
-      const out = applyTypesToFileCst(
-        proj.targetSource,
-        typeInfo,
-        { filename: proj.target },
-        program,
-      );
-      expect(out).toContain("function f(x: string)");
-      expect(out).not.toContain("@ts-capture");
+      const out = inMode("annotations");
+      expect(out).toAnnotate("x", "string");
+      expect(out.text).not.toContain("@ts-capture");
     });
 
     it("comments: writes the note and leaves the code alone", () => {
-      const { proj, program, typeInfo } = project();
-      const out = applyTypesToFileCst(
-        proj.targetSource,
-        typeInfo,
-        { filename: proj.target, infer: { ...INFER_DEFAULTS, outputMode: "comments" } },
-        program,
-      );
-      expect(out).toContain("// @ts-capture[proposal]: `x` would be `string`");
-      expect(out).toContain("// @ts-capture:   observed 2 times; TypeScript infers `any`");
-      expect(out).toContain("function f(x)");
-      expect(out).not.toContain("x: string");
+      const out = inMode("comments");
+      expect(out.text).toContain("// @ts-capture[proposal]: `x` would be `string`");
+      expect(out.text).toContain("// @ts-capture:   observed 2 times; TypeScript infers `any`");
+      expect(out).toLeaveUntyped("x");
     });
 
     // Beside the annotation the note drops the type: it is on the next line
     // already, and "would write" would claim something did not happen when it
     // did. What is left is what the annotation cannot say.
     it("both: writes the type, and a note saying only what the type cannot", () => {
-      const { proj, program, typeInfo } = project();
-      const out = applyTypesToFileCst(
-        proj.targetSource,
-        typeInfo,
-        { filename: proj.target, infer: { ...INFER_DEFAULTS, outputMode: "both" } },
-        program,
-      );
-      expect(out).toContain(
+      const out = inMode("both");
+      expect(out.text).toContain(
         "// @ts-capture[applied]: `x` observed 2 times; TypeScript infers `any`",
       );
-      expect(out).not.toContain("would write");
-      expect(out).toContain("function f(x: string)");
+      expect(out.text).not.toContain("would write");
+      expect(out).toAnnotate("x", "string");
     });
+
+    const BOTH = { infer: { ...INFER_DEFAULTS, outputMode: "both" as const }, filename: "t.ts" };
 
     // One line, several sites: a leading note has to name its position, and in
     // `const a = (d) => (d) => (d) => null;` there is one name for four of
@@ -1830,15 +1606,15 @@ describe("applyTypesToFileCst — TypeChecker verify integration", () => {
     // not arise.
     it("puts the notes at the sites when a line holds several", () => {
       const src = "const make = (s) => (d) => (e) => e;\n";
-      const typeInfo: CollectedTypeInfo = [
-        entry("t.ts", src.indexOf("(s)") + 2, [["string"]]),
-        entry("t.ts", src.indexOf("(d)") + 2, [["number"]]),
-      ];
-      const out = applyTypesToFileCst(src, typeInfo, {
-        infer: { ...INFER_DEFAULTS, outputMode: "both" },
-        filename: "t.ts",
-      });
-      expect(out).toBe(
+      const out = applied(
+        src,
+        [
+          entry("t.ts", src.indexOf("(s)") + 2, [["string"]]),
+          entry("t.ts", src.indexOf("(d)") + 2, [["number"]]),
+        ],
+        BOTH,
+      );
+      expect(out.text).toBe(
         "const make = (s: string /* @ts-capture[applied]: observed once */) => " +
           "(d: number /* @ts-capture[applied]: observed once */) => (e) => e;\n",
       );
@@ -1846,14 +1622,14 @@ describe("applyTypesToFileCst — TypeChecker verify integration", () => {
 
     it("keeps the leading note when the line holds one site", () => {
       const src = "const a = 1;\nconst b = f();\n";
-      const typeInfo: CollectedTypeInfo = [
-        entry("t.ts", src.indexOf("const b") + "const b".length, [["string"]], { varDecl: true }),
-      ];
-      const out = applyTypesToFileCst(src, typeInfo, {
-        infer: { ...INFER_DEFAULTS, outputMode: "both" },
-        filename: "t.ts",
-      });
-      expect(out).toContain("// @ts-capture[applied]: `b` observed once\nconst b: string = f();");
+      const out = applied(
+        src,
+        [entry("t.ts", src.indexOf("const b") + "const b".length, [["string"]], { varDecl: true })],
+        BOTH,
+      );
+      expect(out.text).toContain(
+        "// @ts-capture[applied]: `b` observed once\nconst b: string = f();",
+      );
     });
 
     // Rewriting a line and annotating it inline happen at the same positions,
@@ -1861,52 +1637,42 @@ describe("applyTypesToFileCst — TypeChecker verify integration", () => {
     // `)` around the parameter. These pin the combinations, and each asserts
     // the result still parses — a misplaced insertion corrupts syntax rather
     // than merely reading badly.
-    // `isParseableTypeString`'s guard, one level up: the applier refuses to
-    // write an unparseable *type*, and these assert it does not produce an
-    // unparseable *file* either.
-    const parses = (text: string): boolean => {
-      const sf = ts.createSourceFile("t.ts", text, ts.ScriptTarget.Latest, true);
-      const diags = (sf as unknown as { parseDiagnostics?: readonly ts.Diagnostic[] })
-        .parseDiagnostics;
-      return !diags || diags.length === 0;
-    };
-
     it("wraps a paren-less arrow, annotates it, and notes it, twice on one line", () => {
       const src = "const h = a.map(x => x.id).filter(y => y);\n";
       const xAt = src.indexOf("x =>");
       const yAt = src.indexOf("y =>");
-      const typeInfo: CollectedTypeInfo = [
-        entry("t.ts", xAt + 1, [["string"]], { parens: [xAt, xAt + 1] }),
-        entry("t.ts", yAt + 1, [["boolean"]], { parens: [yAt, yAt + 1] }),
-      ];
-      const out = applyTypesToFileCst(src, typeInfo, {
-        infer: { ...INFER_DEFAULTS, outputMode: "both" },
-        filename: "t.ts",
-      });
+      const out = applied(
+        src,
+        [
+          entry("t.ts", xAt + 1, [["string"]], { parens: [xAt, xAt + 1] }),
+          entry("t.ts", yAt + 1, [["boolean"]], { parens: [yAt, yAt + 1] }),
+        ],
+        BOTH,
+      );
       // The note lands outside the closing paren, where the annotation ends.
-      expect(out).toBe(
+      expect(out.text).toBe(
         "const h = a.map((x: string) /* @ts-capture[applied]: observed once */ => x.id)" +
           ".filter((y: boolean) /* @ts-capture[applied]: observed once */ => y);\n",
       );
-      expect(parses(out)).toBe(true);
+      expect(parseErrors(out)).toEqual([]);
     });
 
     it("annotates a parameter and a return type on one line, noting both", () => {
       const src = "const k = (a) => a.length;\n";
       const at = src.indexOf("(a)");
-      const typeInfo: CollectedTypeInfo = [
-        entry("t.ts", at + 2, [["string"]]),
-        entry("t.ts", at + 3, [["number"]], { returnType: true, fnRetPos: at + 3 }),
-      ];
-      const out = applyTypesToFileCst(src, typeInfo, {
-        infer: { ...INFER_DEFAULTS, outputMode: "both" },
-        filename: "t.ts",
-      });
-      expect(out).toBe(
+      const out = applied(
+        src,
+        [
+          entry("t.ts", at + 2, [["string"]]),
+          entry("t.ts", at + 3, [["number"]], { returnType: true, fnRetPos: at + 3 }),
+        ],
+        BOTH,
+      );
+      expect(out.text).toBe(
         "const k = (a: string /* @ts-capture[applied]: observed once */)" +
           ": number /* @ts-capture[applied]: observed once */ => a.length;\n",
       );
-      expect(parses(out)).toBe(true);
+      expect(parseErrors(out)).toEqual([]);
     });
 
     // Strip and write in one pass, against the original source, so the two
@@ -1915,12 +1681,9 @@ describe("applyTypesToFileCst — TypeChecker verify integration", () => {
       const src =
         "const h = a.map((x: string) /* @ts-capture[applied]: observed once */ => x.id)" +
         ".filter((y: boolean) /* @ts-capture[applied]: observed once */ => y);\n";
-      const out = applyTypesToFileCst(src, [], {
-        infer: { ...INFER_DEFAULTS, outputMode: "both" },
-        filename: "t.ts",
-      });
-      expect(out).toBe("const h = a.map((x: string) => x.id).filter((y: boolean) => y);\n");
-      expect(parses(out)).toBe(true);
+      const out = applied(src, [], BOTH);
+      expect(out.text).toBe("const h = a.map((x: string) => x.id).filter((y: boolean) => y);\n");
+      expect(parseErrors(out)).toEqual([]);
     });
 
     // A line is crowded by the notes that survive, not by the candidates that
@@ -1928,29 +1691,23 @@ describe("applyTypesToFileCst — TypeChecker verify integration", () => {
     // candidates, but `a: string` cannot annotate `1`, so verify drops it — and
     // the one note left belongs above the line, not inside it.
     it("puts the survivor above the line when verify rejects its neighbour", () => {
-      const proj = makeProject({
-        "target.ts": 'const a = 1, b = JSON.parse("2");\nexport { a, b };\n',
-      });
-      const projectCtx = createProjectVerificationContext(
-        proj.fileNames,
-        proj.compilerOptions,
-        proj.dir,
+      const src = 'const a = 1, b = JSON.parse("2");\nexport { a, b };\n';
+      const out = applied(
+        src,
+        [
+          entry("target.ts", src.indexOf("a =") + 1, [["string"]], { varDecl: true }),
+          entry("target.ts", src.indexOf("b =") + 1, [["number"]], { varDecl: true }),
+        ],
+        { verify: true, infer: { ...INFER_DEFAULTS, outputMode: "both" } },
       );
-      const verifyCtx = createVerificationContext(projectCtx, proj.target, proj.targetSource);
-      const typeInfo: CollectedTypeInfo = [
-        entry(proj.target, proj.targetSource.indexOf("a =") + 1, [["string"]], { varDecl: true }),
-        entry(proj.target, proj.targetSource.indexOf("b =") + 1, [["number"]], { varDecl: true }),
-      ];
-      const out = applyTypesToFileCst(proj.targetSource, typeInfo, {
-        verify: verifyCtx,
-        infer: { ...INFER_DEFAULTS, outputMode: "both" },
-      });
-      expect(out).not.toContain("a: string");
-      expect(out).not.toContain("/* @ts-capture");
-      expect(out).toContain(
-        '// @ts-capture[applied]: `b` observed once\nconst a = 1, b: number = JSON.parse("2");',
+      expect(out).toLeaveUntyped("a");
+      expect(out).toAnnotate("b", "number");
+      expect(out.text).not.toContain("/* @ts-capture");
+      expect(out.text).toContain(
+        "// @ts-capture[applied]: `b` observed once; TypeScript infers `any`\n" +
+          'const a = 1, b: number = JSON.parse("2");',
       );
-      expect(parses(out)).toBe(true);
+      expect(parseErrors(out)).toEqual([]);
     });
 
     // Conflict notes are notes too. They were left out of the crowding rule,
@@ -1960,70 +1717,55 @@ describe("applyTypesToFileCst — TypeChecker verify integration", () => {
     // `secondType` decides whether the inner `d` contradicts or gets annotated:
     // against `any` there is nothing to contradict.
     const chain = (secondType: string) => {
-      const proj = makeProject({
-        "target.ts":
-          `declare function run(f: (d: string) => (d: ${secondType}) => unknown): void;\n` +
-          "run(d => d => d);\n",
-      });
-      const program = createProjectVerificationContext(
-        proj.fileNames,
-        proj.compilerOptions,
-        proj.dir,
-      ).service.getProgram();
-      const first = proj.targetSource.indexOf("d =>") + 1;
-      const second = proj.targetSource.indexOf("d =>", first) + 1;
-      return { proj, program, first, second };
+      const src =
+        `declare function run(f: (d: string) => (d: ${secondType}) => unknown): void;\n` +
+        "run(d => d => d);\n";
+      const first = src.indexOf("d =>") + 1;
+      const second = src.indexOf("d =>", first) + 1;
+      return { src, first, second };
     };
 
     it("puts two conflicts at their sites rather than above the line", () => {
-      const { proj, program, first, second } = chain("number");
-      const typeInfo: CollectedTypeInfo = [
-        entry(proj.target, first, [["undefined"], ["string"]], { parens: [first - 1, first] }),
-        entry(proj.target, second, [["undefined"], ["number"]], { parens: [second - 1, second] }),
-      ];
-      const out = applyTypesToFileCst(
-        proj.targetSource,
-        typeInfo,
-        { filename: proj.target },
-        program,
+      const { src, first, second } = chain("number");
+      const out = applied(
+        src,
+        [
+          entry("target.ts", first, [["undefined"], ["string"]], { parens: [first - 1, first] }),
+          entry("target.ts", second, [["undefined"], ["number"]], { parens: [second - 1, second] }),
+        ],
+        { project: true },
       );
-      expect(out).toContain(
+      expect(out.text).toContain(
         "run(d /* @ts-capture[conflict]: observed `undefined`, TypeScript infers `string` */ " +
           "=> d /* @ts-capture[conflict]: observed `undefined`, TypeScript infers `number` */ => d);",
       );
-      expect(parses(out)).toBe(true);
+      expect(parseErrors(out)).toEqual([]);
     });
 
     it("uses one format when a conflict and an annotation share a line", () => {
-      const { proj, program, first, second } = chain("any");
-      const typeInfo: CollectedTypeInfo = [
-        entry(proj.target, first, [["undefined"], ["string"]], { parens: [first - 1, first] }),
-        entry(proj.target, second, [["number"]], { parens: [second - 1, second] }),
-      ];
-      const out = applyTypesToFileCst(
-        proj.targetSource,
-        typeInfo,
-        { filename: proj.target, infer: { ...INFER_DEFAULTS, outputMode: "both" } },
-        program,
+      const { src, first, second } = chain("any");
+      const out = applied(
+        src,
+        [
+          entry("target.ts", first, [["undefined"], ["string"]], { parens: [first - 1, first] }),
+          entry("target.ts", second, [["number"]], { parens: [second - 1, second] }),
+        ],
+        { project: true, infer: { ...INFER_DEFAULTS, outputMode: "both" } },
       );
-      expect(out).not.toContain("// @ts-capture");
-      expect(out).toContain("[conflict]: observed `undefined`");
-      expect(out).toContain("[applied]: observed once");
-      expect(parses(out)).toBe(true);
+      expect(out.text).not.toContain("// @ts-capture");
+      expect(out.text).toContain("[conflict]: observed `undefined`");
+      expect(out.text).toContain("[applied]: observed once");
+      expect(parseErrors(out)).toEqual([]);
     });
 
     it("keeps a lone conflict above the line", () => {
-      const { proj, program, first } = chain("any");
-      const typeInfo: CollectedTypeInfo = [
-        entry(proj.target, first, [["undefined"], ["string"]], { parens: [first - 1, first] }),
-      ];
-      const out = applyTypesToFileCst(
-        proj.targetSource,
-        typeInfo,
-        { filename: proj.target },
-        program,
+      const { src, first } = chain("any");
+      const out = applied(
+        src,
+        [entry("target.ts", first, [["undefined"], ["string"]], { parens: [first - 1, first] })],
+        { project: true },
       );
-      expect(out).toContain(
+      expect(out.text).toContain(
         "// @ts-capture[conflict]: `d` observed `undefined`, TypeScript infers `string`\nrun(d =>",
       );
     });
@@ -2035,31 +1777,31 @@ describe("applyTypesToFileCst — TypeChecker verify integration", () => {
     it("the offset applier puts a crowded line's notes at the sites too", () => {
       const src = "const k = (a) => a.length;\n";
       const at = src.indexOf("(a)");
-      const typeInfo: CollectedTypeInfo = [
-        entry("t.ts", at + 2, [["string"]]),
-        entry("t.ts", at + 3, [["number"]], { returnType: true, fnRetPos: at + 3 }),
-      ];
-      const out = applyTypesToFile(src, typeInfo, {
-        infer: { ...INFER_DEFAULTS, outputMode: "both" },
-        filename: "t.ts",
-      });
-      expect(out).toBe(
+      const out = applied(
+        src,
+        [
+          entry("t.ts", at + 2, [["string"]]),
+          entry("t.ts", at + 3, [["number"]], { returnType: true, fnRetPos: at + 3 }),
+        ],
+        { ...BOTH, applier: "offset" },
+      );
+      expect(out.text).toBe(
         "const k = (a: string /* @ts-capture[applied]: observed once */)" +
           ": number /* @ts-capture[applied]: observed once */ => a.length;\n",
       );
-      expect(parses(out)).toBe(true);
+      expect(parseErrors(out)).toEqual([]);
     });
 
     it("the offset applier keeps a lone note above the line", () => {
       const src = "const a = 1;\nconst b = f();\n";
-      const typeInfo: CollectedTypeInfo = [
-        entry("t.ts", src.indexOf("const b") + "const b".length, [["string"]], { varDecl: true }),
-      ];
-      const out = applyTypesToFile(src, typeInfo, {
-        infer: { ...INFER_DEFAULTS, outputMode: "both" },
-        filename: "t.ts",
-      });
-      expect(out).toContain("// @ts-capture[applied]: `b` observed once\nconst b: string = f();");
+      const out = applied(
+        src,
+        [entry("t.ts", src.indexOf("const b") + "const b".length, [["string"]], { varDecl: true })],
+        { ...BOTH, applier: "offset" },
+      );
+      expect(out.text).toContain(
+        "// @ts-capture[applied]: `b` observed once\nconst b: string = f();",
+      );
     });
 
     // A preview that names an annotation apply would not actually write is not
@@ -2067,121 +1809,88 @@ describe("applyTypesToFileCst — TypeChecker verify integration", () => {
     // annotations — the difference being exactly the candidates the batch
     // verify pass rejects.
     it("does not preview an annotation verify would reject", () => {
-      const proj = makeProject({ "target.ts": "const x = 1;\n" });
-      const projectCtx = createProjectVerificationContext(
-        proj.fileNames,
-        proj.compilerOptions,
-        proj.dir,
-      );
-      const verifyCtx = createVerificationContext(projectCtx, proj.target, proj.targetSource);
       // `const x = 1` cannot be a `string`; verify rejects it.
-      const xEnd = proj.targetSource.indexOf("x") + 1;
-      const typeInfo: CollectedTypeInfo = [
-        entry(proj.target, xEnd, [["string"]], { varDecl: true }),
-      ];
-      const out = applyTypesToFileCst(proj.targetSource, typeInfo, {
-        verify: verifyCtx,
-        infer: { ...INFER_DEFAULTS, outputMode: "comments" },
-      });
-      expect(out).toBe(proj.targetSource);
+      const src = "const x = 1;\n";
+      const out = applied(
+        src,
+        [entry("target.ts", src.indexOf("x") + 1, [["string"]], { varDecl: true })],
+        {
+          verify: true,
+          infer: { ...INFER_DEFAULTS, outputMode: "comments" },
+        },
+      );
+      expect(out.text).toBe(src);
     });
 
     // The preview is scaffolding: an ordinary apply owns every line carrying
     // the marker, so the next run cleans up after the review.
     it("an ordinary apply removes a preview left behind", () => {
-      const { proj, program, typeInfo } = project();
-      const previewed = applyTypesToFileCst(
-        proj.targetSource,
-        typeInfo,
-        { filename: proj.target, infer: { ...INFER_DEFAULTS, outputMode: "comments" } },
-        program,
-      );
-      expect(previewed).toContain("@ts-capture");
+      const previewed = inMode("comments");
+      expect(previewed.text).toContain("@ts-capture");
       // Second pass over the previewed text, in the default mode. The offsets
       // the entries carry are into the original source, so this asserts only
       // that the notes are gone.
-      const cleaned = applyTypesToFileCst(previewed, [], { filename: proj.target });
-      expect(cleaned).not.toContain("@ts-capture");
+      const cleaned = applied(previewed.text, [], { project: true });
+      expect(cleaned.text).not.toContain("@ts-capture");
     });
   });
 
   it("removes a note whose conflict is gone", () => {
-    const proj = makeProject({
-      "target.ts":
-        "export function f(): string {\n" +
-        "  return 'x';\n" +
-        "}\n" +
-        "export function g() {\n" +
-        "  // @ts-capture: `p` observed `undefined`, TypeScript infers `string`\n" +
-        "  const p = f();\n" +
-        "  return p;\n" +
-        "}\n",
-    });
-    const program = createProjectVerificationContext(
-      proj.fileNames,
-      proj.compilerOptions,
-      proj.dir,
-    ).service.getProgram();
+    const src =
+      "export function f(): string {\n" +
+      "  return 'x';\n" +
+      "}\n" +
+      "export function g() {\n" +
+      "  // @ts-capture: `p` observed `undefined`, TypeScript infers `string`\n" +
+      "  const p = f();\n" +
+      "  return p;\n" +
+      "}\n";
     // No entry contradicts anything this time.
-    const result = applyTypesToFileCst(proj.targetSource, [], { filename: proj.target }, program);
-    expect(result).not.toContain("@ts-capture");
-    expect(result).toContain("const p = f();");
+    const out = applied(src, [], { project: true });
+    expect(out.text).not.toContain("@ts-capture");
+    expect(out).toLeaveUntyped("p");
   });
 
   // Found by the eval, not by the tests above: nest aliases `this` into a local
   // (`const self: Module = this`) so a class expression can close over it. The
   // checker types that binding `this` too, and writing the class name there
   // erases exactly what it erases on a return type.
-  it("never annotates a binding the checker infers as `this`", () => {
-    const proj = makeProject({
-      "target.ts":
+  it.each(["cst", "offset"] as const)(
+    "never annotates a binding the checker infers as `this` (%s)",
+    (applier) => {
+      const src =
         "export class Module {\n" +
         "  make() {\n" +
         "    const self = this;\n" +
         "    return self;\n" +
         "  }\n" +
-        "}\n",
-    });
-    const program = createProjectVerificationContext(
-      proj.fileNames,
-      proj.compilerOptions,
-      proj.dir,
-    ).service.getProgram();
-    const selfEnd = proj.targetSource.indexOf("const self") + "const self".length;
-    const typeInfo: CollectedTypeInfo = [
-      entry(proj.target, selfEnd, [["Module"]], { varDecl: true }),
-    ];
-    const opts = { filename: proj.target };
-    expect(applyTypesToFileCst(proj.targetSource, typeInfo, opts, program)).toBe(proj.targetSource);
-    expect(applyTypesToFile(proj.targetSource, typeInfo, opts, program)).toBe(proj.targetSource);
-  });
+        "}\n";
+      const out = applied(
+        src,
+        [
+          entry("target.ts", src.indexOf("const self") + "const self".length, [["Module"]], {
+            varDecl: true,
+          }),
+        ],
+        { project: true, applier },
+      );
+      expect(out).toLeaveUntyped("self");
+    },
+  );
 
   // Control: same shape, same class name written, but the body does not return
   // `this` — so the guard must not fire and the annotation must land. Without
   // this the test above would pass just as well if the applier stopped
   // annotating return types altogether.
   it("still annotates a class-typed return the checker cannot infer", () => {
-    const proj = makeProject({
-      "target.ts":
-        "export class Builder {\n" + "  make(f) {\n" + "    return f;\n" + "  }\n" + "}\n",
-    });
-    const projectCtx = createProjectVerificationContext(
-      proj.fileNames,
-      proj.compilerOptions,
-      proj.dir,
+    const src = "export class Builder {\n" + "  make(f) {\n" + "    return f;\n" + "  }\n" + "}\n";
+    const paramsClose = src.indexOf("make(f)") + "make(f)".length;
+    const out = applied(
+      src,
+      [entry("target.ts", paramsClose, [["Builder"]], { returnType: true, fnRetPos: paramsClose })],
+      { project: true },
     );
-    const paramsClose = proj.targetSource.indexOf("make(f)") + "make(f)".length;
-    const typeInfo: CollectedTypeInfo = [
-      entry(proj.target, paramsClose, [["Builder"]], { returnType: true, fnRetPos: paramsClose }),
-    ];
-    expect(
-      applyTypesToFileCst(
-        proj.targetSource,
-        typeInfo,
-        { filename: proj.target },
-        projectCtx.service.getProgram(),
-      ),
-    ).toContain("make(f): Builder {");
+    expect(out).toAnnotate({ returnOf: "make" }, { ref: "Builder" });
   });
 
   describe("infer.aliasRepeatedShapes with the type-check oracle", () => {
@@ -2228,34 +1937,29 @@ describe("applyTypesToFileCst — infer.ignoreExistingTypes", () => {
   // (`!node.type` filter on params, `hasType` skip on varDecls,
   // `hasReturnType` skip on return types). The new annotation is emitted
   // even at already-typed positions; output is intentionally broken TS
-  // but the emitted annotations are grep-able.
+  // but the emitted annotations are grep-able, so the text is the claim.
+  const MEASURE = {
+    infer: { ...INFER_DEFAULTS, requireTypeRefInScope: false, ignoreExistingTypes: true },
+  };
 
   it("default behaviour: typed param is NOT indexed (existing CST contract)", () => {
-    // Sanity for parity with the legacy idempotency-test in apply-types.spec.ts.
     const source = "function foo(a: string) {}";
-    const typeInfo: CollectedTypeInfo = [entry("test.ts", 14, [["number"]])];
-    expect(applyTypesToFileCst(source, typeInfo, {})).toBe(source);
+    expect(applied(source, [entry("test.ts", 14, [["number"]])]).text).toBe(source);
   });
 
   it("flag on: typed param IS re-annotated despite existing annotation", () => {
     const source = "function foo(a: string) {}";
-    const typeInfo: CollectedTypeInfo = [entry("test.ts", 14, [["number"]])];
-    const result = applyTypesToFileCst(source, typeInfo, {
-      infer: { ...INFER_DEFAULTS, requireTypeRefInScope: false, ignoreExistingTypes: true },
-    });
-    expect(result).toContain(": number");
-    expect(result).not.toBe(source);
+    const out = applied(source, [entry("test.ts", 14, [["number"]])], MEASURE);
+    expect(out.text).toContain(": number");
+    expect(out.text).not.toBe(source);
   });
 
   it("flag on: typed varDecl IS re-annotated", () => {
     const source = "const x: number = 1;";
     // pos = end of "x" (after the identifier name)
-    const typeInfo: CollectedTypeInfo = [entry("test.ts", 7, [["string"]], { varDecl: true })];
-    const result = applyTypesToFileCst(source, typeInfo, {
-      infer: { ...INFER_DEFAULTS, requireTypeRefInScope: false, ignoreExistingTypes: true },
-    });
-    expect(result).toContain(": string");
-    expect(result).not.toBe(source);
+    const out = applied(source, [entry("test.ts", 7, [["string"]], { varDecl: true })], MEASURE);
+    expect(out.text).toContain(": string");
+    expect(out.text).not.toBe(source);
   });
 });
 
@@ -2269,31 +1973,40 @@ describe("a const assertion is never overwritten", () => {
   //
   // Unconditional, unlike skipRedundantAnnotations: a user who asks for
   // redundant annotations is asking for restatement, not for destruction.
-  it.each([
-    ['const M = { a: "guard" } as const;', "M", "{ a: string }"],
-    ['const M = ["a", "b"] as const satisfies string[];', "M", "string[]"],
-    ['const M = { [K]: "guard" } as const;', "M", "{ __guards__: string }"],
-  ])("leaves %s alone", (source, name, emitted) => {
-    const pos = source.indexOf(name) + name.length;
-    const typeInfo: CollectedTypeInfo = [entry("test.ts", pos, [[emitted]], { varDecl: true })];
-    expect(applyTypesToFileCst(source, typeInfo, KEEP_INFERABLE)).toBe(source);
-    expect(applyTypesToFile(source, typeInfo, KEEP_INFERABLE)).toBe(source);
-  });
+  const ASSERTED: Array<[string, string]> = [
+    ['const M = { a: "guard" } as const;', "{ a: string }"],
+    ['const M = ["a", "b"] as const satisfies string[];', "string[]"],
+    ['const M = { [K]: "guard" } as const;', "{ __guards__: string }"],
+  ];
+  for (const applier of ["cst", "offset"] as const) {
+    it.each(ASSERTED)(`leaves %s alone (${applier})`, (source, emitted) => {
+      const pos = source.indexOf("M") + 1;
+      const out = applied(source, [entry("test.ts", pos, [[emitted]], { varDecl: true })], {
+        ...KEEP_INFERABLE,
+        applier,
+      });
+      expect(out).toLeaveUntyped("M");
+    });
+  }
 
   // `unique symbol` is the same narrowing, inferred rather than asked for.
   // Writing `: symbol` widens it away and every `x === THE_SYMBOL` narrowing
   // downstream stops working — one annotation on nestjs/nest's
   // `VERSION_NEUTRAL` produced three compile errors in files that never
   // mention it. Destruction, not restatement, so it does not wait for the flag.
-  it.each([["const sym = Symbol('x');"], ["const sym = Symbol.for('x');"]])(
-    "leaves %s alone even with the flag off",
-    (source) => {
-      const pos = source.indexOf("sym") + 3;
-      const typeInfo: CollectedTypeInfo = [entry("test.ts", pos, [["symbol"]], { varDecl: true })];
-      expect(applyTypesToFileCst(source, typeInfo, KEEP_INFERABLE)).toBe(source);
-      expect(applyTypesToFile(source, typeInfo, KEEP_INFERABLE)).toBe(source);
-    },
-  );
+  for (const applier of ["cst", "offset"] as const) {
+    it.each([["const sym = Symbol('x');"], ["const sym = Symbol.for('x');"]])(
+      `leaves %s alone even with the flag off (${applier})`,
+      (source) => {
+        const pos = source.indexOf("sym") + 3;
+        const out = applied(source, [entry("test.ts", pos, [["symbol"]], { varDecl: true })], {
+          ...KEEP_INFERABLE,
+          applier,
+        });
+        expect(out).toLeaveUntyped("sym");
+      },
+    );
+  }
 
   // The guard is syntactic, like the rest of this module: a bare `Symbol`
   // identifier and nothing else. This one is the control — if it stops being
@@ -2301,19 +2014,22 @@ describe("a const assertion is never overwritten", () => {
   it("still annotates a call that only looks like Symbol", () => {
     const source = "const sym = ns.Symbol('x');";
     const pos = source.indexOf("sym") + 3;
-    const typeInfo: CollectedTypeInfo = [entry("test.ts", pos, [["symbol"]], { varDecl: true })];
-    expect(applyTypesToFileCst(source, typeInfo, KEEP_INFERABLE)).toContain("const sym: symbol");
+    const out = applied(
+      source,
+      [entry("test.ts", pos, [["symbol"]], { varDecl: true })],
+      KEEP_INFERABLE,
+    );
+    expect(out).toAnnotate("sym", "symbol");
   });
 
   it("still annotates an initializer without the assertion", () => {
     const source = 'const M = { [K]: "guard" };';
-    const pos = source.indexOf("M") + 1;
-    const typeInfo: CollectedTypeInfo = [
-      entry("test.ts", pos, [["{ __guards__: string }"]], { varDecl: true }),
-    ];
-    expect(applyTypesToFileCst(source, typeInfo, KEEP_INFERABLE)).toBe(
-      'const M: { __guards__: string } = { [K]: "guard" };',
+    const out = applied(
+      source,
+      [entry("test.ts", source.indexOf("M") + 1, [["{ __guards__: string }"]], { varDecl: true })],
+      KEEP_INFERABLE,
     );
+    expect(out).toAnnotate("M", "{ __guards__: string }");
   });
 });
 
