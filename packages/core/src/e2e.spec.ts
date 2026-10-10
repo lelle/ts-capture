@@ -5,11 +5,11 @@ import path from "node:path";
 import { describe, expect, it } from "vitest";
 
 import { buildTscptrScaffoldLines } from "./test-tscptr-scaffold.js";
+import { checked } from "./test-utils/applied.js";
 
 const CLI = path.resolve("dist/cli.js");
 const DIST = path.resolve("dist");
-const NODE_MODULES = path.resolve("node_modules");
-const TS_LIB = path.join(NODE_MODULES, "typescript/lib/typescript.js");
+const TS_LIB = path.resolve("node_modules/typescript/lib/typescript.js");
 
 function withTmpDir(fn: (dir: string) => void) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "ts-capture-e2e-"));
@@ -20,122 +20,105 @@ function withTmpDir(fn: (dir: string) => void) {
   }
 }
 
+function runNode(file: string): void {
+  execFileSync("node", [file], { encoding: "utf-8", timeout: 15000 });
+}
+
+/**
+ * Instrument and apply through the CLI, with a runner script in between that
+ * transpiles, executes with the collector wired up, and dumps the types as
+ * the CLI's `apply` reads them. `globals` are what the executed code needs
+ * besides `console`. Returns the file's text afterwards.
+ */
+function throughCli(dir: string, name: string, content: string, globals: string[] = []): string {
+  const srcFile = path.join(dir, name);
+  fs.writeFileSync(srcFile, content);
+  const instrumented = execFileSync("node", [CLI, "instrument", srcFile], { encoding: "utf-8" });
+  fs.writeFileSync(path.join(dir, "instrumented.ts"), instrumented);
+
+  const typesFile = path.join(dir, "types.json");
+  const runnerFile = path.join(dir, "runner.mjs");
+  const names = ["__tscptr__", "console", ...globals].map((n) => JSON.stringify(n));
+  const values = ["tscptr", "console", ...globals];
+  fs.writeFileSync(
+    runnerFile,
+    [
+      `import { createCollectionContext } from "${DIST}/type-collector.js";`,
+      `import fs from "node:fs";`,
+      `import ts from "${TS_LIB}";`,
+      `const ctx = createCollectionContext();`,
+      ...buildTscptrScaffoldLines(),
+      `const src = fs.readFileSync("${path.join(dir, "instrumented.ts")}", "utf-8");`,
+      `const compiled = ts.transpile(src, {target: ts.ScriptTarget.ES2015});`,
+      `new Function(${names.join(",")},compiled)(${values.join(",")});`,
+      `fs.writeFileSync("${typesFile}", JSON.stringify(ctx.getCollectedTypes()));`,
+    ].join("\n"),
+  );
+  runNode(runnerFile);
+  execFileSync("node", [CLI, "apply", typesFile], { encoding: "utf-8" });
+  return fs.readFileSync(srcFile, "utf-8");
+}
+
+/**
+ * What register.ts and loader.ts do, as one script against the built package:
+ * instrument, execute, collect, and apply on exit. Returns the file's text
+ * afterwards.
+ */
+function throughRunner(dir: string, name: string, content: string): string {
+  const srcFile = path.join(dir, name);
+  fs.writeFileSync(srcFile, content);
+  const runnerFile = path.join(dir, "runner.mjs");
+  fs.writeFileSync(
+    runnerFile,
+    [
+      `import { instrumentSource } from "${DIST}/instrument.js";`,
+      `import { createCollectionContext } from "${DIST}/type-collector.js";`,
+      `import { applyTypesToFile } from "${DIST}/apply-types.js";`,
+      `import fs from "node:fs";`,
+      `import ts from "${TS_LIB}";`,
+      `const srcFile = "${srcFile}";`,
+      `const source = fs.readFileSync(srcFile, "utf-8");`,
+      `const instrumented = instrumentSource(source, srcFile);`,
+      `const ctx = createCollectionContext();`,
+      ...buildTscptrScaffoldLines(),
+      `const compiled = ts.transpile(instrumented, {target: ts.ScriptTarget.ES2015});`,
+      `new Function("__tscptr__","console",compiled)(tscptr,console);`,
+      `const types = ctx.getCollectedTypes().filter(([f]) => f === srcFile);`,
+      `if (types.length > 0) fs.writeFileSync(srcFile, applyTypesToFile(source, types, {}));`,
+    ].join("\n"),
+  );
+  runNode(runnerFile);
+  return fs.readFileSync(srcFile, "utf-8");
+}
+
+const GREET = 'function greet(name) { return "Hello " + name; }\ngreet("World");\n';
+
 describe("E2E: CLI pipeline (instrument → run → apply)", () => {
   it("adds string type via full CLI flow", () => {
     withTmpDir((dir) => {
-      const srcFile = path.join(dir, "app.ts");
-      fs.writeFileSync(
-        srcFile,
-        ['function greet(name) { return "Hello " + name; }', 'greet("World");', ""].join("\n"),
-      );
-
-      // Step 1: instrument via CLI
-      const instrumented = execFileSync("node", [CLI, "instrument", srcFile], {
-        encoding: "utf-8",
-      });
-
-      // Step 2: write a runner that transpiles + executes + collects + dumps JSON
-      const runnerFile = path.join(dir, "runner.mjs");
-      const typesFile = path.join(dir, "types.json");
-      fs.writeFileSync(
-        runnerFile,
-        [
-          `import { createCollectionContext } from "${DIST}/type-collector.js";`,
-          `import fs from "node:fs";`,
-          `import ts from "${TS_LIB}";`,
-          `const ctx = createCollectionContext();`,
-          ...buildTscptrScaffoldLines(),
-          `const src = fs.readFileSync("${path.join(dir, "instrumented.ts")}", "utf-8");`,
-          `const compiled = ts.transpile(src, {target: ts.ScriptTarget.ES2015});`,
-          `new Function("__tscptr__","console",compiled)(tscptr,console);`,
-          `fs.writeFileSync("${typesFile}", JSON.stringify(ctx.getCollectedTypes()));`,
-        ].join("\n"),
-      );
-      fs.writeFileSync(path.join(dir, "instrumented.ts"), instrumented);
-
-      execFileSync("node", [runnerFile], { encoding: "utf-8", timeout: 15000 });
-
-      // Step 3: apply via CLI
-      execFileSync("node", [CLI, "apply", typesFile], { encoding: "utf-8" });
-
-      // Verify
-      const result = fs.readFileSync(srcFile, "utf-8");
-      expect(result).toContain("name: string");
+      const out = checked(GREET, throughCli(dir, "app.ts", GREET));
+      expect(out).toTypeAs("name", "string");
+      expect(out).toTypeAs({ returnOf: "greet" }, "string");
+      expect(out).toHaveNoNewDiagnostics();
     });
   });
 
   it("adds number type to arrow function via CLI flow", () => {
     withTmpDir((dir) => {
-      const srcFile = path.join(dir, "math.ts");
-      fs.writeFileSync(srcFile, "const double = (x) => x * 2;\ndouble(21);\n");
-
-      const instrumented = execFileSync("node", [CLI, "instrument", srcFile], {
-        encoding: "utf-8",
-      });
-
-      const runnerFile = path.join(dir, "runner.mjs");
-      const typesFile = path.join(dir, "types.json");
-      fs.writeFileSync(
-        runnerFile,
-        [
-          `import { createCollectionContext } from "${DIST}/type-collector.js";`,
-          `import fs from "node:fs";`,
-          `import ts from "${TS_LIB}";`,
-          `const ctx = createCollectionContext();`,
-          ...buildTscptrScaffoldLines(),
-          `const src = fs.readFileSync("${path.join(dir, "instrumented.ts")}", "utf-8");`,
-          `const compiled = ts.transpile(src, {target: ts.ScriptTarget.ES2015});`,
-          `new Function("__tscptr__","console",compiled)(tscptr,console);`,
-          `fs.writeFileSync("${typesFile}", JSON.stringify(ctx.getCollectedTypes()));`,
-        ].join("\n"),
-      );
-      fs.writeFileSync(path.join(dir, "instrumented.ts"), instrumented);
-
-      execFileSync("node", [runnerFile], { encoding: "utf-8", timeout: 15000 });
-      execFileSync("node", [CLI, "apply", typesFile], { encoding: "utf-8" });
-
-      const result = fs.readFileSync(srcFile, "utf-8");
-      expect(result).toContain("x: number");
+      const input = "const double = (x) => x * 2;\ndouble(21);\n";
+      const out = checked(input, throughCli(dir, "math.ts", input));
+      expect(out).toTypeAs("x", "number");
+      expect(out).toTypeAs({ returnOf: "double" }, "number");
+      expect(out).toHaveNoNewDiagnostics();
     });
   });
 
   it("handles union types from multiple calls", () => {
     withTmpDir((dir) => {
-      const srcFile = path.join(dir, "union.ts");
-      fs.writeFileSync(
-        srcFile,
-        ["function show(val) { return String(val); }", 'show("hello");', "show(42);", ""].join(
-          "\n",
-        ),
-      );
-
-      const instrumented = execFileSync("node", [CLI, "instrument", srcFile], {
-        encoding: "utf-8",
-      });
-
-      const runnerFile = path.join(dir, "runner.mjs");
-      const typesFile = path.join(dir, "types.json");
-      fs.writeFileSync(
-        runnerFile,
-        [
-          `import { createCollectionContext } from "${DIST}/type-collector.js";`,
-          `import fs from "node:fs";`,
-          `import ts from "${TS_LIB}";`,
-          `const ctx = createCollectionContext();`,
-          ...buildTscptrScaffoldLines(),
-          `const src = fs.readFileSync("${path.join(dir, "instrumented.ts")}", "utf-8");`,
-          `const compiled = ts.transpile(src, {target: ts.ScriptTarget.ES2015});`,
-          `new Function("__tscptr__","console","String",compiled)(tscptr,console,String);`,
-          `fs.writeFileSync("${typesFile}", JSON.stringify(ctx.getCollectedTypes()));`,
-        ].join("\n"),
-      );
-      fs.writeFileSync(path.join(dir, "instrumented.ts"), instrumented);
-
-      execFileSync("node", [runnerFile], { encoding: "utf-8", timeout: 15000 });
-      execFileSync("node", [CLI, "apply", typesFile], { encoding: "utf-8" });
-
-      const result = fs.readFileSync(srcFile, "utf-8");
-      expect(result).toContain("val: number | string");
+      const input = 'function show(val) { return String(val); }\nshow("hello");\nshow(42);\n';
+      const out = checked(input, throughCli(dir, "union.ts", input, ["String"]));
+      expect(out).toTypeAs("val", "number | string");
+      expect(out).toHaveNoNewDiagnostics();
     });
   });
 });
@@ -143,127 +126,34 @@ describe("E2E: CLI pipeline (instrument → run → apply)", () => {
 describe("E2E: Node runner (loader-based)", () => {
   it("instruments, collects, and applies types in one shot", () => {
     withTmpDir((dir) => {
-      const srcFile = path.join(dir, "app.ts");
-      fs.writeFileSync(
-        srcFile,
-        ['function greet(name) { return "Hello " + name; }', 'greet("World");', ""].join("\n"),
-      );
-
-      // Runner that simulates what register.ts + loader.ts do:
-      // instrument → execute → collect → apply on exit
-      const runnerFile = path.join(dir, "runner.mjs");
-      fs.writeFileSync(
-        runnerFile,
-        [
-          `import { instrumentSource } from "${DIST}/instrument.js";`,
-          `import { createCollectionContext } from "${DIST}/type-collector.js";`,
-          `import { applyTypesToFile } from "${DIST}/apply-types.js";`,
-          `import fs from "node:fs";`,
-          `import ts from "${TS_LIB}";`,
-          ``,
-          `const srcFile = "${srcFile}";`,
-          `const source = fs.readFileSync(srcFile, "utf-8");`,
-          ``,
-          `// Phase 1: Instrument`,
-          `const instrumented = instrumentSource(source, srcFile);`,
-          ``,
-          `// Phase 2: Set up collection context (like loader.ts does)`,
-          `const ctx = createCollectionContext();`,
-          ...buildTscptrScaffoldLines(),
-          ``,
-          `// Phase 3: Execute`,
-          `const compiled = ts.transpile(instrumented, {target: ts.ScriptTarget.ES2015});`,
-          `new Function("__tscptr__","console",compiled)(tscptr,console);`,
-          ``,
-          `// Phase 4: Apply on "exit" (like register.ts process.on("exit") does)`,
-          `const types = ctx.getCollectedTypes().filter(([f]) => f === srcFile);`,
-          `if (types.length > 0) {`,
-          `  fs.writeFileSync(srcFile, applyTypesToFile(source, types, {}));`,
-          `}`,
-        ].join("\n"),
-      );
-
-      execFileSync("node", [runnerFile], { encoding: "utf-8", timeout: 15000 });
-
-      const result = fs.readFileSync(srcFile, "utf-8");
-      expect(result).toContain("name: string");
+      const out = checked(GREET, throughRunner(dir, "app.ts", GREET));
+      expect(out).toTypeAs("name", "string");
+      expect(out).toTypeAs({ returnOf: "greet" }, "string");
+      expect(out).toHaveNoNewDiagnostics();
     });
   });
 
   it("handles class methods end-to-end", () => {
     withTmpDir((dir) => {
-      const srcFile = path.join(dir, "greeter.ts");
-      fs.writeFileSync(
-        srcFile,
-        [
-          "class Greeter {",
-          "  greet(who) { return 'Hello, ' + who; }",
-          "}",
-          "new Greeter().greet('World');",
-          "",
-        ].join("\n"),
-      );
-
-      const runnerFile = path.join(dir, "runner.mjs");
-      fs.writeFileSync(
-        runnerFile,
-        [
-          `import { instrumentSource } from "${DIST}/instrument.js";`,
-          `import { createCollectionContext } from "${DIST}/type-collector.js";`,
-          `import { applyTypesToFile } from "${DIST}/apply-types.js";`,
-          `import fs from "node:fs";`,
-          `import ts from "${TS_LIB}";`,
-          `const srcFile = "${srcFile}";`,
-          `const source = fs.readFileSync(srcFile, "utf-8");`,
-          `const instrumented = instrumentSource(source, srcFile);`,
-          `const ctx = createCollectionContext();`,
-          ...buildTscptrScaffoldLines(),
-          `const compiled = ts.transpile(instrumented, {target: ts.ScriptTarget.ES2015});`,
-          `new Function("__tscptr__","console",compiled)(tscptr,console);`,
-          `const types = ctx.getCollectedTypes().filter(([f]) => f === srcFile);`,
-          `if (types.length > 0) fs.writeFileSync(srcFile, applyTypesToFile(source, types, {}));`,
-        ].join("\n"),
-      );
-
-      execFileSync("node", [runnerFile], { encoding: "utf-8", timeout: 15000 });
-
-      const result = fs.readFileSync(srcFile, "utf-8");
-      expect(result).toContain("who: string");
+      const input = [
+        "class Greeter {",
+        "  greet(who) { return 'Hello, ' + who; }",
+        "}",
+        "new Greeter().greet('World');",
+        "",
+      ].join("\n");
+      const out = checked(input, throughRunner(dir, "greeter.ts", input));
+      expect(out).toTypeAs("who", "string");
+      expect(out).toTypeAs({ returnOf: "greet" }, "string");
+      expect(out).toHaveNoNewDiagnostics();
     });
   });
 
   it("leaves files unchanged when no types collected", () => {
     withTmpDir((dir) => {
-      const srcFile = path.join(dir, "unused.ts");
+      // Untouched means byte for byte, so the text is the claim.
       const original = "function unused(x) { return x; }\n";
-      fs.writeFileSync(srcFile, original);
-
-      const runnerFile = path.join(dir, "runner.mjs");
-      fs.writeFileSync(
-        runnerFile,
-        [
-          `import { instrumentSource } from "${DIST}/instrument.js";`,
-          `import { createCollectionContext } from "${DIST}/type-collector.js";`,
-          `import { applyTypesToFile } from "${DIST}/apply-types.js";`,
-          `import fs from "node:fs";`,
-          `import ts from "${TS_LIB}";`,
-          `const srcFile = "${srcFile}";`,
-          `const source = fs.readFileSync(srcFile, "utf-8");`,
-          `const instrumented = instrumentSource(source, srcFile);`,
-          `const ctx = createCollectionContext();`,
-          ...buildTscptrScaffoldLines(),
-          `// Execute but never call the function`,
-          `const compiled = ts.transpile(instrumented, {target: ts.ScriptTarget.ES2015});`,
-          `new Function("__tscptr__","console",compiled)(tscptr,console);`,
-          `const types = ctx.getCollectedTypes().filter(([f]) => f === srcFile);`,
-          `if (types.length > 0) fs.writeFileSync(srcFile, applyTypesToFile(source, types, {}));`,
-        ].join("\n"),
-      );
-
-      execFileSync("node", [runnerFile], { encoding: "utf-8", timeout: 15000 });
-
-      const result = fs.readFileSync(srcFile, "utf-8");
-      expect(result).toBe(original);
+      expect(throughRunner(dir, "unused.ts", original)).toBe(original);
     });
   });
 });

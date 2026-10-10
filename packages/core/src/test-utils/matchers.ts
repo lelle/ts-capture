@@ -63,12 +63,26 @@ function findSite(out: Applied, site: Site): ts.NamedDeclaration | ts.SignatureD
   return found as ts.NamedDeclaration | ts.SignatureDeclaration;
 }
 
+// A parameter of a function type, `cb: (p: unknown) => void`, is a node named
+// `p` too, but nothing is written at it and it has no value.
 function isNamedSite(node: ts.Node): node is ts.NamedDeclaration {
   return (
-    ts.isParameter(node) ||
+    (ts.isParameter(node) && hasBody(node.parent)) ||
     ts.isVariableDeclaration(node) ||
     ts.isPropertyDeclaration(node) ||
     ts.isBindingElement(node)
+  );
+}
+
+function hasBody(fn: ts.Node): fn is ts.FunctionLikeDeclaration {
+  return (
+    ts.isFunctionDeclaration(fn) ||
+    ts.isFunctionExpression(fn) ||
+    ts.isArrowFunction(fn) ||
+    ts.isMethodDeclaration(fn) ||
+    ts.isConstructorDeclaration(fn) ||
+    ts.isGetAccessorDeclaration(fn) ||
+    ts.isSetAccessorDeclaration(fn)
   );
 }
 

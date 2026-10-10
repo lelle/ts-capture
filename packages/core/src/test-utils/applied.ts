@@ -95,25 +95,48 @@ export function applied(
     );
   }
 
+  return {
+    ...inspect(project, name, text, inputDiagnostics),
+    input: source,
+    entries,
+    options,
+    verify,
+  };
+}
+
+/**
+ * An output produced elsewhere, such as by the CLI in a subprocess, held
+ * against its input the same way: what was written, what it means, and what
+ * diagnostics it added.
+ */
+export function checked(
+  source: string,
+  text: string,
+  options: Pick<AppliedOptions, "filename" | "files"> = {},
+): Applied {
+  const name = options.filename ?? "target.ts";
+  const project = makeProject({ ...options.files, [name]: source });
+  const inputDiagnostics = diagnosticsOf(programOf(project));
+  return { ...inspect(project, name, text, inputDiagnostics), input: source, entries: [], options };
+}
+
+function inspect(
+  project: TestProject,
+  name: string,
+  text: string,
+  inputDiagnostics: ts.Diagnostic[],
+): Pick<
+  Applied,
+  "text" | "filename" | "project" | "sf" | "program" | "checker" | "newDiagnostics"
+> {
+  const filename = project.pathOf(name);
   project.write(name, text);
   const program = programOf(project);
   const sf = program.getSourceFile(filename);
   if (!sf) throw new Error(`the output of ${name} is not in the program`);
   const checker = program.getTypeChecker();
   const newDiagnostics = subtract(diagnosticsOf(program), inputDiagnostics);
-  return {
-    input: source,
-    text,
-    filename,
-    project,
-    sf,
-    program,
-    checker,
-    entries,
-    options,
-    newDiagnostics,
-    verify,
-  };
+  return { text, filename, project, sf, program, checker, newDiagnostics };
 }
 
 function run(
