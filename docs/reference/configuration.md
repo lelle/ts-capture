@@ -221,16 +221,17 @@ it runs inside your process, before any config file is read. (The two
 `@ts-capture/vite`-only rows are the exception: the plugin reads them at build
 time.)
 
-| Variable                               | Default                                 | What it does                                                                                                  |
-| -------------------------------------- | --------------------------------------- | ------------------------------------------------------------------------------------------------------------- |
-| `TS_CAPTURE_TYPES_DIR`                 | **`os.tmpdir()`**                       | Directory for the per-process `ts-capture-types-<uuid>.json` dumps. Created if missing.                       |
-| `TS_CAPTURE_LITERAL_STRING`            | same as `infer.literal.string`          | Runtime equivalent of that flag.                                                                              |
-| `TS_CAPTURE_LITERAL_STRING_MAX_LENGTH` | same as `infer.literal.stringMaxLength` | Runtime equivalent of that flag.                                                                              |
-| `TS_CAPTURE_LITERAL_NUMBER`            | same as `infer.literal.number`          | Runtime equivalent of that flag.                                                                              |
-| `TS_CAPTURE_LITERAL_BOOLEAN`           | same as `infer.literal.boolean`         | Runtime equivalent of that flag.                                                                              |
-| `TS_CAPTURE_MAX_ANNOTATION_CHARS`      | same as `infer.maxAnnotationChars`      | Cap on serialized type size.                                                                                  |
-| `TS_CAPTURE_CAPTURE_CLASS_HIERARCHY`   | `false`                                 | `@ts-capture/vite` only: record class hierarchies (pairs with `infer.rewriteCommonBase`).                     |
-| `TS_CAPTURE_TRANSPORT_URL`             | unset                                   | `@ts-capture/vite` only, read at build time: send browser observations to this URL instead of the dev server. |
+| Variable                               | Default                                 | What it does                                                                                                     |
+| -------------------------------------- | --------------------------------------- | ---------------------------------------------------------------------------------------------------------------- |
+| `TS_CAPTURE_TYPES_DIR`                 | **`os.tmpdir()`**                       | Directory for the per-process `ts-capture-types-<uuid>.json` dumps. Created if missing.                          |
+| `TS_CAPTURE_ENABLED`                   | unset                                   | `@ts-capture/vite` only, read at build time: `false` switches the plugin off; the `enabled` option wins over it. |
+| `TS_CAPTURE_LITERAL_STRING`            | same as `infer.literal.string`          | Runtime equivalent of that flag.                                                                                 |
+| `TS_CAPTURE_LITERAL_STRING_MAX_LENGTH` | same as `infer.literal.stringMaxLength` | Runtime equivalent of that flag.                                                                                 |
+| `TS_CAPTURE_LITERAL_NUMBER`            | same as `infer.literal.number`          | Runtime equivalent of that flag.                                                                                 |
+| `TS_CAPTURE_LITERAL_BOOLEAN`           | same as `infer.literal.boolean`         | Runtime equivalent of that flag.                                                                                 |
+| `TS_CAPTURE_MAX_ANNOTATION_CHARS`      | same as `infer.maxAnnotationChars`      | Cap on serialized type size.                                                                                     |
+| `TS_CAPTURE_CAPTURE_CLASS_HIERARCHY`   | `false`                                 | `@ts-capture/vite` only: record class hierarchies (pairs with `infer.rewriteCommonBase`).                        |
+| `TS_CAPTURE_TRANSPORT_URL`             | unset                                   | `@ts-capture/vite` only, read at build time: send browser observations to this URL instead of the dev server.    |
 
 > **Every example in these docs sets `TS_CAPTURE_TYPES_DIR` explicitly.** If
 > you don't, dumps land in `os.tmpdir()` and nothing cleans them up. See
