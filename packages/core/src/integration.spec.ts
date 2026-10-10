@@ -2,110 +2,36 @@ import vm from "node:vm";
 import ts from "typescript";
 import { describe, expect, it } from "vitest";
 
-import type { ApplyTypesOptions } from "./contract.js";
-import type { ExtraOptions, LiteralOptions } from "./type-collector.js";
+import type { LiteralOptions } from "./collector-contract.js";
+import type { InferOptions } from "./configuration.js";
+import type { CollectedTypeInfo, ExtraOptions } from "./type-collector.js";
 
-import { applyTypesToFileCst } from "./apply-types-cst.js";
-import { applyTypesToFile } from "./apply-types.js";
 import { INFER_DEFAULTS } from "./configuration.js";
 import { instrumentSource } from "./instrument.js";
+import { type Applied, applied, nodesOf, parseErrors, printedAst } from "./test-utils/applied.js";
+import { describeDiagnostic } from "./test-utils/matchers.js";
 import { createCollectionContext, getTypeName } from "./type-collector.js";
 
-/**
- * End-to-end pipeline: instrument → transpile → execute → collect → apply.
- *
- * Instead of the original's global __tscptr__ + vm snippet approach, we build
- * a sandbox that wires __tscptr__ to a CollectionContext, execute the transpiled
- * code, then apply the collected types back to the original source.
- */
-function runPipeline(
-  input: string,
-  opts: { collector?: LiteralOptions; apply?: ApplyTypesOptions } = {},
-): string | null {
-  // Step 1: instrument
-  const instrumented = instrumentSource(input, "test.ts", {
-    instrumentCallExpressions: true,
-  });
-
-  // Step 2: transpile to runnable JS
-  const compiled = ts.transpile(instrumented, {
-    target: ts.ScriptTarget.ES2015,
-  });
-
-  // Step 3: execute with type collector in a sandbox
-  const ctx = createCollectionContext({ literalOptions: opts.collector });
-
-  const __tscptr__ = function (
-    name: string,
-    value: unknown,
-    pos: number,
-    filename: string,
-    optsJson: string,
-  ) {
-    const opts = JSON.parse(optsJson) as ExtraOptions;
-    ctx.record(name, value, pos, filename, opts);
-  };
-  __tscptr__.track = function <T>(value: T, filename: string, offset: number): T {
-    return ctx.track(value, filename, offset);
-  };
-  __tscptr__.ret = function <T>(value: T, pos: number, filename: string, optsJson: string): T {
-    const opts = JSON.parse(optsJson) as ExtraOptions;
-    ctx.record("(return)", value, pos, filename, opts);
-    return value;
-  };
-  __tscptr__.registerFn = function (fn: Function, retPos: number, filename: string) {
-    ctx.registerFn(fn, retPos, filename);
-  };
-  __tscptr__.regFn = function <T extends Function>(fn: T, retPos: number, filename: string): T {
-    ctx.registerFn(fn, retPos, filename);
-    return fn;
-  };
-  __tscptr__.typeName = getTypeName;
-  __tscptr__.get = () => ctx.getCollectedTypes();
-
-  const sandbox = { __tscptr__, console, Array, Object, Promise, RegExp, Map, Set };
-  vm.runInNewContext(compiled, sandbox);
-
-  // Step 4: apply types
-  const collectedTypes = ctx.getCollectedTypes();
-
-  // Filter to entries for our file
-  const fileTypes = collectedTypes.filter(([f]) => f === "test.ts");
-  if (fileTypes.length === 0) return null;
-
-  const applyOptions = opts.apply ?? {};
-  const apply = applyOptions.infer?.cstAware ? applyTypesToFileCst : applyTypesToFile;
-  return apply(input, fileTypes, applyOptions);
+interface CollectOptions {
+  collector?: LiteralOptions;
+  /** Parse and run the input as TSX, with a React stub that builds plain objects. */
+  tsx?: boolean;
 }
 
 /**
- * TSX variant of runPipeline. Identical setup but:
- *   - filename is "test.tsx" (instrument infers TSX from extension)
- *   - transpile uses classic React JsxEmit so `<div/>` becomes
- *     `React.createElement('div', null)`; `<>x</>` becomes
- *     `React.createElement(React.Fragment, null, "x")`
- *   - sandbox gets a `React` stub (createElement returns a plain
- *     object, doesn't render). Inner arrows inside JSX attribute
- *     values are NOT invoked (no DOM event loop) — observations
- *     only land for arrows actually called during component-body
- *     execution: `items.map(item => …)`, function-as-child the
- *     parent invokes, etc.
+ * Instrument → transpile → run in a sandbox → collect. The sandbox wires
+ * `__tscptr__` to a collection context the way the loader does. There is no
+ * DOM, so an arrow in a JSX attribute value is never invoked; only what the
+ * component body itself calls is observed.
  */
-function runPipelineTsx(
-  input: string,
-  opts: { collector?: LiteralOptions; apply?: ApplyTypesOptions } = {},
-): string | null {
-  const filename = "test.tsx";
-  const instrumented = instrumentSource(input, filename, {
-    instrumentCallExpressions: true,
-  });
-  const compiled = ts.transpile(instrumented, {
-    target: ts.ScriptTarget.ES2015,
-    jsx: ts.JsxEmit.React,
-  });
+function collect(input: string, options: CollectOptions = {}): CollectedTypeInfo {
+  const filename = options.tsx ? "test.tsx" : "test.ts";
+  const instrumented = instrumentSource(input, filename, { instrumentCallExpressions: true });
+  const compilerOptions: ts.CompilerOptions = { target: ts.ScriptTarget.ES2015 };
+  if (options.tsx) compilerOptions.jsx = ts.JsxEmit.React;
+  const compiled = ts.transpile(instrumented, compilerOptions);
 
-  const ctx = createCollectionContext({ literalOptions: opts.collector });
-
+  const ctx = createCollectionContext({ literalOptions: options.collector });
   const __tscptr__ = function (
     name: string,
     value: unknown,
@@ -113,21 +39,18 @@ function runPipelineTsx(
     fname: string,
     optsJson: string,
   ) {
-    const o = JSON.parse(optsJson) as ExtraOptions;
-    ctx.record(name, value, pos, fname, o);
+    ctx.record(name, value, pos, fname, JSON.parse(optsJson) as ExtraOptions);
   };
-  __tscptr__.track = function <T>(value: T, fname: string, offset: number): T {
-    return ctx.track(value, fname, offset);
-  };
-  __tscptr__.ret = function <T>(value: T, pos: number, fname: string, optsJson: string): T {
-    const o = JSON.parse(optsJson) as ExtraOptions;
-    ctx.record("(return)", value, pos, fname, o);
+  __tscptr__.track = <T>(value: T, fname: string, offset: number): T =>
+    ctx.track(value, fname, offset);
+  __tscptr__.ret = <T>(value: T, pos: number, fname: string, optsJson: string): T => {
+    ctx.record("(return)", value, pos, fname, JSON.parse(optsJson) as ExtraOptions);
     return value;
   };
-  __tscptr__.registerFn = function (fn: Function, retPos: number, fname: string) {
+  __tscptr__.registerFn = (fn: Function, retPos: number, fname: string): void => {
     ctx.registerFn(fn, retPos, fname);
   };
-  __tscptr__.regFn = function <T extends Function>(fn: T, retPos: number, fname: string): T {
+  __tscptr__.regFn = <T extends Function>(fn: T, retPos: number, fname: string): T => {
     ctx.registerFn(fn, retPos, fname);
     return fn;
   };
@@ -143,648 +66,538 @@ function runPipelineTsx(
     }),
     Fragment: Symbol.for("test.fragment"),
   };
-
   const sandbox = { __tscptr__, console, Array, Object, Promise, RegExp, Map, Set, React };
   vm.runInNewContext(compiled, sandbox);
-
-  const collectedTypes = ctx.getCollectedTypes();
-  const fileTypes = collectedTypes.filter(([f]) => f === filename);
-  if (fileTypes.length === 0) return null;
-
-  const applyOptions = opts.apply ?? {};
-  const apply = applyOptions.infer?.cstAware ? applyTypesToFileCst : applyTypesToFile;
-  return apply(input, fileTypes, applyOptions);
+  return ctx.getCollectedTypes().filter(([f]) => f === filename);
 }
+
+interface PipelineOptions extends CollectOptions {
+  infer?: InferOptions;
+  applier?: "cst" | "offset";
+  prefix?: string;
+  /** What this output may do that a pipeline output otherwise may not. */
+  allow?: { newDiagnostics?: boolean; applierDivergence?: boolean; secondRunChange?: boolean };
+}
+
+/**
+ * The whole pipeline on one file, and on the way out what every output must
+ * satisfy: it parses, it adds no diagnostic the input did not have, the CST
+ * and offset appliers wrote the same program, and running the pipeline on
+ * the output again changes nothing.
+ */
+function pipeline(input: string, options: PipelineOptions = {}): Applied {
+  const entries = collect(input, options);
+  if (entries.length === 0) throw new Error(`nothing observed in:\n${input}`);
+  const filename = options.tsx ? "test.tsx" : "test.ts";
+  const { infer, applier, prefix, allow } = options;
+  const out = applied(input, entries, { infer, applier, prefix, filename });
+
+  expect(parseErrors(out), `the output does not parse:\n${out.text}`).toEqual([]);
+  if (!allow?.newDiagnostics) {
+    expect(out.newDiagnostics.map(describeDiagnostic), `new diagnostics in:\n${out.text}`).toEqual(
+      [],
+    );
+  }
+  if (!allow?.applierDivergence) {
+    const otherApplier = applier === "offset" ? "cst" : "offset";
+    const other = applied(input, entries, { infer, prefix, filename, applier: otherApplier });
+    expect(printedAst(other.text), "the CST and offset appliers disagree").toBe(
+      printedAst(out.text),
+    );
+  }
+  if (!allow?.secondRunChange) {
+    const again = applied(out.text, collect(out.text, options), {
+      infer,
+      applier,
+      prefix,
+      filename,
+    });
+    expect(again.text, "a second run of the pipeline changed the output").toBe(out.text);
+  }
+  return out;
+}
+
+const withInfer = (patch: Partial<InferOptions>): PipelineOptions => ({
+  infer: { ...INFER_DEFAULTS, ...patch },
+});
+const KEEP_INFERABLE = withInfer({ skipRedundantAnnotations: false });
 
 describe("integration: full pipeline", () => {
   it("infers string type for a simple function", () => {
-    const input = `
+    const out = pipeline(`
 function greet(c) {
     return 'Hello ' + c;
 }
-greet('World');`;
-
-    expect(runPipeline(input)).toBe(`
-function greet(c: string): string {
-    return 'Hello ' + c;
-}
 greet('World');`);
+    expect(out).toTypeAs("c", "string");
+    expect(out).toTypeAs({ returnOf: "greet" }, "string");
   });
 
   it("infers number type for arrow function", () => {
-    const input = `((x) => { return x + 5; })(10)`;
-    expect(runPipeline(input)).toBe(`((x: number): number => { return x + 5; })(10)`);
+    const out = pipeline(`((x) => { return x + 5; })(10)`);
+    expect(out).toTypeAs("x", "number");
+    const [arrow] = nodesOf(out, ts.isArrowFunction);
+    expect(out.checker.typeToString(out.checker.getTypeAtLocation(arrow))).toBe(
+      "(x: number) => number",
+    );
   });
 
   it("infers types for class methods", () => {
-    const input = `
+    const out = pipeline(`
 class Greeter {
     greet(who) {
         return 'Hello, ' + who;
     }
 }
-new Greeter().greet('World');`;
-
-    expect(runPipeline(input)).toBe(`
-class Greeter {
-    greet(who: string): string {
-        return 'Hello, ' + who;
-    }
-}
 new Greeter().greet('World');`);
+    expect(out).toTypeAs("who", "string");
+    expect(out).toTypeAs({ returnOf: "greet" }, "string");
   });
 
   it("creates union types from multiple calls", () => {
-    const input = `
+    const out = pipeline(`
 function commas(item) {
     return Array.from(item).join(', ');
 }
 commas('Lavender');
-commas(['Apples', 'Oranges']);`;
-
-    const result = runPipeline(input);
-    expect(result).toContain("item: string | string[]");
+commas(['Apples', 'Oranges']);`);
+    expect(out).toTypeAs("item", "string | string[]");
   });
 
   it("handles optional parameters", () => {
-    const input = `
+    const out = pipeline(`
 function calculate(a, b?) {
     return a + (b || 0);
 }
-calculate(5, 6);`;
-
-    const result = runPipeline(input)!;
-    expect(result).toContain("a: number");
-    expect(result).toContain("b?: number");
+calculate(5, 6);`);
+    expect(out).toTypeAs("a", "number");
+    expect(out).toTypeAs("b", "number | undefined");
   });
 
   it("does not append undefined to optional params", () => {
-    const input = `
+    const out = pipeline(`
 function optional(b?, c?) {
     return b || 0;
 }
-optional() + optional(10);`;
-
-    const result = runPipeline(input)!;
-    expect(result).toContain("b?: number");
-    // c? was never called with a value, so should remain untyped or be skipped
+optional() + optional(10);`);
+    expect(out).toAnnotate("b", "number");
+    expect(out).toLeaveUntyped("c");
   });
 
-  it("returns null for unused functions (no types collected)", () => {
-    const input = `
+  it("observes nothing for unused functions", () => {
+    expect(
+      collect(`
 function unused(foo, bar) {
-}`;
-
-    expect(runPipeline(input)).toBe(null);
+}`),
+    ).toEqual([]);
   });
 
   it("infers object types", () => {
-    const input = `
+    const out = pipeline(`
 function foo(obj) { return obj; }
-foo({hello: 'world'});`;
-
-    const result = runPipeline(input)!;
-    expect(result).toContain("obj: { hello: string }");
+foo({hello: 'world'});`);
+    expect(out).toTypeAs("obj", "{ hello: string }");
   });
 
   it("handles nested arrow functions", () => {
-    const input = `
+    // `cb` is written `(results: unknown) => undefined`: the arrow has a block
+    // body without `return`, so nothing is observed for its return, the
+    // cross-ref never upgrades the receiver, and TypeScript rejects the call.
+    const out = pipeline(
+      `
 function doTheThing(cb) {
     cb([1,2,3]);
 }
 doTheThing((results) => {
     results.forEach((result) => console.log(result));
-});`;
-
-    const result = runPipeline(input)!;
-    expect(result).toContain("cb:");
-    expect(result).toContain("results: number[]");
-    expect(result).toContain("result: number");
+});`,
+      { allow: { newDiagnostics: true } },
+    );
+    expect(out).not.toLeaveUntyped("cb");
+    expect(out).toTypeAs("results", "number[]");
+    expect(out).toTypeAs("result", "number");
   });
 
   it("handles destructured parameters with defaults", () => {
-    const input = `
+    const out = pipeline(`
 function greet({ who = "" }) {
     return 'Hello, ' + who;
 }
-greet({who: 'world'});`;
-
-    const result = runPipeline(input)!;
-    expect(result).toContain('{ who = "" }: { who: string }');
+greet({who: 'world'});`);
+    expect(out).toTypeAs('{ who = "" }', "{ who: string }");
   });
 });
 
 describe("integration: return type inference", () => {
   it("infers return type for simple function", () => {
-    const input = `function double(x) { return x * 2; }\ndouble(5);`;
-    const result = runPipeline(input)!;
-    expect(result).toContain("x: number): number");
+    const out = pipeline(`function double(x) { return x * 2; }\ndouble(5);`);
+    expect(out).toTypeAs({ returnOf: "double" }, "number");
   });
 
   it("infers return type for arrow expression body", () => {
-    const input = `const fn = (x) => x + 1;\nfn(5);`;
-    const result = runPipeline(input)!;
-    expect(result).toContain("x: number): number");
+    const out = pipeline(`const fn = (x) => x + 1;\nfn(5);`);
+    expect(out).toTypeAs({ returnOf: "fn" }, "number");
   });
 
   it("infers async return type wrapped in Promise", () => {
-    const input = `async function fetchData(url) { return url.length; }\nfetchData("http://example.com");`;
-    const result = runPipeline(input)!;
-    expect(result).toContain("url: string): Promise<number>");
+    const out = pipeline(
+      `async function fetchData(url) { return url.length; }\nfetchData("http://example.com");`,
+    );
+    expect(out).toTypeAs({ returnOf: "fetchData" }, "Promise<number>");
   });
 
   it("infers union return type from multiple code paths", () => {
-    const input = `function maybe(x) { if (x > 0) return x; return "negative"; }\nmaybe(5);\nmaybe(-1);`;
-    const result = runPipeline(input)!;
-    expect(result).toContain("): number | string");
+    const out = pipeline(
+      `function maybe(x) { if (x > 0) return x; return "negative"; }\nmaybe(5);\nmaybe(-1);`,
+    );
+    expect(out).toTypeAs({ returnOf: "maybe" }, "number | string");
   });
 
   it("does not annotate return type for functions with existing return type", () => {
-    const input = `function typed(x): string { return x; }\ntyped("hello");`;
-    const result = runPipeline(input)!;
-    // Should have param type but NOT a second return type
-    expect(result).toContain("x: string): string");
-    expect(result).not.toContain("): string): string");
+    const out = pipeline(`function typed(x): string { return x; }\ntyped("hello");`);
+    expect(out).toAnnotate("x", "string");
+    expect(out).toAnnotate({ returnOf: "typed" }, "string");
   });
 
   it("infers return type for class methods", () => {
-    const input = `
+    const out = pipeline(`
 class Calculator {
     add(a, b) { return a + b; }
 }
-new Calculator().add(1, 2);`;
-    const result = runPipeline(input)!;
-    expect(result).toContain("): number");
+new Calculator().add(1, 2);`);
+    expect(out).toTypeAs({ returnOf: "add" }, "number");
   });
 });
 
 describe("integration: function cross-referencing", () => {
   it("infers specific callback type from collected parameter observations", () => {
-    const input = `
+    const out = pipeline(`
 function process(cb) {
     cb(42);
 }
 function double(x) { return x * 2; }
-process(double);`;
-    const result = runPipeline(input)!;
-    // cb should have a specific type from double's observed signature
-    expect(result).toContain("cb: (x: number) => number");
+process(double);`);
+    expect(out).toTypeAs("cb", "(x: number) => number");
   });
 
   it("infers full signature for anonymous inline arrows passed as call args", () => {
-    // Inline arrows have no `name` to register by, so `registerFn` can't
-    // reach them — naively, the receiver's param type would stay
-    // `fn: (x: unknown) => unknown`. The transformer wraps each
-    // instrumented arrow with `__tscptr__.regFn(arrow, …)` which registers
-    // the arrow VALUE at creation time, so the cross-reference logic
-    // in `getCollectedTypes` upgrades to the full observed signature.
-    const input = `
+    // Inline arrows have no name to register by, so the transformer wraps
+    // each one in `__tscptr__.regFn(arrow, …)` at creation; the cross-ref
+    // in `getCollectedTypes` then upgrades the receiver's param from
+    // `(x: unknown) => unknown` to the observed signature.
+    const out = pipeline(`
 function apply(fn, val) {
     return fn(val);
 }
-apply((x) => x + 1, 5);`;
-    const result = runPipeline(input)!;
-    expect(result).toContain("fn: (x: number) => number");
+apply((x) => x + 1, 5);`);
+    expect(out).toTypeAs("fn", "(x: number) => number");
   });
 
   it("infers callback type for named function expressions", () => {
-    const input = `
+    const out = pipeline(`
 function forEach(arr, callback) {
     for (const item of arr) callback(item);
 }
 function log(x) { return String(x); }
-forEach([1, 2, 3], log);`;
-    const result = runPipeline(input)!;
-    expect(result).toContain("callback: (x: number) => string");
+forEach([1, 2, 3], log);`);
+    expect(out).toTypeAs("callback", "(x: number) => string");
   });
 
   it("emits `@ts-capture:generic-fn` marker for un-invoked callback values", () => {
-    // The callback `fn` is passed but never called inside `apply`'s
-    // body, so its arrow body never runs and no params/return are
-    // observed. regFn-wrap registers the arrow but `fnSignatures` has
-    // no entry for its retPos → cross-ref upgrade fails → emit stays
-    // `(x: unknown) => unknown` → marker fires.
-    const input = `
+    // `fn` is passed but never called inside `apply`, so its arrow body never
+    // runs and nothing is observed for it: the emit stays
+    // `(x: unknown) => unknown`, which the typed arrow does not fit, and the
+    // marker fires. The marker is text. A second run owns every note and
+    // writes back only those at sites it annotates, so this one goes.
+    const out = pipeline(
+      `
 function apply(fn, val) { return val; }
-apply((x) => x + 1, 5);`;
-    const result = runPipeline(input, {
-      apply: {
-        infer: { ...INFER_DEFAULTS, requireTypeRefInScope: false, emitDiagnosticComments: true },
+apply((x) => x + 1, 5);`,
+      {
+        ...withInfer({ requireTypeRefInScope: false, emitDiagnosticComments: true }),
+        allow: { newDiagnostics: true, secondRunChange: true },
       },
-    })!;
-    expect(result).toContain("/* @ts-capture:generic-fn */");
+    );
+    expect(out).toAnnotate("fn", "(x: unknown) => unknown");
+    expect(out.text).toContain("/* @ts-capture:generic-fn */");
   });
 
   it("preserves generic function type when function is not instrumented", () => {
-    const input = `
+    const out = pipeline(`
 function apply(fn) {
     return fn(5);
 }
-apply(Math.floor);`;
-    const result = runPipeline(input)!;
-    // Math.floor is native, not instrumented — should stay as Function
-    expect(result).toContain("fn: Function");
+apply(Math.floor);`);
+    expect(out).toTypeAs("fn", "Function");
   });
 
   it("upgrades object-member callback return type from unknown", () => {
-    // Pre-fix: when a function-valued property is inside a props object,
-    // record() saw typeof value === "object" and never stored it in
-    // recordedFunctions. The cross-ref upgrade in getCollectedTypes()
-    // only looked at recordedFunctions, so the member stayed
-    // `render(x: number): unknown` even though the arrow was registered
-    // via regFn and its return type was observed.
-    const input = `
+    // A function-valued property inside a props object is registered via
+    // regFn like any arrow; the cross-ref must reach it through the object.
+    const out = pipeline(`
 function render(props) {
   return props.render(props.value);
 }
-render({ render: (x) => x * 2, value: 5 });`;
-    const result = runPipeline(input)!;
-    // The object literal should have its render member upgraded from
-    // `render(x: unknown): unknown` to `render(x: number): number`
-    expect(result).toContain("render(x: number): number");
+render({ render: (x) => x * 2, value: 5 });`);
+    expect(out).toTypeAs("props", "{ render(x: number): number; value: number }");
   });
 
   it("upgrades multiple function members in the same object", () => {
-    const input = `
+    const out = pipeline(`
 function run(ops) {
   ops.double(ops.triple(2));
 }
-run({ double: (x) => x * 2, triple: (x) => x * 3 });`;
-    const result = runPipeline(input)!;
-    expect(result).toContain("double(x: number): number");
-    expect(result).toContain("triple(x: number): number");
+run({ double: (x) => x * 2, triple: (x) => x * 3 });`);
+    expect(out).toTypeAs("ops", "{ double(x: number): number; triple(x: number): number }");
   });
 
   it("upgrades callback return type via invocation-site observation when parent isn't registered", () => {
-    // The bound function `helper.bind(null)` is a NEW function not in
-    // registeredFns — it's not the same reference as `helper` itself,
-    // which is what registerFn captured. So the existing cross-ref
-    // (recordedFunctions → registeredFns → fnSignatures) misses, and
-    // without the paramReturn upgrade the param emitted
-    // `cb: (x: unknown) => unknown`.
-    //
-    // The fix: the transformer wraps the `cb(...)` invocation inside
-    // callbacker's body with `__tscptr__.ret(..., {paramReturn:true})`. The
-    // collected return type (`number`) is substituted into the trailing
-    // `unknown` of cb's emitted function signature, yielding `=> number`.
-    const input = `
+    // `helper.bind(null)` is a new function the registry never saw, so the
+    // cross-ref misses. The transformer wraps the `cb(...)` call inside
+    // callbacker with a paramReturn observation, and the observed `number`
+    // replaces the trailing `unknown` of the bound function's shape. The
+    // shape's `unknown[]` parameters are what `bind` erased, and TypeScript,
+    // which keeps them, rejects the bound `(x: number) => number` for it.
+    const out = pipeline(
+      `
 function callbacker(cb) {
     return cb(21);
 }
 function helper(x) { return x * 2; }
-callbacker(helper.bind(null));`;
-    const result = runPipeline(input)!;
-    // Bound-function shape is `(...args: unknown[]) => unknown` from
-    // getTypeName (bind erases param identities). The paramReturn upgrade
-    // substitutes the trailing `unknown` → observed `number`.
-    expect(result).toContain("(...args: unknown[]) => number");
+callbacker(helper.bind(null));`,
+      { allow: { newDiagnostics: true } },
+    );
+    expect(out).toTypeAs("cb", "(...args: unknown[]) => number");
   });
 
   it("widens sole-undefined return to void in cross-ref-emitted callback signatures", () => {
-    // The arrow `(x) => { console.log(x) }` returns undefined. Its own
-    // return-type annotation gets widened to `: void` by apply
-    // (apply-types.ts:1122-1124). The cross-ref machinery that
-    // upgrades the receiver's callback param must apply the same
-    // widening — else the receiver expects `(x) => undefined` while
-    // callers provide `(x) => void`, and TS rejects the variance.
-    // Expression body so the arrow's return value (console.log's result,
-    // which is `undefined`) is observed via the expression-wrap; block
-    // bodies without explicit `return` don't trigger return instrumentation.
-    const input = `
+    // The arrow returns undefined. Its own return annotation is widened to
+    // `void`; the receiver's callback param must get the same widening, or
+    // callers would hand a `=> void` to a `=> undefined`.
+    const out = pipeline(`
 function listen(handler) {
   handler(1);
 }
-listen((x) => console.log(x));`;
-    const result = runPipeline(input)!;
-    expect(result).toContain("handler: (x: number) => void");
-    expect(result).not.toContain("=> undefined");
+listen((x) => console.log(x));`);
+    expect(out).toTypeAs("handler", "(x: number) => void");
   });
 
   it("widens undefined → void inside object-shape callback members", () => {
-    // The destructured-prop variant. The object's `send` member is a
-    // function returning undefined; the prop-shape should emit
-    // `send(x: number): void`, not `send(x: number): undefined`.
-    const input = `
+    const out = pipeline(`
 function dispatch(api) {
   api.send(42);
 }
-dispatch({ send: (x) => console.log(x) });`;
-    const result = runPipeline(input)!;
-    expect(result).toContain("send(x: number): void");
+dispatch({ send: (x) => console.log(x) });`);
+    expect(out).toTypeAs("api", "{ send(x: number): void }");
   });
 
   it("does not override a specific parent-supplied return type with paramReturn (fallback only)", () => {
-    // Same shape as the existing 'infers specific callback type' test
-    // — process(double), where double is a named-fn with full sig
-    // `(x: number) => number` from registeredFns. The paramReturn
-    // observation for `cb(42)` is `number` (same value). The emit
-    // already had the specific return; the paramReturn upgrade must
-    // NOT replace it with a less precise one nor break the pipeline.
-    const input = `
+    // `double` is registered with its full signature, and the paramReturn
+    // observation for `cb(42)` must not replace it with a looser one.
+    const out = pipeline(`
 function process(cb) {
     cb(42);
 }
 function double(x) { return x * 2; }
-process(double);`;
-    const result = runPipeline(input)!;
-    expect(result).toContain("cb: (x: number) => number");
+process(double);`);
+    expect(out).toTypeAs("cb", "(x: number) => number");
   });
 });
 
+// Whether an annotation was written is a question about the AST: TypeScript
+// infers `number` for `let x = 5` with or without one.
 describe("integration: variable and property inference", () => {
   it("infers type for let declaration", () => {
-    const input = `let x = 5;\nfunction use(a) { return a; }\nuse(x);`;
-    // Literal initializer: `skipRedundantAnnotations` (on by default) would skip
-    // this. Pinned off — the subject here is varDecl inference, not the skip.
-    const result = runPipeline(input, {
-      apply: { infer: { ...INFER_DEFAULTS, skipRedundantAnnotations: false } },
-    })!;
-    expect(result).toContain("let x: number = 5");
+    const out = pipeline(`let x = 5;\nfunction use(a) { return a; }\nuse(x);`, KEEP_INFERABLE);
+    expect(out).toAnnotate("x", "number");
   });
 
   it("infers type for const declaration", () => {
-    const input = `const name = "hello";\nfunction use(a) { return a; }\nuse(name);`;
-    const result = runPipeline(input, {
-      apply: { infer: { ...INFER_DEFAULTS, skipRedundantAnnotations: false } },
-    })!;
-    expect(result).toContain('const name: string = "hello"');
+    const out = pipeline(
+      `const label = "hello";\nfunction use(a) { return a; }\nuse(label);`,
+      KEEP_INFERABLE,
+    );
+    expect(out).toAnnotate("label", "string");
   });
 
   it("infers type for class property", () => {
-    const input = `
+    const out = pipeline(
+      `
 class Foo {
     value = 42;
     greet() { return this.value; }
 }
-new Foo().greet();`;
-    const result = runPipeline(input, {
-      apply: { infer: { ...INFER_DEFAULTS, skipRedundantAnnotations: false } },
-    })!;
-    expect(result).toContain("value: number = 42");
+new Foo().greet();`,
+      KEEP_INFERABLE,
+    );
+    expect(out).toAnnotate("value", "number");
   });
 
   it("does not annotate already-typed variables", () => {
-    const input = `let x: number = 5;\nfunction use(a) { return a; }\nuse(x);`;
-    const result = runPipeline(input)!;
-    expect(result).toContain("let x: number = 5");
-    // Should not have double annotation
-    expect(result).not.toContain("x: number: number");
+    const out = pipeline(`let x: number = 5;\nfunction use(a) { return a; }\nuse(x);`);
+    expect(out).toAnnotate("x", "number");
   });
 });
 
 describe("integration: edge cases from original", () => {
   it("infers object types with special keys", () => {
-    const input = "function foo(obj) { return obj; }\n" + "foo({hello: 'world', 'foo-bar': 42});";
-    const result = runPipeline(input)!;
-    expect(result).toContain('obj: { "foo-bar": number; hello: string }');
+    const out = pipeline(
+      "function foo(obj) { return obj; }\n" + "foo({hello: 'world', 'foo-bar': 42});",
+    );
+    expect(out).toTypeAs("obj", '{ "foo-bar": number; hello: string }');
   });
 
   it("does not crash on circular references", () => {
     const input = ["let a = {};", "a.a = a;", "function foo(obj) { return obj; }", "foo(a);"].join(
       "\n",
     );
-    expect(() => runPipeline(input)).not.toThrow();
+    expect(() => pipeline(input)).not.toThrow();
   });
 
   it("applies prefix option", () => {
-    const input = "function greet(c) { return 'Hello ' + c; }\ngreet('World');";
-
-    const instrumented = instrumentSource(input, "test.ts", { instrumentCallExpressions: true });
-    const compiled = ts.transpile(instrumented, { target: ts.ScriptTarget.ES2015 });
-    const ctx = createCollectionContext();
-    const tscptr = function (
-      name: string,
-      value: unknown,
-      pos: number,
-      filename: string,
-      optsJson: string,
-    ) {
-      ctx.record(name, value, pos, filename, JSON.parse(optsJson));
-    };
-    tscptr.track = function <T>(value: T, filename: string, offset: number): T {
-      return ctx.track(value, filename, offset);
-    };
-    tscptr.ret = function <T>(value: T, pos: number, filename: string, optsJson: string): T {
-      ctx.record("(return)", value, pos, filename, JSON.parse(optsJson));
-      return value;
-    };
-    tscptr.registerFn = function (fn: Function, retPos: number, filename: string) {
-      ctx.registerFn(fn, retPos, filename);
-    };
-    tscptr.regFn = function <T extends Function>(fn: T, retPos: number, filename: string): T {
-      ctx.registerFn(fn, retPos, filename);
-      return fn;
-    };
-    const sandbox = { __tscptr__: tscptr, console, Array, Object };
-    vm.runInNewContext(compiled, sandbox);
-    const types = ctx.getCollectedTypes().filter(([f]) => f === "test.ts");
-    const result = applyTypesToFile(input, types, { prefix: "/*auto*/" });
-    expect(result).toContain("c: /*auto*/string");
+    // The prefix is text put in front of the type, so the text is the claim.
+    const out = pipeline("function greet(c) { return 'Hello ' + c; }\ngreet('World');", {
+      prefix: "/*auto*/",
+    });
+    expect(out.text).toContain("c: /*auto*/string");
   });
 });
 
-// String-offset-based applies can drop a type at the wrong position —
-// inside a destructure pattern, between a decorator and its target,
-// mid-template-literal, etc. These probes pick representative AST
-// position categories plus a few adjacent shapes; for each one, the
-// apply output must parse as valid TypeScript. A bad position shows
-// up as a SyntaxError, not a quiet type drift.
-//
-// Written as confirm-or-deny rather than known-fail: if any case here
-// flips to FAIL, that's a concrete reproducer for the AST-position
-// bug class to be promoted into a focused follow-up.
-function expectParseable(source: string): void {
-  const sf = ts.createSourceFile("check.ts", source, ts.ScriptTarget.Latest, true);
-  const diags = (sf as ts.SourceFile & { parseDiagnostics?: ts.Diagnostic[] }).parseDiagnostics;
-  const errors = (diags ?? []).filter((d) => d.category === ts.DiagnosticCategory.Error);
-  if (errors.length > 0) {
-    const messages = errors
-      .map((d) => `  - ${ts.flattenDiagnosticMessageText(d.messageText, "\n")}`)
-      .join("\n");
-    throw new Error(
-      `Apply output failed to parse as TypeScript:\n${messages}\n\n--- source ---\n${source}\n--------------`,
-    );
-  }
-}
-
+// An annotation dropped at the wrong position, inside a destructure pattern,
+// between a decorator and its target, after a `?`, shows up as output that
+// does not parse or a site TypeScript sees untyped. Each probe is one
+// representative AST position; `pipeline` checks that the output parses.
 describe("integration: AST-position bug class probes", () => {
-  it("object destructure param: insertion at end of `}` produces parseable output", () => {
-    const input = `
+  it("object destructure param: insertion at end of `}`", () => {
+    const out = pipeline(`
 function readUser({ name, age }) {
     return name + age;
 }
-readUser({ name: 'a', age: 1 });`;
-    const result = runPipeline(input)!;
-    expectParseable(result);
-    expect(result).toContain("{ name, age }:");
+readUser({ name: 'a', age: 1 });`);
+    expect(out).toTypeAs("{ name, age }", "{ age: number; name: string }");
   });
 
-  it("array destructure param: insertion at end of `]` produces parseable output", () => {
-    const input = `
+  it("array destructure param: insertion at end of `]`", () => {
+    const out = pipeline(`
 function pair([a, b]) {
     return a + b;
 }
-pair([1, 2]);`;
-    const result = runPipeline(input)!;
-    expectParseable(result);
-    expect(result).toContain("[a, b]:");
+pair([1, 2]);`);
+    expect(out).toTypeAs("[a, b]", "number[]");
   });
 
-  it("nested object destructure: insertion at end of outer `}` produces parseable output", () => {
-    const input = `
+  it("nested object destructure: insertion at end of outer `}`", () => {
+    const out = pipeline(`
 function deep({ outer: { inner } }) {
     return inner;
 }
-deep({ outer: { inner: 'x' } });`;
-    const result = runPipeline(input)!;
-    expectParseable(result);
+deep({ outer: { inner: 'x' } });`);
+    expect(out).toTypeAs("{ outer: { inner } }", "{ outer: { inner: string } }");
   });
 
-  it("rest inside object destructure produces parseable output", () => {
-    const input = `
+  it("rest inside object destructure", () => {
+    const out = pipeline(`
 function spread({ a, ...rest }) {
     return a;
 }
-spread({ a: 1, b: 2, c: 3 });`;
-    const result = runPipeline(input)!;
-    expectParseable(result);
+spread({ a: 1, b: 2, c: 3 });`);
+    expect(out).toTypeAs("{ a, ...rest }", "{ a: number; b: number; c: number }");
   });
 
-  it("rest parameter: insertion at end of `args` produces parseable output", () => {
-    const input = `
+  it("rest parameter: insertion at end of `args`, not before `...`", () => {
+    const out = pipeline(`
 function sum(...args) {
     return args.reduce((a, b) => a + b, 0);
 }
-sum(1, 2, 3);`;
-    const result = runPipeline(input)!;
-    expectParseable(result);
-    // ...args becomes ...args: T[] (or similar) — the insertion site is
-    // the end of the binding name, not before "..."
-    expect(result).toMatch(/\.\.\.args:\s*/);
+sum(1, 2, 3);`);
+    expect(out).toTypeAs("args", "number[]");
   });
 
-  it("constructor parameter property (public x) produces parseable output", () => {
-    // TS sugar: `public` modifier on a constructor param both declares
-    // and assigns to a class field. The transformer instruments the
-    // param like any other; insertion at param.name.end should land
-    // between the binding and any default value.
-    const input = `
+  it("constructor parameter property (public x)", () => {
+    const out = pipeline(`
 class Point {
     constructor(public x, public y) {}
 }
-new Point(1, 2);`;
-    const result = runPipeline(input)!;
-    expectParseable(result);
-    expect(result).toMatch(/public x:\s*number/);
-    expect(result).toMatch(/public y:\s*number/);
+new Point(1, 2);`);
+    expect(out).toTypeAs("x", "number");
+    expect(out).toTypeAs("y", "number");
   });
 
   it("optional param `a?` inserts `?:` (questionToken offset handled)", () => {
-    // Repro scenario: param.name.getEnd() is BEFORE the `?`, so the
-    // transformer adds +1 to the offset to land after the `?`. If that
-    // offset math broke, apply would write `a: T?` (invalid) instead
-    // of `a?: T`.
-    const input = `
+    // param.name.getEnd() is before the `?`; the transformer adds one to the
+    // offset so the annotation lands after it, as `a?: T` and not `a: T?`.
+    const out = pipeline(`
 function maybe(a?) {
     return a || 0;
 }
-maybe(); maybe(7);`;
-    const result = runPipeline(input)!;
-    expectParseable(result);
-    expect(result).toContain("a?:");
+maybe(); maybe(7);`);
+    expect(out).toTypeAs("a", "number | undefined");
   });
 
   it("paren-less single-param arrow: insertion wraps parens correctly", () => {
-    // `x => body` has no parens around `x`. Apply must wrap the param
-    // with parens AND insert the type, otherwise the output would be
-    // `x: T => body` which is invalid TS. The `parens` opt +
-    // wrap-injection handle this. The returnType-entry also lands at
-    // the same paren-less arrow pos, so the matcher accepts either
-    // `(x: number) =>` (param-only) or `(x: number): T =>`
-    // (param + return) — both valid TS.
-    const input = `
+    // `x => body` has no parens to put the type inside. The CST applier
+    // wraps and also writes the return type; the offset applier wraps and
+    // leaves the return alone, which is why the two are allowed to differ.
+    const out = pipeline(
+      `
 const inc = x => x + 1;
-inc(5);`;
-    const result = runPipeline(input)!;
-    expectParseable(result);
-    expect(result).toMatch(/\(x:\s*number\)\s*(?::[^=]+)?=>/);
+inc(5);`,
+      { allow: { applierDivergence: true } },
+    );
+    expect(out).toTypeAs("x", "number");
+    expect(out).toTypeAs({ returnOf: "inc" }, "number");
   });
 
-  it("class method with computed name produces parseable output", () => {
-    // `class C { [key]() {} }` — method has computed name. param
-    // positions still sit on the regular param identifiers; verify
-    // the computed name doesn't push offsets into the wrong place.
-    const input = `
+  it("class method with computed name", () => {
+    const out = pipeline(`
 const key = 'doStuff';
 class C {
     [key](x) { return x; }
 }
-new C()[key](42);`;
-    const result = runPipeline(input)!;
-    expectParseable(result);
+new C()[key](42);`);
+    expect(out).toTypeAs("x", "number");
   });
 
-  it("generator function parameter produces parseable output", () => {
-    // `function* foo(x) { yield x; }` — generator `*` token sits
-    // between `function` and the name. Param offset is independent;
-    // insertion should be safe.
-    const input = `
+  it("generator function parameter", () => {
+    const out = pipeline(`
 function* gen(x) {
     yield x;
 }
-const g = gen(1); g.next();`;
-    const result = runPipeline(input)!;
-    expectParseable(result);
-    expect(result).toMatch(/gen\(x:\s*number\)/);
+const g = gen(1); g.next();`);
+    expect(out).toTypeAs("x", "number");
   });
 
-  it("async generator function parameter produces parseable output", () => {
-    const input = `
+  it("async generator function parameter", () => {
+    const out = pipeline(`
 async function* agen(x) {
     yield x;
 }
-(async () => { const it = agen(1); await it.next(); })();`;
-    const result = runPipeline(input)!;
-    expectParseable(result);
+(async () => { const it = agen(1); await it.next(); })();`);
+    expect(out).toTypeAs("x", "number");
   });
 
-  it("object-literal method shorthand parameter produces parseable output", () => {
-    // `const o = { foo(x) { ... } }` — MethodDeclaration on object
-    // literal. Should be instrumented + applied like a class method.
-    const input = `
+  it("object-literal method shorthand parameter", () => {
+    const out = pipeline(`
 const o = {
     foo(x) { return x * 2; },
 };
-o.foo(3);`;
-    const result = runPipeline(input)!;
-    expectParseable(result);
-    expect(result).toMatch(/foo\(x:\s*number\)/);
+o.foo(3);`);
+    expect(out).toTypeAs("x", "number");
   });
 
-  it("decorated class with method param produces parseable output", () => {
-    // `@decorator class Foo { method(x) {} }` — decorators sit on the
-    // class declaration. Param offsets are inside the method body and
-    // shouldn't be perturbed by the leading decorator. (Uses
-    // experimental decorators syntax, which TS still parses without
-    // the flag set; the test only checks parseability of apply output.)
-    const input = `
+  it("decorated class with method param", () => {
+    const out = pipeline(`
 function logged(target: any) { return target; }
 @logged
 class Box {
     set(x) { return x; }
 }
-new Box().set('hi');`;
-    const result = runPipeline(input)!;
-    expectParseable(result);
-    expect(result).toMatch(/set\(x:\s*string\)/);
+new Box().set('hi');`);
+    expect(out).toTypeAs("x", "string");
   });
 
   it("multi-line param list does not corrupt insertion offsets", () => {
-    // Whitespace + newlines between params can confuse string-based
-    // appliers if positions are computed from a different layout than
-    // applied. param.name.getEnd() is the binding-name end, so it
-    // should be invariant to surrounding trivia.
-    const input = `
+    const out = pipeline(`
 function multi(
     a,
     b,
@@ -792,71 +605,53 @@ function multi(
 ) {
     return a + b + c;
 }
-multi(1, 2, 3);`;
-    const result = runPipeline(input)!;
-    expectParseable(result);
-    expect(result).toMatch(/a:\s*number/);
-    expect(result).toMatch(/b:\s*number/);
-    expect(result).toMatch(/c:\s*number/);
+multi(1, 2, 3);`);
+    expect(out).toTypeAs("a", "number");
+    expect(out).toTypeAs("b", "number");
+    expect(out).toTypeAs("c", "number");
   });
 
   it("trailing comma in param list does not break insertion", () => {
-    const input = `
+    const out = pipeline(`
 function tail(
     a,
     b,
 ) {
     return a + b;
 }
-tail(1, 2);`;
-    const result = runPipeline(input)!;
-    expectParseable(result);
+tail(1, 2);`);
+    expect(out).toTypeAs("a", "number");
+    expect(out).toTypeAs("b", "number");
   });
 
-  // Parameter decorator (legacy / experimentalDecorators syntax). TS
-  // parses parameter decorators without the flag set — the flag
-  // controls emit, not parsing — so apply just sees an extra
-  // modifier-like node sitting immediately before the param
-  // identifier. `param.name.getEnd()` is the binding-name end and
-  // should be invariant to the decorator's leading trivia. If apply
-  // mislands due to the decorator, the output will fail to parse or
-  // attach the annotation at the wrong slot.
-  it("parameter decorator on method param produces parseable output", () => {
-    const input = `
+  it("parameter decorator on method param", () => {
+    // TypeScript parses a parameter decorator without the flag set, so apply
+    // sees a modifier-like node right before the identifier. The annotation
+    // must land between `msg` and `)`, not inside or before the decorator.
+    const out = pipeline(`
 function inject(target: any, key: string | undefined, idx: number) {}
 class Service {
     handle(@inject msg) {
         return msg;
     }
 }
-new Service().handle('hi');`;
-    const result = runPipeline(input)!;
-    expectParseable(result);
-    // The msg param's annotation must land between `msg` and the
-    // closing `)` — not inside or before the decorator.
-    expect(result).toMatch(/@inject msg:\s*string/);
+new Service().handle('hi');`);
+    expect(out).toTypeAs("msg", "string");
+    expect(out.text).toMatch(/@inject msg:/);
   });
 
-  // Dynamic-import expression coexisting with annotated sites in the
-  // same file. The bug-class concern: `import(...)` is a
-  // CallExpression whose callee is the `import` keyword (a reserved
-  // word), not an Identifier — could confuse the transformer's
-  // CallExpression handling, or the offset calculations for unrelated
-  // annotation sites in the same source. Probe: a class method that
-  // contains `import("./mod")` syntax plus a separately-observed
-  // function in the same file. The import is in dead code so the vm
-  // runtime doesn't try to resolve a non-existent module; what
-  // matters for the AST-position concern is that the SYNTAX exists
-  // in the source the transformer parses.
   it("dynamic-import in same file does not shift unrelated annotation offsets", () => {
-    const input = `
+    // `import(...)` is a call whose callee is a keyword, not an identifier.
+    // It sits in dead code so the sandbox never resolves a module, which also
+    // means the runtime never saw that branch's Promise: the return written
+    // from what ran is one TypeScript rejects.
+    const out = pipeline(
+      `
 function tag(s) {
     return 'tag:' + s;
 }
 class Loader {
     load(name) {
-        // dead code — import() expression present but never evaluated
-        // so vm runtime stays happy without a module resolver.
         if (false) {
             return import("./mod").then((m) => new m.Cls(name));
         }
@@ -864,147 +659,112 @@ class Loader {
     }
 }
 tag('a');
-new Loader().load('b');`;
-    const result = runPipeline(input)!;
-    expectParseable(result);
-    expect(result).toMatch(/function tag\(s:\s*string\)/);
-    expect(result).toMatch(/load\(name:\s*string\)/);
+new Loader().load('b');`,
+      { allow: { newDiagnostics: true } },
+    );
+    expect(out).toTypeAs("s", "string");
+    expect(out).toTypeAs("name", "string");
   });
 });
 
-// TSX-specific variant of expectParseable: parses with ScriptKind.TSX
-// so JSX in the output is accepted.
-function expectParseableTsx(source: string): void {
-  const sf = ts.createSourceFile(
-    "check.tsx",
-    source,
-    ts.ScriptTarget.Latest,
-    true,
-    ts.ScriptKind.TSX,
-  );
-  const diags = (sf as ts.SourceFile & { parseDiagnostics?: ts.Diagnostic[] }).parseDiagnostics;
-  const errors = (diags ?? []).filter((d) => d.category === ts.DiagnosticCategory.Error);
-  if (errors.length > 0) {
-    const messages = errors
-      .map((d) => `  - ${ts.flattenDiagnosticMessageText(d.messageText, "\n")}`)
-      .join("\n");
-    throw new Error(
-      `Apply output failed to parse as TSX:\n${messages}\n\n--- source ---\n${source}\n--------------`,
-    );
-  }
-}
-
-// Extend the AST-position probe sweep to JSX-specific positions.
-// ts-capture's transformer accepts .tsx; the unknown is whether the
-// offset-based applier lands at the right byte for JSX-only shapes
-// (paren-less arrows inside JSX expression containers, TSX type-param
-// disambiguators, fragments, etc.). Confirm-or-deny probes — each one
-// fails loudly if apply produces unparseable TSX.
-//
-// Some shapes (handler arrows in JSX attribute values, e.g.
-// `<button onClick={e => …} />`) need a real DOM event loop to fire
-// the callback; those are covered by the bench/demo-tsx harness, not
-// here. This describe scopes to shapes invocable from a component
-// function call.
+// Handler arrows in JSX attribute values need a DOM event loop to fire and
+// are covered by the bench/demo-tsx harness, not here.
 describe("integration: AST-position bug class probes — JSX shapes", () => {
+  const TSX = { tsx: true };
+
   it("function component with destructured props: apply lands at `}` of pattern", () => {
-    const input = `
+    const out = pipeline(
+      `
 function Card({ title, body }) {
     return <article><h3>{title}</h3>{body}</article>;
 }
-Card({ title: 'a', body: 'b' });`;
-    const result = runPipelineTsx(input)!;
-    expectParseableTsx(result);
-    expect(result).toContain("{ title, body }:");
+Card({ title: 'a', body: 'b' });`,
+      TSX,
+    );
+    expect(out).toTypeAs("{ title, body }", "{ body: string; title: string }");
   });
 
   it("arrow-style function component with destructured props", () => {
-    const input = `
+    const out = pipeline(
+      `
 const Card = ({ title, body }) => <article><h3>{title}</h3>{body}</article>;
-Card({ title: 'a', body: 'b' });`;
-    const result = runPipelineTsx(input)!;
-    expectParseableTsx(result);
-    expect(result).toContain("{ title, body }:");
+Card({ title: 'a', body: 'b' });`,
+      TSX,
+    );
+    expect(out).toTypeAs("{ title, body }", "{ body: string; title: string }");
   });
 
   it("paren-less arrow inside JSX expression container: items.map(item => <li/>)", () => {
-    // The map callback runs during component-function execution, so
-    // `item` gets a real observation. Apply must wrap the paren-less
-    // single param AND keep the JSX expression around it parseable.
-    const input = `
+    // The map callback runs during the component call, so `item` is
+    // observed. The appliers differ on the return type of a paren-less
+    // arrow, as in the plain probe above.
+    const out = pipeline(
+      `
 function List({ items }) {
     return <ul>{items.map(item => <li>{item}</li>)}</ul>;
 }
-List({ items: [1, 2, 3] });`;
-    const result = runPipelineTsx(input)!;
-    expectParseableTsx(result);
-    // Matches `(item: number) =>` (param wrap only) or
-    // `(item: number): T =>` (param + return type) — both valid TSX.
-    // Same shape as the existing paren-less arrow probe.
-    expect(result).toMatch(/\(item:\s*number\)\s*(?::[^=]+)?=>/);
+List({ items: [1, 2, 3] });`,
+      { ...TSX, allow: { applierDivergence: true } },
+    );
+    expect(out).toTypeAs("item", "number");
   });
 
   it("fragment shorthand wrapping instrumented JSX", () => {
-    // `<>…</>` is TSX-only syntax — apply must not stumble parsing it
-    // while threading offsets through the surrounding decl.
-    const input = `
+    const out = pipeline(
+      `
 function Wrap({ children }) {
     return <>{children}</>;
 }
-Wrap({ children: 'x' });`;
-    const result = runPipelineTsx(input)!;
-    expectParseableTsx(result);
-    expect(result).toContain("{ children }:");
+Wrap({ children: 'x' });`,
+      TSX,
+    );
+    expect(out).toTypeAs("{ children }", "{ children: string }");
   });
 
   it("function component with rest props in destructure", () => {
-    const input = `
+    const out = pipeline(
+      `
 function Foo({ a, ...rest }) {
     return <div>{String(a)}{JSON.stringify(rest)}</div>;
 }
-Foo({ a: 1, b: 2, c: 3 });`;
-    const result = runPipelineTsx(input)!;
-    expectParseableTsx(result);
-    expect(result).toContain("{ a, ...rest }:");
+Foo({ a: 1, b: 2, c: 3 });`,
+      TSX,
+    );
+    expect(out).toTypeAs("{ a, ...rest }", "{ a: number; b: number; c: number }");
   });
 
   it("TSX type-param disambiguator `<T,>(x) => x` does not break apply parser", () => {
-    // The trailing comma in `<T,>` is TSX's way to disambiguate from
-    // a JSX opening tag. apply-types.ts currently parses with
-    // ScriptKind.TS internally — this probe surfaces whether that's
-    // a problem in practice (it may parse fine even as TS since the
-    // comma form is a generic-only construct).
-    const input = `
+    const out = pipeline(
+      `
 const id = <T,>(x) => x;
 id<number>(42);
-id<string>('hi');`;
-    const result = runPipelineTsx(input)!;
-    expectParseableTsx(result);
-    expect(result).toMatch(/<T,>\(x:/);
+id<string>('hi');`,
+      TSX,
+    );
+    expect(out).toTypeAs("x", "number | string");
   });
 
   it("generic component invocation `<Foo<string> v=... />` does not break apply parser", () => {
-    // TSX-specific: type arguments on a JSX component. The probe
-    // checks that the surrounding decl's apply offsets aren't
-    // corrupted by apply-time TS-vs-TSX parsing ambiguity.
-    const input = `
+    const out = pipeline(
+      `
 function Foo(p) { return <span>{String(p.v)}</span>; }
 const el = <Foo<string> v="x" />;
 Foo({ v: 'x' });
-void el;`;
-    const result = runPipelineTsx(input)!;
-    expectParseableTsx(result);
-    expect(result).toMatch(/function Foo\(p:/);
+void el;`,
+      TSX,
+    );
+    expect(out).toTypeAs("p", "{ v: string }");
   });
 });
 
-// Most-specific-common-base collapse, end-to-end through the
-// full pipeline. Runtime captures the prototype chain inline with a
-// `@sa:` marker; apply-time collapses observed class unions to the
-// most-specific shared ancestor when `infer.rewriteCommonBase` is on.
+// The runtime captures the prototype chain inline with a `@sa:` marker, and
+// apply collapses observed class unions to the most specific shared ancestor
+// when `infer.rewriteCommonBase` is on. The marker must never reach the file,
+// and a marker inside a comment is not a parse error, so that stays text.
 describe("integration: RewriteMostSpecificCommonBase", () => {
-  it("collapses Cat | Dog observed at one param to their common Mammal base", () => {
-    const input = `
+  const CAPTURE = { collector: { captureClassHierarchy: true } };
+  const COLLAPSE = { ...CAPTURE, ...withInfer({ rewriteCommonBase: true }) };
+  const PETS = `
 class Animal {}
 class Mammal extends Animal {}
 class Cat extends Mammal {}
@@ -1012,49 +772,28 @@ class Dog extends Mammal {}
 function describe(pet) { return pet; }
 describe(new Cat());
 describe(new Dog());`;
-    const result = runPipeline(input, {
-      collector: { captureClassHierarchy: true },
-      apply: { infer: { ...INFER_DEFAULTS, rewriteCommonBase: true } },
-    })!;
-    expect(result).toContain("function describe(pet: Mammal)");
-    // No leaked markers.
-    expect(result).not.toContain("@sa:");
+
+  it("collapses Cat | Dog observed at one param to their common Mammal base", () => {
+    const out = pipeline(PETS, COLLAPSE);
+    expect(out).toAnnotate("pet", "Mammal");
+    expect(out.text).not.toContain("@sa:");
   });
 
   it("with capture on but rewriteCommonBase off — keeps flat union, strips markers", () => {
-    const input = `
-class Animal {}
-class Mammal extends Animal {}
-class Cat extends Mammal {}
-class Dog extends Mammal {}
-function describe(pet) { return pet; }
-describe(new Cat());
-describe(new Dog());`;
-    const result = runPipeline(input, {
-      collector: { captureClassHierarchy: true },
-      // apply uses defaults — rewriteCommonBase=false
-    })!;
-    expect(result).toMatch(/pet:\s*Cat \| Dog/);
-    expect(result).not.toContain("@sa:");
+    const out = pipeline(PETS, CAPTURE);
+    expect(out).toAnnotate("pet", "Cat | Dog");
+    expect(out.text).not.toContain("@sa:");
   });
 
   it("with capture off — observations don't carry chain, behaviour identical to today", () => {
-    const input = `
-class Animal {}
-class Mammal extends Animal {}
-class Cat extends Mammal {}
-class Dog extends Mammal {}
-function describe(pet) { return pet; }
-describe(new Cat());
-describe(new Dog());`;
-    // Both sides default — no change in behaviour expected.
-    const result = runPipeline(input)!;
-    expect(result).toMatch(/pet:\s*Cat \| Dog/);
-    expect(result).not.toContain("@sa:");
+    const out = pipeline(PETS);
+    expect(out).toAnnotate("pet", "Cat | Dog");
+    expect(out.text).not.toContain("@sa:");
   });
 
   it("collapses sibling subtrees (Cat extends Mammal, Sparrow extends Bird) to Animal", () => {
-    const input = `
+    const out = pipeline(
+      `
 class Animal {}
 class Mammal extends Animal {}
 class Bird extends Animal {}
@@ -1062,245 +801,87 @@ class Cat extends Mammal {}
 class Sparrow extends Bird {}
 function watch(creature) { return creature; }
 watch(new Cat());
-watch(new Sparrow());`;
-    const result = runPipeline(input, {
-      collector: { captureClassHierarchy: true },
-      apply: { infer: { ...INFER_DEFAULTS, rewriteCommonBase: true } },
-    })!;
-    expect(result).toContain("function watch(creature: Animal)");
-    expect(result).not.toContain("@sa:");
+watch(new Sparrow());`,
+      COLLAPSE,
+    );
+    expect(out).toAnnotate("creature", "Animal");
+    expect(out.text).not.toContain("@sa:");
   });
 
   it("keeps unrelated hierarchies as a flat union (no shared ancestor)", () => {
-    const input = `
+    const out = pipeline(
+      `
 class Animal {}
 class Cat extends Animal {}
 class Plant {}
 class Daisy extends Plant {}
 function inspect(thing) { return thing; }
 inspect(new Cat());
-inspect(new Daisy());`;
-    const result = runPipeline(input, {
-      collector: { captureClassHierarchy: true },
-      apply: { infer: { ...INFER_DEFAULTS, rewriteCommonBase: true } },
-    })!;
-    expect(result).toMatch(/thing:\s*Cat \| Daisy/);
-    expect(result).not.toContain("@sa:");
+inspect(new Daisy());`,
+      COLLAPSE,
+    );
+    expect(out).toAnnotate("thing", "Cat | Daisy");
+    expect(out.text).not.toContain("@sa:");
   });
 
   it("primitives mixed with class observations stay in the union, classes still collapse", () => {
-    const input = `
+    const out = pipeline(
+      `
 class Animal {}
 class Cat extends Animal {}
 class Dog extends Animal {}
 function tag(x) { return x; }
 tag(new Cat());
 tag(new Dog());
-tag("plain string");`;
-    const result = runPipeline(input, {
-      collector: { captureClassHierarchy: true },
-      apply: { infer: { ...INFER_DEFAULTS, rewriteCommonBase: true } },
-    })!;
-    expect(result).toMatch(/x:\s*Animal \| string/);
-    expect(result).not.toContain("@sa:");
+tag("plain string");`,
+      COLLAPSE,
+    );
+    expect(out).toAnnotate("x", "Animal | string");
+    expect(out.text).not.toContain("@sa:");
   });
 });
 
-// Skip annotations TS would already infer from the initializer.
-// End-to-end via the full pipeline: a `let count = 0` observation
-// should produce a redundant `: number` annotation by default, but
-// get suppressed when `infer.skipRedundantAnnotations` is on.
+// Whether a redundant annotation was skipped is a question about the AST.
 describe("integration: skipRedundantAnnotations", () => {
-  it("OFF (explicit): `let count = 0` still gets redundant `: number`", () => {
-    const input = `
+  const SKIP = withInfer({ skipRedundantAnnotations: true });
+  const COUNT = `
 let count = 0;
 function use(a) { return a; }
 use(count);`;
-    const result = runPipeline(input, {
-      apply: { infer: { ...INFER_DEFAULTS, skipRedundantAnnotations: false } },
-    })!;
-    // varDecl observation fires for count; default behaviour annotates.
-    expect(result).toContain("let count: number = 0");
+
+  it("OFF (explicit): `let count = 0` still gets redundant `: number`", () => {
+    const out = pipeline(COUNT, KEEP_INFERABLE);
+    expect(out).toAnnotate("count", "number");
   });
 
   it("ON: `let count = 0` skips redundant `: number`", () => {
-    const input = `
-let count = 0;
-function use(a) { return a; }
-use(count);`;
-    const result = runPipeline(input, {
-      apply: { infer: { ...INFER_DEFAULTS, skipRedundantAnnotations: true } },
-    })!;
-    expect(result).not.toContain("let count: number");
-    expect(result).toContain("let count = 0");
+    const out = pipeline(COUNT, SKIP);
+    expect(out).toLeaveUntyped("count");
   });
 
   it("ON: `const x = new Cat()` skips matching annotation but param `a` still gets typed", () => {
-    const input = `
+    const out = pipeline(
+      `
 class Cat {}
 const c = new Cat();
 function use(a) { return a; }
-use(c);`;
-    const result = runPipeline(input, {
-      apply: { infer: { ...INFER_DEFAULTS, skipRedundantAnnotations: true } },
-    })!;
-    expect(result).not.toContain("const c: Cat");
-    expect(result).toContain("const c = new Cat()");
-    // Function params are out of scope for the inferable check.
-    expect(result).toContain("function use(a: Cat)");
+use(c);`,
+      SKIP,
+    );
+    expect(out).toLeaveUntyped("c");
+    expect(out).toAnnotate("a", "Cat");
   });
 
   it("ON: `const x = JSON.parse(...)` (call expression) keeps annotation", () => {
-    // We don't suppress for call expressions — TS would infer `any`
-    // from JSON.parse, so ts-capture's observed structure is more useful.
-    const input = `
+    // TypeScript would infer `any` from JSON.parse, so the observed shape
+    // says more and is kept.
+    const out = pipeline(
+      `
 const obj = JSON.parse('{"id":1}');
 function use(a) { return a; }
-use(obj);`;
-    const result = runPipeline(input, {
-      apply: { infer: { ...INFER_DEFAULTS, skipRedundantAnnotations: true } },
-    })!;
-    expect(result).toMatch(/const obj:\s*\{ id: number \}\s*=/);
-  });
-});
-
-// Cross-validation sweep for the CST-aware applier. Re-runs a curated
-// set of scenarios from the suites above with `infer.cstAware: true`
-// and asserts byte-equivalence with the default offset-based path.
-// This is the "no regressions on the integration fixture" check.
-// Any case where CST is intentionally MORE capable than the
-// offset-based path (paren-less arrow return types, thisType without
-// the thisNeedsComma flag) belongs in apply-types-cst.spec.ts as a
-// CST-only assertion, not here.
-describe("integration: cstAware parity with offset-based applier", () => {
-  function bothAgree(input: string, applyOpts: ApplyTypesOptions = {}): string {
-    const offsetResult = runPipeline(input, { apply: applyOpts });
-    const cstResult = runPipeline(input, {
-      apply: { ...applyOpts, infer: { ...INFER_DEFAULTS, ...applyOpts.infer, cstAware: true } },
-    });
-    expect(cstResult).toBe(offsetResult);
-    if (cstResult === null) throw new Error("pipeline produced no output");
-    return cstResult;
-  }
-
-  it("simple param annotation", () => {
-    const result = bothAgree(`
-function greet(c) {
-    return 'Hello ' + c;
-}
-greet('World');`);
-    expect(result).toContain("function greet(c: string): string");
-  });
-
-  it("union type from multiple call sites", () => {
-    const result = bothAgree(`
-function commas(item) {
-    return Array.from(item).join(', ');
-}
-commas('Lavender');
-commas(['Apples', 'Oranges']);`);
-    expect(result).toContain("item: string | string[]");
-  });
-
-  it("optional parameter", () => {
-    bothAgree(`
-function calculate(a, b?) {
-    return a + (b || 0);
-}
-calculate(5, 6);`);
-  });
-
-  it("destructured parameter with default", () => {
-    bothAgree(`
-function greet({ who = "" }) {
-    return 'Hello, ' + who;
-}
-greet({who: 'world'});`);
-  });
-
-  it("nested arrow functions", () => {
-    bothAgree(`
-function doTheThing(cb) {
-    cb([1,2,3]);
-}
-doTheThing((results) => {
-    results.forEach((result) => console.log(result));
-});`);
-  });
-
-  it("class methods with multiple call sites", () => {
-    bothAgree(`
-class Greeter {
-    greet(who) {
-        return 'Hello, ' + who;
-    }
-}
-new Greeter().greet('World');`);
-  });
-
-  it("variable declaration inference", () => {
-    bothAgree(`let x = 5;\nfunction use(a) { return a; }\nuse(x);`);
-  });
-
-  it("class property inference via constructor-param synthesis", () => {
-    bothAgree(`
-class Foo {
-    value = 42;
-    greet() { return this.value; }
-}
-new Foo().greet();`);
-  });
-
-  it("async function with Promise return wrap", () => {
-    bothAgree(`
-async function fetchData(url) { return url.length; }
-fetchData("http://example.com");`);
-  });
-
-  it("function cross-referencing (callback type from registered fn)", () => {
-    bothAgree(`
-function process(cb) {
-    cb(42);
-}
-function double(x) { return x * 2; }
-process(double);`);
-  });
-
-  it("RewriteMostSpecificCommonBase + cstAware combined", () => {
-    bothAgree(
-      `
-class Animal {}
-class Mammal extends Animal {}
-class Cat extends Mammal {}
-class Dog extends Mammal {}
-function describe(pet) { return pet; }
-describe(new Cat());
-describe(new Dog());`,
-      { infer: { ...INFER_DEFAULTS, rewriteCommonBase: true } },
+use(obj);`,
+      SKIP,
     );
+    expect(out).toAnnotate("obj", "{ id: number }");
   });
-
-  it("skipRedundantAnnotations + cstAware combined", () => {
-    bothAgree(
-      `
-let count = 0;
-function use(a) { return a; }
-use(count);`,
-      { infer: { ...INFER_DEFAULTS, skipRedundantAnnotations: true } },
-    );
-  });
-
-  it("function-expression outer-annotation guard: const fn = (x) => ... — outer skip on both paths", () => {
-    bothAgree(`
-const fn = (x) => x + 1;
-fn(5);`);
-  });
-
-  // Paren-less arrow wrapping is asserted at the unit level in
-  // apply-types-cst.spec.ts. The integration pipeline always
-  // instruments return types; for paren-less arrows, CST applies the
-  // return annotation while the offset path skips it
-  // (positionLooksLikeInsertionSite requires `before === ")"`). That
-  // divergence is intentional, not a parity violation, and a parity
-  // assertion here would always fail.
 });

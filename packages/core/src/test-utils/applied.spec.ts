@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import { INFER_DEFAULTS } from "../configuration.js";
 import { newApplyTelemetry } from "../contract.js";
-import { applied, entry, parseErrors, printedAst, reapplied } from "./applied.js";
+import { applied, checked, entry, parseErrors, printedAst, reapplied } from "./applied.js";
 
 // The helper under test is what every converted spec will stand on, so each
 // matcher is proved both ways here: it accepts what it should and names what
@@ -72,6 +72,12 @@ describe("toAnnotate", () => {
       entry("target.ts", after(src, "g()"), [["number"]], { returnType: true }),
     ]);
     expect(out).toAnnotate({ returnOf: "g" }, "number");
+  });
+
+  it("finds a function's parameter, not a same-named one in a function type", () => {
+    const src = "export function f(cb: (p: unknown) => void) { cb(1); }\nf((p) => {});\n";
+    const out = applied(src, [entry("target.ts", after(src, "f((p"), [["number"]])]);
+    expect(out).toAnnotate("p", "number");
   });
 
   it("fails on a site that does not exist", () => {
@@ -150,5 +156,23 @@ describe("toHaveNoNewDiagnostics", () => {
   it("names an error the annotation introduced", () => {
     const out = applied(WITH_OLD_ERROR, paramP(WITH_OLD_ERROR, "{ b: string }"));
     expect(() => expect(out).toHaveNoNewDiagnostics()).toThrow(/TS2339/);
+  });
+});
+
+describe("checked", () => {
+  it("reads an output someone else produced against its input", () => {
+    const out = checked(READS_A, "export function f(p: { a: number }) { return p.a; }\n");
+    expect(out).toAnnotate("p", "{ a: number }");
+    expect(out).toTypeAs({ returnOf: "f" }, "number");
+    expect(out).toHaveNoNewDiagnostics();
+  });
+
+  it("counts only the diagnostics the output added", () => {
+    const withOldError = READS_A + 'export const bad: number = "x";\n';
+    const out = checked(
+      withOldError,
+      'export function f(p: { b: string }) { return p.a; }\nexport const bad: number = "x";\n',
+    );
+    expect(out.newDiagnostics.map((d) => d.code)).toEqual([2339]);
   });
 });
