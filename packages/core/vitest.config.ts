@@ -17,7 +17,13 @@ export default defineConfig({
     coverage: {
       provider: "v8",
       include: ["src/**/*.ts"],
-      exclude: ["src/**/*.spec.ts", "src/cli.ts", "src/loader.ts", "src/register.ts"],
+      exclude: [
+        "src/**/*.spec.ts",
+        "src/test-utils/**",
+        "src/cli.ts",
+        "src/loader.ts",
+        "src/register.ts",
+      ],
       reporter: ["text", "html"],
       thresholds: {
         statements: 80,

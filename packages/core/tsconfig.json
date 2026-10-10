@@ -16,5 +16,5 @@
     "verbatimModuleSyntax": true
   },
   "include": ["src"],
-  "exclude": ["src/**/*.spec.ts", "src/test-tscptr-scaffold.ts"]
+  "exclude": ["src/**/*.spec.ts", "src/test-tscptr-scaffold.ts", "src/test-utils/**"]
 }
