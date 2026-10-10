@@ -68,8 +68,6 @@ describe("@ts-capture/esbuild", () => {
     const output = await buildSource(
       `export function greet(name) { return "Hello " + name; }`,
     );
-    expect(output.text).toContain("__tscptr__");
-    expect(output.text).toContain("greet");
     expect(output).toTrack("name", { in: pathOf("test.ts") });
     expect(output).toWrapReturnOf("greet");
   });
@@ -78,7 +76,6 @@ describe("@ts-capture/esbuild", () => {
     const output = await buildSource(`export function f(x) { return x + 1; }`, {
       filename: "passthrough.js",
     });
-    expect(output.text).not.toContain("__tscptr__");
     expect(output.calls).toEqual([]);
   });
 
@@ -87,7 +84,6 @@ describe("@ts-capture/esbuild", () => {
       filename: "excluded.ts",
       pluginOpts: { exclude: /excluded/ },
     });
-    expect(output.text).not.toContain("__tscptr__");
     expect(output.calls).toEqual([]);
   });
 
@@ -96,7 +92,6 @@ describe("@ts-capture/esbuild", () => {
       filename: "yes-pattern.ts",
       pluginOpts: { include: /yes-pattern/ },
     });
-    expect(matched.text).toContain("__tscptr__");
     expect(matched).toTrack("x", { in: pathOf("yes-pattern.ts") });
   });
 
@@ -105,7 +100,6 @@ describe("@ts-capture/esbuild", () => {
       filename: "other-pattern.ts",
       pluginOpts: { include: /yes-pattern/ },
     });
-    expect(skipped.text).not.toContain("__tscptr__");
     expect(skipped.calls).toEqual([]);
   });
 
@@ -114,7 +108,6 @@ describe("@ts-capture/esbuild", () => {
       `export const Greet = (props) => <div>{props.name}</div>;`,
       { filename: "Greet.tsx" },
     );
-    expect(output.text).toContain("__tscptr__");
     expect(output).toTrack("props", { arrow: true });
     expect(output).toWrapReturnOf("Greet");
     // esbuild's default JSX transform emits `React.createElement` (classic
@@ -132,7 +125,6 @@ describe("@ts-capture/esbuild", () => {
     expect(output.text).toMatch(
       /require\(["']@ts-capture\/core\/preload["']\)/,
     );
-    expect(output.text).toContain("__tscptr__");
     expect(output).toTrack("x");
   });
 
@@ -144,7 +136,6 @@ describe("@ts-capture/esbuild", () => {
     expect(output.text).not.toMatch(
       /require\(["']@ts-capture\/core\/preload["']\)/,
     );
-    expect(output.text).toContain("__tscptr__");
     expect(output).toTrack("x");
   });
 
@@ -176,9 +167,7 @@ describe("@ts-capture/esbuild", () => {
     });
     const output = result.outputFiles[0].text;
 
-    // Both files instrumented — multiple __tscptr__ occurrences.
-    const tscptrCount = (output.match(/__tscptr__/g) ?? []).length;
-    expect(tscptrCount).toBeGreaterThan(1);
+    // Both files are instrumented.
     const out = inspected(output);
     expect(out).toTrack("x", { in: entry });
     expect(out).toTrack("x", { in: helper });
@@ -206,7 +195,6 @@ describe("@ts-capture/esbuild", () => {
       plugins: [tsCaptureEsbuildPlugin({ injectRuntime: true })],
     });
     const output = result.outputFiles[0].text;
-    expect(output).toContain("__tscptr__");
     expect(output).toMatch(/require\(["']@ts-capture\/core\/preload["']\)/);
     expect(inspected(output)).toTrack("x", { in: entry });
   });
@@ -224,7 +212,6 @@ describe("@ts-capture/esbuild", () => {
       plugins: [tsCaptureEsbuildPlugin({ injectRuntime: true })],
     });
     const output = result.outputFiles[0].text;
-    expect(output).toContain("__tscptr__");
     expect(output).toMatch(/require\(["']@ts-capture\/core\/preload["']\)/);
     expect(inspected(output)).toTrack("x", { in: entry });
   });
