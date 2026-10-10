@@ -28,6 +28,7 @@ describe("sameTypeString — punctuation and order do not make a type", () => {
     ["(A|B)[]", "(B | A)[]"],
     ["Map<string,   number>", "Map<string, number>"],
     ["{ a: { c: number, b: string } }", "{ a: { b: string; c: number; }; }"],
+    ["{ send(x: number): void, n: number }", "{ n: number; send(x: number): void; }"],
     // A function type's identity does not include its parameter names, and its
     // parameter types are types like any other — both spellings below name one
     // type. Comparing the parameter list as raw text said otherwise.
@@ -71,6 +72,12 @@ describe("sameTypeString — differences that change the type", () => {
 describe("typeStringForSource", () => {
   it("spells separators the way TypeScript does", () => {
     expect(typeStringForSource("{ b: number|string, a: T }")).toBe("{ b: number | string; a: T }");
+  });
+
+  it("writes a method member with the separator TypeScript uses, not both", () => {
+    expect(typeStringForSource("{ render(x: number): number, value: number }")).toBe(
+      "{ render(x: number): number; value: number }",
+    );
   });
 
   it("keeps parameter names, member order and union order", () => {
