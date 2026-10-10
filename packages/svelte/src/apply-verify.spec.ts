@@ -7,7 +7,9 @@ import * as path from "node:path";
 import ts from "typescript";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
+import "../../core/src/test-utils/matchers.js";
 import { sveltePlugin } from "./index.js";
+import { appliedSvelte } from "./test-utils/applied-svelte.js";
 
 /**
  * Applying type observations into a .svelte file must run
@@ -69,13 +71,14 @@ describe("svelte apply typecheck-verify", () => {
     // A real imported module whose return type is broader than what a
     // single capture session observes (Partial<...>), plus a built-in
     // nullable return (String.match -> RegExpMatchArray | null).
-    const proj = makeProject({
+    const files = {
       "ctx.ts": [
         "export interface UrlCtx { plate?: string }",
         "export function getCtx(): Partial<UrlCtx> { return {} }",
         "",
       ].join("\n"),
-    });
+    };
+    const proj = makeProject(files);
 
     const svelteFile = path.join(proj.dir, "Comp.svelte");
     const scriptBody =
@@ -105,6 +108,10 @@ describe("svelte apply typecheck-verify", () => {
     });
     expect(noVerify).toMatch(/matched\s*:\s*string\[\]/);
     expect(noVerify).toMatch(/ctxVal\s*:\s*\{[^}]*plate/);
+    const unverified = appliedSvelte(svelteSource, noVerify, { files }).script;
+    expect(unverified).toAnnotate("matched", "string[]");
+    expect(unverified).toAnnotate("ctxVal", "{ plate: string }");
+    expect(unverified).not.toHaveNoNewDiagnostics();
 
     // With the project verifier the unsafe annotations must be dropped.
     const projectVerify = createProjectVerificationContext(
@@ -118,6 +125,10 @@ describe("svelte apply typecheck-verify", () => {
     });
     expect(verified).not.toMatch(/matched\s*:\s*string\[\]/);
     expect(verified).not.toMatch(/ctxVal\s*:\s*\{[^}]*plate/);
+    const out = appliedSvelte(svelteSource, verified, { files }).script;
+    expect(out).toLeaveUntyped("matched");
+    expect(out).toLeaveUntyped("ctxVal");
+    expect(out).toHaveNoNewDiagnostics();
   });
 
   it("annotates a destructured $props() declaration", () => {
@@ -150,10 +161,16 @@ describe("svelte apply typecheck-verify", () => {
       projectVerify,
     });
     expect(verified).toMatch(/\{ host, guest \}\s*:\s*\{[^}]*host: string/);
+    const out = appliedSvelte(svelteSource, verified).script;
+    expect(out).toAnnotate(
+      "{ host, guest }",
+      "{ host: string; guest: string }",
+    );
+    expect(out).toHaveNoNewDiagnostics();
   });
 
   it("keeps a sound annotation while dropping an unsound one in the same block", () => {
-    const proj = makeProject({
+    const files = {
       "ctx.ts": [
         "export function getCtx(): string | undefined { return undefined }",
         // Untyped on purpose: TypeScript infers `any` from it, so an
@@ -162,7 +179,8 @@ describe("svelte apply typecheck-verify", () => {
         "export function getOpaque(x) { return x }",
         "",
       ].join("\n"),
-    });
+    };
+    const proj = makeProject(files);
 
     const svelteFile = path.join(proj.dir, "Comp.svelte");
     const scriptBody =
@@ -198,5 +216,9 @@ describe("svelte apply typecheck-verify", () => {
     expect(verified).toMatch(/sound\s*:\s*string \| undefined/);
     // `unsound` drops the undefined branch and must be rejected by verify.
     expect(verified).not.toMatch(/unsound\s*:\s*string(?!\s*\|)/);
+    const out = appliedSvelte(svelteSource, verified, { files }).script;
+    expect(out).toAnnotate("sound", "string | undefined");
+    expect(out).toLeaveUntyped("unsound");
+    expect(out).toHaveNoNewDiagnostics();
   });
 });
