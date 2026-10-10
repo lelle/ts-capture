@@ -97,6 +97,19 @@ export function inspected(text: string, options: InspectedOptions = {}): Instrum
   };
 }
 
+/** The offset just past the first occurrence of `needle` in `source`. */
+export function endOf(source: string, needle: string): number {
+  const start = source.indexOf(needle);
+  if (start < 0) throw new Error(`no ${needle} in:\n${source}`);
+  return start + needle.length;
+}
+
+/** The start and end of the first occurrence of `needle` in `source`. */
+export function spanOf(source: string, needle: string): [number, number] {
+  const end = endOf(source, needle);
+  return [end - needle.length, end];
+}
+
 const isTsx = (filename: string): boolean => /\.[jt]sx$/.test(filename);
 const collapse = (text: string): string => text.replace(/\s+/g, " ").trim();
 
@@ -253,7 +266,8 @@ function positionProblem(
       : "no parameter list of the input starts there";
   }
   if (declared === undefined) return "no parameter or declared name of the input ends there";
-  if (form === "param" && declared !== null && declared !== call.name) {
+  const expected = form === "param" ? call.name : options.paramReturnMember;
+  if (expected !== undefined && declared !== null && declared !== expected) {
     return `the name that ends there is ${declared}`;
   }
   return undefined;

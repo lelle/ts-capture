@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { collect } from "./collected.js";
-import { inspected, instrumented } from "./instrumented.js";
+import { endOf, inspected, instrumented, spanOf } from "./instrumented.js";
 import "./matchers.js";
 import { stripInstrumentation } from "./strip-instrumentation.js";
 
@@ -65,6 +65,17 @@ describe("the invariants of instrumented()", () => {
     const src = "function foo(a) { return a; }";
     const renamed = handWritten('__tscptr__("b", b, 14, "test.ts", "{}")');
     expect(() => inspected(renamed, { input: src })).toThrow(/"b".*offset 14.*a/s);
+  });
+
+  it("rejects a callback's return recorded at another parameter than the callback", () => {
+    const src = "function foo(a, cb) { return cb(a); }";
+    const text = instrumented(src).text.replace(
+      /(cb\(a\), )\d+/,
+      (_, call: string) => call + endOf(src, "foo(a"),
+    );
+    expect(() => inspected(text, { input: src })).toThrow(
+      /cb\(a\).*the name that ends there is a/s,
+    );
   });
 
   it("rejects an output that does not parse", () => {
@@ -165,6 +176,22 @@ describe("toTrack", () => {
   });
 });
 
+describe("at, endOf and spanOf", () => {
+  const src = "const inc = x => x + 1;";
+
+  it("names an offset by the text that ends there", () => {
+    expect(endOf(src, "inc = x")).toBe(13);
+    expect(spanOf(src, "x")).toEqual([12, 13]);
+    expect(() => endOf(src, "y")).toThrow(/no y in/);
+  });
+
+  it("matches the offset a call records at", () => {
+    const out = instrumented(src);
+    expect(out).toTrack("x", { at: endOf(src, "inc = x"), parens: spanOf(src, "x") });
+    expect(() => expect(out).toTrack("x", { at: 3 })).toThrow(/at 3, but it is recorded at 13/);
+  });
+});
+
 describe("toLeaveUntracked", () => {
   it("accepts a typed parameter and rejects an untyped one, quoting the call", () => {
     const out = instrumented("function foo(a: string, b) { return a; }");
@@ -194,6 +221,25 @@ describe("toWrapReturnOf, toWrapInitializerOf and toTrackArgument", () => {
     expect(out).not.toWrapReturnOf("outer");
   });
 
+  it("finds the return of a method by the method's name", () => {
+    const out = instrumented("class K { m(b) { return b; } }");
+    expect(out).toWrapReturnOf("m");
+  });
+
+  it("finds the recorded calls of a callback parameter by the parameter's name", () => {
+    const out = instrumented("function foo(cb, other) { other(); return cb(1); }");
+    expect(out).toWrapCallsOf("cb");
+    expect(out).toWrapCallsOf("other");
+    expect(() => expect(out).toWrapCallsOf("foo")).toThrow(/wrapped callbacks: other, cb/);
+    expect(() => expect(out).not.toWrapCallsOf("cb")).toThrow(/__tscptr__\.ret\(cb\(1\)/);
+  });
+
+  it("finds a registered function by its name", () => {
+    const out = instrumented("function foo(a) { return a; }\nconst fn = (x) => x;");
+    expect(out).toRegisterFunction("foo");
+    expect(() => expect(out).toRegisterFunction("fn")).toThrow(/registered: foo/);
+  });
+
   it("matches the options of the return", () => {
     const out = instrumented("async function load() { return 1; }");
     expect(out).toWrapReturnOf("load", { async: true });
@@ -220,6 +266,12 @@ describe("toDeclareRuntime and toLeaveUnchanged", () => {
     const src = "function foo(a) { return a; }";
     expect(instrumented(src)).toDeclareRuntime();
     expect(instrumented(src, { options: { skipTscptrDeclarations: true } })).not.toDeclareRuntime();
+  });
+
+  it("sees a member of the declared namespace", () => {
+    const out = instrumented("const x = 1;");
+    expect(out).toDeclareRuntime("ret");
+    expect(() => expect(out).toDeclareRuntime("unwrap")).toThrow(/track, ret, registerFn/);
   });
 
   it("accepts an output with no calls and the input's program", () => {
