@@ -1,148 +1,173 @@
-import ts from "typescript";
 import { describe, expect, it } from "vitest";
 
 import type { InstrumentOptions } from "./transformer.js";
 
-import { transformSourceFile } from "./transformer.js";
+import {
+  endOf,
+  type Instrumented,
+  instrumented,
+  type InstrumentedSource,
+  spanOf,
+} from "./test-utils/instrumented.js";
+import "./test-utils/matchers.js";
 
-function transform(source: string, options: InstrumentOptions = {}): string {
-  const sourceFile = ts.createSourceFile("test.ts", source, ts.ScriptTarget.Latest, true);
-  const transformed = transformSourceFile(sourceFile, options);
-  return ts.createPrinter().printFile(transformed);
+/** Instrument without the runtime declarations; only their own tests are about them. */
+function transform(source: string, options: InstrumentOptions = {}): InstrumentedSource {
+  return instrumented(source, { options: { skipTscptrDeclarations: true, ...options } });
 }
+
+const formsOf = (out: Instrumented): string[] => out.calls.map((call) => call.form);
+const callbackReturns = (out: Instrumented): string[] =>
+  out.calls.filter((call) => call.options.paramReturn).map((call) => call.valueText);
 
 describe("transformer", () => {
   describe("__tscptr__ declarations", () => {
     it("adds __tscptr__ declarations to the source file", () => {
-      const result = transform("const x = 1;");
+      const out = transform("const x = 1;", { skipTscptrDeclarations: false });
+      const result = out.text;
       expect(result).toContain("declare function __tscptr__");
       expect(result).toContain("function track");
+      expect(out).toDeclareRuntime();
+      expect(out).toDeclareRuntime("track");
     });
 
     it("skips declarations when skipTscptrDeclarations is true", () => {
-      const result = transform("const x = 1;", { skipTscptrDeclarations: true });
+      const out = transform("const x = 1;");
+      const result = out.text;
       expect(result).not.toContain("declare function __tscptr__");
+      expect(out).not.toDeclareRuntime();
     });
   });
 
   describe("function parameters", () => {
     it("instruments unannotated parameter", () => {
-      const result = transform("function foo(a) { return a; }", { skipTscptrDeclarations: true });
+      const out = transform("function foo(a) { return a; }");
+      const result = out.text;
       expect(result).toContain('__tscptr__("a", a,');
       expect(result).toContain('"test.ts"');
+      expect(out).toTrack("a", { in: "test.ts" });
     });
 
     it("instruments multiple unannotated parameters", () => {
-      const result = transform("function foo(a, b) { return a + b; }", {
-        skipTscptrDeclarations: true,
-      });
+      const out = transform("function foo(a, b) { return a + b; }");
+      const result = out.text;
       expect(result).toContain('__tscptr__("a", a,');
       expect(result).toContain('__tscptr__("b", b,');
+      expect(out).toTrack("a");
+      expect(out).toTrack("b");
     });
 
     it("skips parameters that already have a type", () => {
-      const result = transform("function foo(a: string) { return a; }", {
-        skipTscptrDeclarations: true,
-      });
+      const out = transform("function foo(a: string) { return a; }");
+      const result = out.text;
       expect(result).not.toContain('__tscptr__("a"');
+      expect(out).toLeaveUntracked("a");
     });
 
     it("skips parameters with default values", () => {
-      const result = transform("function foo(a = 12) { return a; }", {
-        skipTscptrDeclarations: true,
-      });
+      const out = transform("function foo(a = 12) { return a; }");
+      const result = out.text;
       expect(result).not.toContain('__tscptr__("a"');
+      expect(out).toLeaveUntracked("a");
     });
 
     it("instruments only unannotated params in mixed declarations", () => {
-      const result = transform("function foo(a: string, b) { return a + b; }", {
-        skipTscptrDeclarations: true,
-      });
+      const out = transform("function foo(a: string, b) { return a + b; }");
+      const result = out.text;
       expect(result).not.toContain('"a"');
       expect(result).toContain('__tscptr__("b", b,');
+      expect(out).toLeaveUntracked("a");
+      expect(out).toTrack("b");
     });
 
     it("does not instrument function without body", () => {
-      const result = transform("declare function foo(a: number): void;", {
-        skipTscptrDeclarations: true,
-      });
+      const out = transform("declare function foo(a: number): void;");
+      const result = out.text;
       expect(result).not.toContain("__tscptr__");
+      expect(out).toLeaveUnchanged();
     });
 
     it("handles optional parameters", () => {
-      const result = transform("function foo(a?) { return a; }", {
-        skipTscptrDeclarations: true,
-      });
+      const out = transform("function foo(a?) { return a; }");
+      const result = out.text;
       expect(result).toContain("__tscptr__");
+      expect(out).toTrack("a");
     });
 
     it("handles destructured parameters", () => {
-      const result = transform("function foo({ a, b }) { return a; }", {
-        skipTscptrDeclarations: true,
-      });
+      const out = transform("function foo({ a, b }) { return a; }");
+      const result = out.text;
       expect(result).toContain("__tscptr__");
       // Should contain the destructured name pattern
       expect(result).toMatch(/__tscptr__\("\{ a, b \}"/);
+      expect(out).toTrack("{ a, b }");
     });
 
     it("handles rest parameters", () => {
-      const result = transform("function foo(...args) { return args; }", {
-        skipTscptrDeclarations: true,
-      });
+      const out = transform("function foo(...args) { return args; }");
+      const result = out.text;
       expect(result).toContain('__tscptr__("args", args,');
+      expect(out).toTrack("args");
     });
   });
 
   describe("method parameters", () => {
     it("instruments class method parameters", () => {
-      const result = transform("class Foo { bar(a) { return a; } }", {
-        skipTscptrDeclarations: true,
-      });
+      const out = transform("class Foo { bar(a) { return a; } }");
+      const result = out.text;
       expect(result).toContain('__tscptr__("a", a,');
+      expect(out).toTrack("a");
     });
 
     it("instruments constructor parameters", () => {
-      const result = transform("class Foo { constructor(a) { this.a = a; } }", {
-        skipTscptrDeclarations: true,
-      });
+      const out = transform("class Foo { constructor(a) { this.a = a; } }");
+      const result = out.text;
       expect(result).toContain('__tscptr__("a", a,');
+      expect(out).toTrack("a");
     });
   });
 
   describe("arrow functions", () => {
     it("instruments arrow function with block body", () => {
-      const result = transform("const fn = (x) => { return x; };", {
-        skipTscptrDeclarations: true,
-      });
+      const out = transform("const fn = (x) => { return x; };");
+      const result = out.text;
       expect(result).toContain('__tscptr__("x", x,');
       // Should have arrow: true in opts
       expect(result).toContain('\\"arrow\\":true');
+      expect(out).toTrack("x", { arrow: true });
     });
 
     it("instruments arrow function with expression body", () => {
-      const result = transform("const fn = (x) => x + 1;", { skipTscptrDeclarations: true });
+      const out = transform("const fn = (x) => x + 1;");
+      const result = out.text;
       expect(result).toContain('__tscptr__("x", x,');
+      expect(out).toTrack("x", { arrow: true });
     });
 
     it("handles arrow function without parens (single param)", () => {
-      const result = transform("const fn = x => x + 1;", { skipTscptrDeclarations: true });
+      const out = transform("const fn = x => x + 1;");
+      const result = out.text;
       expect(result).toContain('__tscptr__("x", x,');
       // Should include parens info for apply-types to add parentheses
       expect(result).toContain('\\"parens\\"');
+      expect(out).toTrack("x", { parens: spanOf(out.input, "x") });
     });
 
     it("handles async arrow function without parens", () => {
-      const result = transform("const fn = async x => x + 1;", { skipTscptrDeclarations: true });
+      const out = transform("const fn = async x => x + 1;");
+      const result = out.text;
       expect(result).toContain('__tscptr__("x", x,');
       expect(result).toContain('\\"parens\\"');
+      expect(out).toTrack("x", { parens: spanOf(out.input, "x") });
     });
 
     it("instruments nested arrow functions", () => {
-      const result = transform("const fn = (x) => (y) => x + y;", {
-        skipTscptrDeclarations: true,
-      });
+      const out = transform("const fn = (x) => (y) => x + y;");
+      const result = out.text;
       expect(result).toContain('__tscptr__("x", x,');
       expect(result).toContain('__tscptr__("y", y,');
+      expect(out).toTrack("x");
+      expect(out).toTrack("y");
     });
 
     // Paren-less arrow callback nested inside a call expression (the
@@ -153,11 +178,11 @@ describe("transformer", () => {
     // without crashing AND emit the parens info so apply-types can wrap
     // `x` correctly.
     it("instruments paren-less arrow callback inside a call expression", () => {
-      const result = transform("[1,2,3].forEach(x => console.log(x));", {
-        skipTscptrDeclarations: true,
-      });
+      const out = transform("[1,2,3].forEach(x => console.log(x));");
+      const result = out.text;
       expect(result).toContain('__tscptr__("x", x,');
       expect(result).toContain('\\"parens\\"');
+      expect(out).toTrack("x", { parens: spanOf(out.input, "x") });
     });
 
     // Stress test: deeply nested paren-less arrows inside calls, mixed
@@ -165,151 +190,171 @@ describe("transformer", () => {
     // AST children non-defensively, this is where it'd crash.
     it("does not crash on deeply nested paren-less arrows in method chains", () => {
       expect(() => {
-        transform("[1,2,3].map(x => x + 1).filter(y => y > 0).reduce((acc, n) => acc + n, 0);", {
-          skipTscptrDeclarations: true,
-        });
+        transform("[1,2,3].map(x => x + 1).filter(y => y > 0).reduce((acc, n) => acc + n, 0);");
       }).not.toThrow();
+      const out = transform(
+        "[1,2,3].map(x => x + 1).filter(y => y > 0).reduce((acc, n) => acc + n, 0);",
+      );
+      for (const name of ["x", "y", "acc", "n"]) expect(out).toTrack(name);
     });
   });
 
   describe("instrumentCallExpressions", () => {
     it("wraps non-literal call arguments with __tscptr__.track", () => {
-      const result = transform("foo(bar)", {
-        skipTscptrDeclarations: true,
+      const out = transform("foo(bar)", {
         instrumentCallExpressions: true,
       });
+      const result = out.text;
       expect(result).toContain("__tscptr__.track(bar,");
+      expect(out).toTrackArgument("bar");
     });
 
     it("does not wrap string literal arguments", () => {
-      const result = transform('foo("bar")', {
-        skipTscptrDeclarations: true,
+      const out = transform('foo("bar")', {
         instrumentCallExpressions: true,
       });
+      const result = out.text;
       expect(result).not.toContain("__tscptr__.track");
+      expect(out).toLeaveUnchanged();
     });
 
     it("does not wrap numeric literal arguments", () => {
-      const result = transform("foo(42)", {
-        skipTscptrDeclarations: true,
+      const out = transform("foo(42)", {
         instrumentCallExpressions: true,
       });
+      const result = out.text;
       expect(result).not.toContain("__tscptr__.track");
+      expect(out).toLeaveUnchanged();
     });
 
     it("does not wrap spread arguments", () => {
-      const result = transform("foo(...args)", {
-        skipTscptrDeclarations: true,
+      const out = transform("foo(...args)", {
         instrumentCallExpressions: true,
       });
+      const result = out.text;
       expect(result).not.toContain("__tscptr__.track");
+      expect(out).toLeaveUnchanged();
     });
 
     it("does not wrap require.context calls", () => {
-      const result = transform("require.context('./dir')", {
-        skipTscptrDeclarations: true,
+      const out = transform("require.context('./dir')", {
         instrumentCallExpressions: true,
       });
+      const result = out.text;
       expect(result).not.toContain("__tscptr__.track");
+      expect(out).toLeaveUnchanged();
     });
 
     it("is disabled by default", () => {
-      const result = transform("foo(bar)", { skipTscptrDeclarations: true });
+      const out = transform("foo(bar)");
+      const result = out.text;
       expect(result).not.toContain("__tscptr__.track");
+      expect(out).toLeaveUnchanged();
     });
   });
 
   describe("return type instrumentation", () => {
     it("wraps return expression with __tscptr__.ret", () => {
-      const result = transform("function foo(a) { return a; }", { skipTscptrDeclarations: true });
+      const out = transform("function foo(a) { return a; }");
+      const result = out.text;
       expect(result).toContain("__tscptr__.ret(a,");
+      expect(out).toWrapReturnOf("foo");
     });
 
     it("wraps arrow expression body with __tscptr__.ret", () => {
-      const result = transform("const fn = (x) => x + 1;", { skipTscptrDeclarations: true });
+      const out = transform("const fn = (x) => x + 1;");
+      const result = out.text;
       expect(result).toContain("__tscptr__.ret(");
+      expect(out).toWrapReturnOf("fn");
     });
 
     it("wraps arrow block body return with __tscptr__.ret", () => {
-      const result = transform("const fn = (x) => { return x; };", {
-        skipTscptrDeclarations: true,
-      });
+      const out = transform("const fn = (x) => { return x; };");
+      const result = out.text;
       expect(result).toContain("__tscptr__.ret(x,");
+      expect(out).toWrapReturnOf("fn");
     });
 
     it("wraps method return with __tscptr__.ret", () => {
-      const result = transform("class Foo { bar(a) { return a; } }", {
-        skipTscptrDeclarations: true,
-      });
+      const out = transform("class Foo { bar(a) { return a; } }");
+      const result = out.text;
       expect(result).toContain("__tscptr__.ret(a,");
+      expect(out).toWrapReturnOf("bar");
     });
 
     it("skips functions that already have a return type", () => {
-      const result = transform("function foo(a): string { return a; }", {
-        skipTscptrDeclarations: true,
-      });
+      const out = transform("function foo(a): string { return a; }");
+      const result = out.text;
       expect(result).not.toContain("__tscptr__.ret");
+      expect(out).not.toWrapReturnOf("foo");
     });
 
     it("skips constructors", () => {
-      const result = transform("class Foo { constructor(a) { this.a = a; return; } }", {
-        skipTscptrDeclarations: true,
-      });
+      const out = transform("class Foo { constructor(a) { this.a = a; return; } }");
+      const result = out.text;
       expect(result).not.toContain("__tscptr__.ret");
+      expect(formsOf(out)).not.toContain("ret");
     });
 
     it("skips generator functions", () => {
-      const result = transform("function* gen(a) { yield a; return a; }", {
-        skipTscptrDeclarations: true,
-      });
+      const out = transform("function* gen(a) { yield a; return a; }");
+      const result = out.text;
       expect(result).not.toContain("__tscptr__.ret");
+      expect(out).not.toWrapReturnOf("gen");
     });
 
     it("does not wrap return statements of nested functions", () => {
-      const result = transform(
+      const out = transform(
         "function outer(a) { function inner(b): string { return b; } return inner(a); }",
-        { skipTscptrDeclarations: true },
       );
+      const result = out.text;
       // inner has return type → no wrapping
       // outer's return should be wrapped
       expect(result).toContain("__tscptr__.ret(inner(a)");
+      expect(out).toWrapReturnOf("outer");
+      expect(out).not.toWrapReturnOf("inner");
     });
 
     it("includes returnType flag in opts", () => {
-      const result = transform("function foo(a) { return a; }", { skipTscptrDeclarations: true });
+      const out = transform("function foo(a) { return a; }");
+      const result = out.text;
       expect(result).toContain('\\"returnType\\":true');
+      expect(out).toWrapReturnOf("foo", { returnType: true });
     });
 
     it("includes async flag for async functions", () => {
-      const result = transform("async function foo(a) { return a; }", {
-        skipTscptrDeclarations: true,
-      });
+      const out = transform("async function foo(a) { return a; }");
+      const result = out.text;
       expect(result).toContain('\\"async\\":true');
+      expect(out).toWrapReturnOf("foo", { async: true });
     });
 
     it("includes async flag for async arrow functions", () => {
-      const result = transform("const fn = async (x) => x + 1;", {
-        skipTscptrDeclarations: true,
-      });
+      const out = transform("const fn = async (x) => x + 1;");
+      const result = out.text;
       expect(result).toContain('\\"async\\":true');
+      expect(out).toWrapReturnOf("fn", { async: true });
     });
 
     it("skips bare return statements (return;)", () => {
-      const result = transform("function foo(a) { if (!a) return; return a; }", {
-        skipTscptrDeclarations: true,
-      });
+      const out = transform("function foo(a) { if (!a) return; return a; }");
+      const result = out.text;
       // The bare return should not be wrapped, but the value return should
       expect(result).toContain("__tscptr__.ret(a,");
       // Count occurrences — should only be one __tscptr__.ret
       const retCount = (result.match(/__tscptr__\.ret\(/g) || []).length;
       expect(retCount).toBe(1);
+      expect(out).toWrapReturnOf("foo");
+      expect(formsOf(out).filter((form) => form === "ret")).toHaveLength(1);
     });
 
     it("records position after closing paren of parameter list", () => {
       // "function foo(a) { return a; }" — ')' is at position 14, so retPos = 15
-      const result = transform("function foo(a) { return a; }", { skipTscptrDeclarations: true });
+      const out = transform("function foo(a) { return a; }");
+      const result = out.text;
       // The ret call should contain position 15
       expect(result).toMatch(/__tscptr__\.ret\(a, 15,/);
+      expect(out).toWrapReturnOf("foo", { at: endOf(out.input, "foo(a)") });
     });
 
     it("records retPos at param-name end for paren-less arrow", () => {
@@ -319,31 +364,39 @@ describe("transformer", () => {
       // downstream code. Apply would then splice `: T` into the middle
       // of an unrelated statement (`inc(5): number;`). Use param-list
       // end (1, just after `x`) instead.
-      const result = transform("const inc = x => x + 1;\ninc(5);", {
-        skipTscptrDeclarations: true,
-      });
+      const out = transform("const inc = x => x + 1;\ninc(5);");
+      const result = out.text;
       // Param `x` ends at offset 13; that's the retPos we want.
       expect(result).toMatch(/__tscptr__\.ret\(x \+ 1, 13,/);
+      expect(out).toWrapReturnOf("inc", { at: endOf(out.input, "inc = x") });
     });
 
     it("adds ret declaration to __tscptr__ namespace", () => {
-      const result = transform("const x = 1;");
+      const out = transform("const x = 1;", { skipTscptrDeclarations: false });
+      const result = out.text;
       expect(result).toContain("function ret");
+      expect(out).toDeclareRuntime("ret");
     });
 
     it("emits registerFn for named function declarations", () => {
-      const result = transform("function foo(a) { return a; }", { skipTscptrDeclarations: true });
+      const out = transform("function foo(a) { return a; }");
+      const result = out.text;
       expect(result).toContain("__tscptr__.registerFn(foo,");
+      expect(out).toRegisterFunction("foo");
     });
 
     it("includes fnRetPos in parameter opts", () => {
-      const result = transform("function foo(a) { return a; }", { skipTscptrDeclarations: true });
+      const out = transform("function foo(a) { return a; }");
+      const result = out.text;
       expect(result).toContain('\\"fnRetPos\\"');
+      expect(out).toTrack("a", { fnRetPos: endOf(out.input, "foo(a)") });
     });
 
     it("does not emit registerFn for anonymous arrows", () => {
-      const result = transform("const fn = (x) => x;", { skipTscptrDeclarations: true });
+      const out = transform("const fn = (x) => x;");
+      const result = out.text;
       expect(result).not.toContain("registerFn");
+      expect(formsOf(out)).not.toContain("registerFn");
     });
   });
 
@@ -355,50 +408,50 @@ describe("transformer", () => {
     // (uninstrumented modules, external libs, test fixtures).
 
     it("wraps invocation of a simple param with __tscptr__.ret tagged paramReturn", () => {
-      const result = transform("function foo(cb) { return cb(1); }", {
-        skipTscptrDeclarations: true,
-      });
+      const out = transform("function foo(cb) { return cb(1); }");
+      const result = out.text;
       expect(result).toContain("__tscptr__.ret(cb(1)");
       expect(result).toContain('\\"paramReturn\\":true');
       expect(result).toContain('\\"paramReturnMember\\":\\"cb\\"');
+      expect(out).toWrapCallsOf("cb");
     });
 
     it("attributes paramReturn to the param's observation pos", () => {
       // "function foo(cb) { return cb(1); }"
       //               ^ cb at 13, getEnd() = 15. Observation pos = 15.
-      const result = transform("function foo(cb) { return cb(1); }", {
-        skipTscptrDeclarations: true,
-      });
+      const out = transform("function foo(cb) { return cb(1); }");
+      const result = out.text;
       // The paramReturn wrap should reference pos 15 (the param's obs pos),
       // not the function's retPos.
       const match = result.match(/__tscptr__\.ret\(cb\(1\), (\d+)/);
       expect(match).not.toBeNull();
       expect(match![1]).toBe("15");
+      expect(out).toWrapCallsOf("cb", { at: endOf(out.input, "foo(cb") });
     });
 
     it("wraps invocation of a destructured-object member param", () => {
-      const result = transform("function Card({ title, render }) { return render(title); }", {
-        skipTscptrDeclarations: true,
-      });
+      const out = transform("function Card({ title, render }) { return render(title); }");
+      const result = out.text;
       expect(result).toContain("__tscptr__.ret(render(title)");
       expect(result).toContain('\\"paramReturnMember\\":\\"render\\"');
+      expect(out).toWrapCallsOf("render");
     });
 
     it("does not wrap calls to non-param identifiers", () => {
-      const result = transform("function foo(cb) { return Math.max(1, 2); }", {
-        skipTscptrDeclarations: true,
-      });
+      const out = transform("function foo(cb) { return Math.max(1, 2); }");
+      const result = out.text;
       // The Math.max call should not be wrapped as paramReturn.
       expect(result).not.toContain('\\"paramReturn\\":true');
+      expect(callbackReturns(out)).toEqual([]);
     });
 
     it("does not wrap nested-function param invocations against outer params", () => {
       // outer's `cb` is shadowed by inner's `cb`. The inner call should
       // attribute to inner's param obs pos, not outer's.
-      const result = transform(
+      const out = transform(
         "function outer(cb) { function inner(cb) { return cb(1); } return inner(2); }",
-        { skipTscptrDeclarations: true },
       );
+      const result = out.text;
       // Inner's cb invocation should be wrapped (it's still a param invocation).
       expect(result).toContain("__tscptr__.ret(cb(1)");
       // The wrap must use inner's cb pos. Inner starts after outer's
@@ -407,64 +460,82 @@ describe("transformer", () => {
       // (for inner's cb only; outer's cb is never called).
       const paramRetCount = (result.match(/\\"paramReturn\\":true/g) || []).length;
       expect(paramRetCount).toBe(1);
+      expect(out).toWrapCallsOf("cb", { at: endOf(out.input, "inner(cb") });
+      expect(callbackReturns(out)).toEqual(["cb(1)"]);
     });
 
     it("wraps param invocations in arrow function bodies", () => {
-      const result = transform("const f = (cb) => cb(1);", {
-        skipTscptrDeclarations: true,
-      });
+      const out = transform("const f = (cb) => cb(1);");
+      const result = out.text;
       expect(result).toContain("__tscptr__.ret(cb(1)");
       expect(result).toContain('\\"paramReturnMember\\":\\"cb\\"');
+      expect(out).toWrapCallsOf("cb");
     });
 
     it("does not wrap params that have an explicit type annotation", () => {
-      const result = transform("function foo(cb: () => string) { return cb(); }", {
-        skipTscptrDeclarations: true,
-      });
+      const out = transform("function foo(cb: () => string) { return cb(); }");
+      const result = out.text;
       // Typed params shouldn't trigger paramReturn — the user already
       // told us the return type.
       expect(result).not.toContain('\\"paramReturn\\":true');
+      expect(callbackReturns(out)).toEqual([]);
     });
   });
 
   describe("variable declaration instrumentation", () => {
     it("wraps let initializer with __tscptr__.ret", () => {
-      const result = transform("let x = 5;", { skipTscptrDeclarations: true });
+      const out = transform("let x = 5;");
+      const result = out.text;
       expect(result).toContain("__tscptr__.ret(5,");
+      expect(out).toWrapInitializerOf("x");
     });
 
     it("wraps const initializer with __tscptr__.ret", () => {
-      const result = transform('const name = "hello";', { skipTscptrDeclarations: true });
+      const out = transform('const name = "hello";');
+      const result = out.text;
       expect(result).toContain("__tscptr__.ret(");
+      expect(out).toWrapInitializerOf("name");
     });
 
     it("skips variable declarations with type annotations", () => {
-      const result = transform("let x: number = 5;", { skipTscptrDeclarations: true });
+      const out = transform("let x: number = 5;");
+      const result = out.text;
       expect(result).not.toContain("__tscptr__.ret");
+      expect(out).toLeaveUnchanged();
     });
 
     it("skips variable declarations without initializer", () => {
-      const result = transform("let x;", { skipTscptrDeclarations: true });
+      const out = transform("let x;");
+      const result = out.text;
       expect(result).not.toContain("__tscptr__.ret");
+      expect(out).toLeaveUnchanged();
     });
 
     it("tracks destructuring declarations after the statement", () => {
-      const result = transform("const { a, b } = obj;", { skipTscptrDeclarations: true });
+      const out = transform("const { a, b } = obj;");
+      const result = out.text;
       expect(result).not.toContain("__tscptr__.ret");
       // `}` of the pattern ends at 14 in `const { a, b } = obj;`
       expect(result).toMatch(/__tscptr__\("\{ a, b \}", \{ a, b \}, 14,/);
       expect(result).toContain('\\"varDecl\\":true');
+      expect(formsOf(out)).toEqual(["param"]);
+      expect(out).toTrack("{ a, b }", { varDecl: true, at: endOf(out.input, "{ a, b }") });
+      expect(out.calls[0]!.valueText).toBe("{ a, b }");
     });
 
     it("includes varDecl flag in opts", () => {
-      const result = transform("let x = 5;", { skipTscptrDeclarations: true });
+      const out = transform("let x = 5;");
+      const result = out.text;
       expect(result).toContain('\\"varDecl\\":true');
+      expect(out).toWrapInitializerOf("x", { varDecl: true });
     });
 
     it("records position after variable name", () => {
       // "let x = 5;" — 'x' ends at position 5
-      const result = transform("let x = 5;", { skipTscptrDeclarations: true });
+      const out = transform("let x = 5;");
+      const result = out.text;
       expect(result).toMatch(/__tscptr__\.ret\(5, 5,/);
+      expect(out).toWrapInitializerOf("x", { at: endOf(out.input, "let x") });
     });
 
     // When the user writes `const w = window as MyWindow`, they've
@@ -476,54 +547,58 @@ describe("transformer", () => {
     // so apply can honor the user's cast.
     describe("hasAsCast flag on `as` / `<T>` casts", () => {
       it("marks RHS with `as Type` cast", () => {
-        const result = transform("const w = window as MyWindow;", {
-          skipTscptrDeclarations: true,
-        });
+        const out = transform("const w = window as MyWindow;");
+        const result = out.text;
         expect(result).toContain("__tscptr__.ret");
         expect(result).toContain('\\"hasAsCast\\":true');
+        expect(out).toWrapInitializerOf("w", { hasAsCast: true });
       });
 
       it("marks RHS with `<Type>` prefix cast", () => {
-        const result = transform("const w = <MyWindow>window;", {
-          skipTscptrDeclarations: true,
-        });
+        const out = transform("const w = <MyWindow>window;");
+        const result = out.text;
         expect(result).toContain("__tscptr__.ret");
         expect(result).toContain('\\"hasAsCast\\":true');
+        expect(out).toWrapInitializerOf("w", { hasAsCast: true });
       });
 
       it("does NOT mark RHS without a cast", () => {
-        const result = transform("const w = window;", { skipTscptrDeclarations: true });
+        const out = transform("const w = window;");
+        const result = out.text;
         expect(result).toContain("__tscptr__.ret");
         expect(result).not.toContain("hasAsCast");
+        expect(out).toWrapInitializerOf("w", { hasAsCast: undefined });
       });
 
       it("marks even when the cast is wrapped in parens: `(x as T)`", () => {
-        const result = transform("const w = (window as MyWindow);", {
-          skipTscptrDeclarations: true,
-        });
+        const out = transform("const w = (window as MyWindow);");
+        const result = out.text;
         expect(result).toContain('\\"hasAsCast\\":true');
+        expect(out).toWrapInitializerOf("w", { hasAsCast: true });
       });
     });
   });
 
   describe("class property instrumentation", () => {
     it("wraps class property initializer with __tscptr__.ret", () => {
-      const result = transform('class Foo { name = "hello"; }', {
-        skipTscptrDeclarations: true,
-      });
+      const out = transform('class Foo { name = "hello"; }');
+      const result = out.text;
       expect(result).toContain("__tscptr__.ret(");
+      expect(out).toWrapInitializerOf("name");
     });
 
     it("skips class properties with type annotations", () => {
-      const result = transform('class Foo { name: string = "hello"; }', {
-        skipTscptrDeclarations: true,
-      });
+      const out = transform('class Foo { name: string = "hello"; }');
+      const result = out.text;
       expect(result).not.toContain("__tscptr__.ret");
+      expect(out).toLeaveUnchanged();
     });
 
     it("skips class properties without initializer", () => {
-      const result = transform("class Foo { name; }", { skipTscptrDeclarations: true });
+      const out = transform("class Foo { name; }");
+      const result = out.text;
       expect(result).not.toContain("__tscptr__.ret");
+      expect(out).toLeaveUnchanged();
     });
   });
 
@@ -531,15 +606,19 @@ describe("transformer", () => {
     it("records correct offset for type insertion", () => {
       // "function foo(a) {}" — 'a' ends at position 14, so type goes at 14
       const source = "function foo(a) {}";
-      const result = transform(source, { skipTscptrDeclarations: true });
+      const out = transform(source);
+      const result = out.text;
       expect(result).toContain("14");
+      expect(out).toTrack("a", { at: endOf(out.input, "foo(a") });
     });
 
     it("accounts for optional parameter marker in offset", () => {
       // "function foo(a?) {}" — 'a' ends at 14, '?' at 15, type goes at 15
       const source = "function foo(a?) {}";
-      const result = transform(source, { skipTscptrDeclarations: true });
+      const out = transform(source);
+      const result = out.text;
       expect(result).toContain("15");
+      expect(out).toTrack("a", { at: endOf(out.input, "foo(a?") });
     });
   });
 });
