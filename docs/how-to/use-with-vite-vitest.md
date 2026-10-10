@@ -7,7 +7,7 @@ modifying source on disk. This guide assumes you already know the
 ## Install
 
 ```sh
-npm install --save-dev @ts-capture/vite@next @ts-capture/core@next
+npm install --save-dev @ts-capture/vite @ts-capture/core
 ```
 
 ## Register the plugin

@@ -12,7 +12,7 @@ Automatically discover and add missing TypeScript type annotations by observing 
 ## Install
 
 ```bash
-npm install @ts-capture/core@next
+npm install @ts-capture/core
 ```
 
 ## Usage
@@ -48,7 +48,7 @@ mocha --import @ts-capture/core/register test/**/*.spec.ts
 ### Vite plugin
 
 ```bash
-npm install @ts-capture/vite@next
+npm install @ts-capture/vite
 ```
 
 ```typescript

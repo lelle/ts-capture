@@ -21,7 +21,7 @@ at compile time inside the build tool the user already runs.
 ## Install
 
 ```sh
-npm install --save-dev @ts-capture/babel-plugin@next @ts-capture/core@next
+npm install --save-dev @ts-capture/babel-plugin @ts-capture/core
 ```
 
 ## Use

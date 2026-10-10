@@ -75,6 +75,22 @@ describe("cli", () => {
       const { stdout } = run("--help");
       expect(stdout).toContain("ts-capture");
     });
+
+    it("names every flag apply accepts", () => {
+      const { stdout } = run("--help");
+      for (const flag of [
+        "--dry-run",
+        "--comments",
+        "--both",
+        "--include-tests",
+        "--force",
+        "--telemetry",
+        "--report",
+        "--project",
+      ]) {
+        expect(stdout).toContain(flag);
+      }
+    });
   });
 
   describe("instrument", () => {

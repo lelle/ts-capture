@@ -103,7 +103,7 @@ function resolveInferConfig(config: TsCaptureConfig, args: string[], flags: Set<
   return resolveInferOptions(merged);
 }
 
-/** `ts-capture apply <types.json> [--dry-run] [--include-tests] [--force] [--telemetry]`. */
+/** `ts-capture apply <types.json>` with the flags in `APPLY_FLAGS` and `--infer.*` overrides. */
 // Flags `apply` acts on. Unknown ones still run — a script sending a flag a
 // newer version understands should not stop — but `apply` rewrites source
 // files, and the flags that hold it back are exactly the ones a typo turns

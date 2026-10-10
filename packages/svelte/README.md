@@ -22,7 +22,7 @@ It pairs with [`@ts-capture/vite`](../vite), which supplies the runtime
 ## Install
 
 ```sh
-npm install --save-dev @ts-capture/svelte@next @ts-capture/vite@next @ts-capture/core@next
+npm install --save-dev @ts-capture/svelte @ts-capture/vite @ts-capture/core
 ```
 
 Peer dependencies: `@ts-capture/core` and `svelte >=5.0.0`.

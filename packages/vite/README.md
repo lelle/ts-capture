@@ -16,7 +16,7 @@ running tests stay green.
 ## Install
 
 ```sh
-npm install --save-dev @ts-capture/vite@next @ts-capture/core@next
+npm install --save-dev @ts-capture/vite @ts-capture/core
 ```
 
 ## Use with Vitest
@@ -96,9 +96,17 @@ plugins: [
     exclude: /node_modules|\.spec\.ts$/, // skip files matching this regex
     apply: true, // vite serve only: auto-apply on each browser beacon
     outputFile: ".ts-capture-types.json", // vite serve only: dump beacon payload to JSON
+    literalOptions: { literalString: true, literalStringMaxLength: 24 }, // observe literals
   }),
 ];
 ```
+
+`literalOptions` turns on literal observation (`literalString`,
+`literalStringMaxLength`, `literalNumber`, `literalBoolean`) for the run; unset
+fields fall back to the `TS_CAPTURE_LITERAL_*` env vars. The matching
+`infer.literal.*` must be on for `apply` too, or the observed literals widen
+back — see the
+[configuration reference](../../docs/reference/configuration.md#literal--preserve-literal-types-instead-of-widening).
 
 `apply` and `outputFile` are honored only in `vite serve` (dev-server /
 browser) mode. Under Vitest or `vite build`, see the
