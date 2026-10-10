@@ -244,9 +244,11 @@ function resolveReferenceType(value: object, depth: number, state: WalkState): s
 function resolveArrayType(arr: unknown[], depth: number, state: WalkState): string {
   if (arr.length === 0) return "unknown[]";
 
+  const names = arr.map((item) => resolveType(item, depth + 1, state));
+  if (isTupleLike(names)) return `[${names.map((n) => n ?? "unknown").join(", ")}]`;
+
   const typeSet = new Set<string>();
-  for (const item of arr) {
-    const name = resolveType(item, depth + 1, state);
+  for (const name of names) {
     if (name !== null) typeSet.add(name);
   }
 
@@ -255,6 +257,33 @@ function resolveArrayType(arr: unknown[], depth: number, state: WalkState): stri
 
   const sorted = [...typeSet].sort();
   return `Array<${sorted.join(" | ")}>`;
+}
+
+const TUPLE_MAX_LENGTH = 3;
+
+/**
+ * A short array whose elements are of more than one kind reads as a tuple:
+ * `[key, value]` is a pair, not a list that happens to hold a string and a
+ * number. Same-kind arrays stay arrays, since `[x, y]` is more often a list
+ * than a pair, and so do long ones. Kinds are judged with literals widened,
+ * so `["a", "b"]` under literal observation is still a list of strings. An
+ * empty array says nothing about its kind and does not count as one.
+ * Mirrored in `packages/vite/src/index.ts` for the browser collector.
+ */
+function isTupleLike(names: Array<string | null>): boolean {
+  if (names.length < 2 || names.length > TUPLE_MAX_LENGTH) return false;
+  const kinds = new Set<string>();
+  for (const name of names) {
+    if (name !== null && name !== "unknown[]") kinds.add(widenedKind(name));
+  }
+  return kinds.size > 1;
+}
+
+function widenedKind(name: string): string {
+  if (name.startsWith('"')) return "string";
+  if (name === "true" || name === "false") return "boolean";
+  if (/^-?\d/.test(name)) return "number";
+  return name;
 }
 
 /**

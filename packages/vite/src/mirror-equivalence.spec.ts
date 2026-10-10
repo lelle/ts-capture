@@ -196,6 +196,25 @@ describe("vite runtime mirror ≡ core walker", () => {
     });
   });
 
+  describe("arrays and tuples (resolveArrayType mirror)", () => {
+    const values: unknown[] = [
+      ["a", 1],
+      ["a", 1, true],
+      [1, 2],
+      ["a", 1, true, null],
+      [
+        ["k", 1],
+        ["j", 2],
+      ],
+    ];
+    values.forEach((value, i) => {
+      it(`case ${i}: ${JSON.stringify(value)}`, () => {
+        const sandbox = makeSandbox(OPTS_OFF);
+        expect(viteType(sandbox, value, 9000 + i)).toBe(getTypeName(value, 5, OPTS_OFF));
+      });
+    });
+  });
+
   describe("class hierarchy (getInheritanceChain mirror)", () => {
     // Classes are constructed inside the sandbox so the snippet's prototype
     // walk runs against the sandbox realm's Object.prototype, and constructed

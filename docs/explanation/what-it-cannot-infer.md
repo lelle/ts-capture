@@ -27,6 +27,17 @@ function identity(x: string | number): string | number {
 A later call with a _new_ type would then be a TS error. **Workaround:** preview
 with `apply --dry-run` and generalize to `<T>` by hand where it matters.
 
+## A pair of the same kind is a list
+
+A short array whose elements are of different kinds is recorded as a tuple:
+`[key, value]` with a string and a number becomes `[string, number]`, and two
+runs that saw `[string, number]` and `[string, null]` merge to
+`[string, null | number]`. An array whose elements are all of one kind stays an
+array, however short, because `[x, y]` is more often a list than a pair, so a
+pair of numbers is `number[]`. Arrays of more than three elements are always
+arrays. When one run sees a tuple and another sees an array, or tuples of
+different lengths, the position widens back to an array of every element type.
+
 ## Mixed-type union arithmetic produces TS errors
 
 ```ts title="Input"

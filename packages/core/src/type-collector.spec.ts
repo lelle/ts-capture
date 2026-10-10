@@ -52,7 +52,7 @@ describe("getTypeName", () => {
     });
 
     it("returns 'Array<T1 | T2>' for heterogeneous arrays", () => {
-      expect(getTypeName([1, "two", 3])).toBe("Array<number | string>");
+      expect(getTypeName([1, "two", 3, "four"])).toBe("Array<number | string>");
     });
 
     it("returns 'unknown[]' for empty arrays", () => {
@@ -64,7 +64,7 @@ describe("getTypeName", () => {
     });
 
     it("sorts union types alphabetically", () => {
-      expect(getTypeName(["a", 1, true])).toBe("Array<boolean | number | string>");
+      expect(getTypeName(["a", 1, true, "b"])).toBe("Array<boolean | number | string>");
     });
   });
 
@@ -947,7 +947,7 @@ describe("additional edge cases", () => {
 
     it("infers objects with array values", () => {
       expect(getTypeName({ foo: ["hello", "world"], bar: ["hello", 42] })).toBe(
-        "{ bar: Array<number | string>, foo: string[] }",
+        "{ bar: [string, number], foo: string[] }",
       );
     });
 

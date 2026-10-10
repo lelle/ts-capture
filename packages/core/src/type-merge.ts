@@ -341,7 +341,7 @@ export function mergeTypes(types: string[], infer: InferOptions = INFER_DEFAULTS
   // that subsequent stages can treat as plain otherTypes. Skipping when
   // there's nothing to do (no @sa markers + flag off) is a no-op pass.
   const pre = types.map((t) => compressArrayObjectUnion(t, infer));
-  const collapsed = rewriteCommonBase(pre, infer);
+  const collapsed = mergeTupleTypes(rewriteCommonBase(pre, infer));
 
   const objectTypes: string[] = [];
   const arrayTypes: string[] = [];
@@ -592,6 +592,45 @@ function mergeArrayTypes(arrayTypes: string[]): string | null {
   if (elements.size === 1) return `${[...elements][0]}[]`;
   const sorted = [...elements].sort();
   return `Array<${sorted.join(" | ")}>`;
+}
+
+/**
+ * Tuples observed at one position, merged: same-arity tuples element-wise
+ * (`[string, number]` and `[string, null]` to `[string, null | number]`), and
+ * tuples of different arity, or a tuple beside an array, widened back to the
+ * one array of every element type that observation would have produced had
+ * it not seen a tuple. Everything else passes through untouched.
+ */
+function mergeTupleTypes(types: string[]): string[] {
+  const tuples: Array<{ text: string; elements: string[] }> = [];
+  const arrays: string[] = [];
+  const rest: string[] = [];
+  for (const t of types) {
+    const node = parseTypeOrNull(t);
+    if (node?.tag === "tuple") {
+      tuples.push({ text: t, elements: node.elements.map((e) => serializeType(e)) });
+    } else if (isSimpleArrayType(t) || t === "unknown[]") {
+      arrays.push(t);
+    } else {
+      rest.push(t);
+    }
+  }
+  if (tuples.length === 0 || (tuples.length === 1 && arrays.length === 0)) return types;
+
+  const arity = tuples[0].elements.length;
+  if (arrays.length === 0 && tuples.every((tuple) => tuple.elements.length === arity)) {
+    const elements = tuples[0].elements.map((_, i) => {
+      const arms = new Set(tuples.flatMap((tuple) => splitTopLevelUnion(tuple.elements[i])));
+      return [...arms].sort().join(" | ");
+    });
+    return [...rest, `[${elements.join(", ")}]`];
+  }
+
+  const widened = mergeArrayTypes([
+    ...arrays,
+    ...tuples.flatMap((tuple) => tuple.elements.map((e) => `Array<${e}>`)),
+  ]);
+  return widened === null ? types : [...rest, widened];
 }
 
 function extractArrayElement(t: string): string | null {

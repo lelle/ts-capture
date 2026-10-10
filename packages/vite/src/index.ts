@@ -455,14 +455,33 @@ export function getCollectorSnippet(
   function __tscptr__getReferenceTypeName(value, depth, maxDepth, visited) {
     if (Array.isArray(value)) {
       if (value.length === 0) return "unknown[]";
-      var types = new Set();
+      var names = [];
       for (var i = 0; i < value.length; i++) {
-        var n = __tscptr__getTypeName(value[i], depth + 1, maxDepth, visited);
-        if (n !== null) types.add(n);
+        names.push(__tscptr__getTypeName(value[i], depth + 1, maxDepth, visited));
+      }
+      // Mirrors core's isTupleLike: a short array of more than one kind of
+      // element, kinds judged with literals widened.
+      if (names.length >= 2 && names.length <= 3) {
+        var kinds = new Set();
+        for (var k = 0; k < names.length; k++) {
+          var name = names[k];
+          if (name === null || name === "unknown[]") continue;
+          if (name.charAt(0) === '"') kinds.add("string");
+          else if (name === "true" || name === "false") kinds.add("boolean");
+          else if (/^-?\\d/.test(name)) kinds.add("number");
+          else kinds.add(name);
+        }
+        if (kinds.size > 1) {
+          return "[" + names.map(function(n) { return n === null ? "unknown" : n; }).join(", ") + "]";
+        }
+      }
+      var types = new Set();
+      for (var j = 0; j < names.length; j++) {
+        if (names[j] !== null) types.add(names[j]);
       }
       if (types.size === 0) return "unknown[]";
       var arr = Array.from(types).sort();
-      return arr.length === 1 ? arr[0] + "[]" : "Array<" + arr.join("|") + ">";
+      return arr.length === 1 ? arr[0] + "[]" : "Array<" + arr.join(" | ") + ">";
     }
     if (typeof value === "function") {
       try {
