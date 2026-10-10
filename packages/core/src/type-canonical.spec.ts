@@ -29,6 +29,9 @@ describe("sameTypeString — punctuation and order do not make a type", () => {
     ["Map<string,   number>", "Map<string, number>"],
     ["{ a: { c: number, b: string } }", "{ a: { b: string; c: number; }; }"],
     ["{ send(x: number): void, n: number }", "{ n: number; send(x: number): void; }"],
+    // `Array<T>` and `T[]` are one type, however the checker or ts-capture spells it.
+    ["Array<string>", "string[]"],
+    ["Array<number | string>", "(string | number)[]"],
     // A function type's identity does not include its parameter names, and its
     // parameter types are types like any other — both spellings below name one
     // type. Comparing the parameter list as raw text said otherwise.
