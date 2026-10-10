@@ -53,8 +53,30 @@ const isComma = (node: ts.BinaryExpression): boolean =>
   node.operatorToken.kind === ts.SyntaxKind.CommaToken;
 
 /**
- * The text printed from its AST with every `__tscptr__` call taken out. Run
- * an input through it too before comparing: the printing is the normal form.
+ * The tokens of the text as the printer spells them, one space apart: the
+ * same for two texts that differ only in layout or comments.
+ */
+export function tokensOf(text: string, filename = "tokens.ts"): string {
+  const printer = ts.createPrinter();
+  const parse = (source: string): ts.SourceFile =>
+    ts.createSourceFile(filename, source, ts.ScriptTarget.Latest, true);
+  const sf = parse(printer.printFile(parse(text)));
+  const tokens: string[] = [];
+  const visit = (node: ts.Node): void => {
+    const children = node.getChildren(sf);
+    if (children.length === 0) {
+      if (node.kind !== ts.SyntaxKind.EndOfFileToken) tokens.push(node.getText(sf));
+      return;
+    }
+    children.forEach(visit);
+  };
+  visit(sf);
+  return tokens.join(" ");
+}
+
+/**
+ * The tokens of the text with every `__tscptr__` call taken out. Run an input
+ * through it too before comparing: `tokensOf` is the normal form of both.
  */
 export function stripInstrumentation(text: string, filename = "stripped.ts"): string {
   const sf = ts.createSourceFile(filename, text, ts.ScriptTarget.Latest, true);
@@ -77,12 +99,5 @@ export function stripInstrumentation(text: string, filename = "stripped.ts"): st
     return (file) => ts.visitNode(file, visit) as ts.SourceFile;
   };
   const [stripped] = ts.transform(sf, [strip]).transformed;
-  const printer = ts.createPrinter({ removeComments: false });
-  const reparsed = ts.createSourceFile(
-    filename,
-    printer.printFile(stripped!),
-    ts.ScriptTarget.Latest,
-    false,
-  );
-  return printer.printFile(reparsed);
+  return tokensOf(ts.createPrinter().printFile(stripped!), filename);
 }
