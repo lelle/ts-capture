@@ -5,9 +5,9 @@ import type { ExtraOptions } from "../type-collector.js";
 
 import { findInstrumentationSite } from "../instrumentation-site-spec.js";
 import { canonicalTypeString, sameTypeString } from "../type-canonical.js";
-import { type Applied, nodesOf, printedAst } from "./applied.js";
+import { type Applied, nodesOf } from "./applied.js";
 import { callText, type Instrumented, type Observed, type TrackedCall } from "./instrumented.js";
-import { callFormOf, isRuntimeDeclaration } from "./strip-instrumentation.js";
+import { callFormOf, isRuntimeDeclaration, tokensOf } from "./strip-instrumentation.js";
 
 // Two questions a spec asks of an applied file, kept apart on purpose. What
 // was written is a question about the AST: the annotation's node, its name
@@ -451,7 +451,7 @@ const instrumentedMatchers = {
   toLeaveUnchanged(out: Instrumented): Result {
     if (out.input === undefined) throw new Error("toLeaveUnchanged needs the input of the output");
     const [call] = out.calls;
-    const same = printedAst(out.text) === printedAst(out.input);
+    const same = tokensOf(out.text, out.filename) === tokensOf(out.input, out.filename);
     return {
       pass: call === undefined && same,
       message: () => {

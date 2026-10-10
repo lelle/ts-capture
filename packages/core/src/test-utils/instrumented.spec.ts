@@ -80,7 +80,7 @@ describe("the invariants of instrumented()", () => {
     const src = "function foo(a) { return a; }";
     const edited = instrumented(src).text.replace("function foo", "function bar");
     expect(() => inspected(edited, { input: src, additive: true })).toThrow(
-      /changed more than it added.*function bar/s,
+      /changed more than it added.*function bar \(/s,
     );
   });
 
@@ -120,6 +120,13 @@ describe("stripInstrumentation", () => {
   it("removes the parentheses put around an arrow body with nothing in front of it", () => {
     const src = "const one = () => 1;\nconst called = ((x) => x)(2);";
     expect(stripInstrumentation(instrumented(src).text)).toBe(stripInstrumentation(src));
+  });
+
+  it("compares programs, not layouts", () => {
+    const src = "class Greeter {\n  greet(who) {\n    return 'Hello, ' + who; // loudly\n  }\n}\n";
+    expect(stripInstrumentation(instrumented(src).text)).toBe(
+      stripInstrumentation("class Greeter { greet(who) { return 'Hello, ' + who } }"),
+    );
   });
 
   it("removes the runtime declarations", () => {
