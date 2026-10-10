@@ -2,8 +2,9 @@ import { execFileSync, spawnSync } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import ts from "typescript";
 import { describe, expect, it } from "vitest";
+
+import { type Applied, checked, parseErrors } from "./test-utils/applied.js";
 
 const CLI = path.resolve("dist/cli.js");
 
@@ -58,6 +59,25 @@ function withTmpDir(fn: (dir: string) => void) {
   } finally {
     fs.rmSync(dir, { recursive: true });
   }
+}
+
+const TSCONFIG = JSON.stringify({
+  compilerOptions: {
+    noImplicitAny: false,
+    target: "ES2022",
+    module: "ES2022",
+    moduleResolution: "Bundler",
+    skipLibCheck: true,
+    noEmit: true,
+  },
+  include: ["**/*.ts"],
+});
+
+const FOO = "function foo(a) { return a; }";
+
+/** A file as the CLI left it, held against what it was given. */
+function fileAfter(file: string, before: string): Applied {
+  return checked(before, fs.readFileSync(file, "utf-8"), { filename: path.basename(file) });
 }
 
 describe("cli", () => {
@@ -139,7 +159,7 @@ describe("cli", () => {
     it("instruments a file and writes to stdout", () => {
       withTmpDir((dir) => {
         const srcFile = path.join(dir, "test.ts");
-        fs.writeFileSync(srcFile, "function foo(a) { return a; }");
+        fs.writeFileSync(srcFile, FOO);
         const { stdout, exitCode } = run("instrument", srcFile);
         expect(exitCode).toBe(0);
         expect(stdout).toContain("__tscptr__");
@@ -149,7 +169,7 @@ describe("cli", () => {
     it("instruments in-place with --in-place", () => {
       withTmpDir((dir) => {
         const srcFile = path.join(dir, "test.ts");
-        fs.writeFileSync(srcFile, "function foo(a) { return a; }");
+        fs.writeFileSync(srcFile, FOO);
         const { exitCode } = run("instrument", "--in-place", srcFile);
         expect(exitCode).toBe(0);
         const result = fs.readFileSync(srcFile, "utf-8");
@@ -167,7 +187,7 @@ describe("cli", () => {
     it("applies types from a JSON file", () => {
       withTmpDir((dir) => {
         const srcFile = path.join(dir, "test.ts");
-        fs.writeFileSync(srcFile, "function foo(a) { return a; }");
+        fs.writeFileSync(srcFile, FOO);
 
         // Collected type info: [filename, offset, [[typeName, sourcePos]], opts]
         const typeInfo = [[srcFile, 14, [["string", undefined]], {}]];
@@ -200,7 +220,7 @@ describe("cli", () => {
         withTmpDir((dir) => {
           // A real .ts file that SHOULD be applied normally.
           const realFile = path.join(dir, "real.ts");
-          fs.writeFileSync(realFile, "function foo(a) { return a; }");
+          fs.writeFileSync(realFile, FOO);
 
           // A synthetic svelte virtual path that does NOT exist on disk.
           // Before the fix, apply would throw ENOENT here and the whole
@@ -222,7 +242,7 @@ describe("cli", () => {
           expect(stderr).toContain("Component.svelte__script.ts");
           // The real .ts file is applied normally — synthetic entries
           // skipping does not block the rest.
-          expect(fs.readFileSync(realFile, "utf-8")).toContain("a: string");
+          expect(fileAfter(realFile, FOO)).toAnnotate("a", "string");
         });
       });
 
@@ -247,7 +267,7 @@ describe("cli", () => {
         // svelte-specific regex and crashed on the missing-file read.
         withTmpDir((dir) => {
           const realFile = path.join(dir, "real.ts");
-          fs.writeFileSync(realFile, "function foo(a) { return a; }");
+          fs.writeFileSync(realFile, FOO);
           const syntheticFile = path.join(dir, "Widget.vue__script.ts");
 
           const typeInfo = [
@@ -262,7 +282,7 @@ describe("cli", () => {
           expect(stderr).toContain("Widget.vue__script.ts");
           // The real file still applies — one orphaned virtual path
           // does not abort the run.
-          expect(fs.readFileSync(realFile, "utf-8")).toContain("a: string");
+          expect(fileAfter(realFile, FOO)).toAnnotate("a", "string");
         });
       });
 
@@ -412,27 +432,14 @@ describe("cli", () => {
 
           const { stderr } = runInDir(dir, "apply", "types.json", "--project", "tsconfig.src.json");
           expect(stderr).not.toMatch(/no files/i);
-          expect(fs.readFileSync(file, "utf-8")).not.toContain("v: string");
+          expect(fileAfter(file, src)).toLeaveUntyped("v");
         });
       });
 
       it("judges a local against a callee typed in another file, whichever comes first", () => {
         withTmpDir((rawDir) => {
           const dir = fs.realpathSync(rawDir);
-          fs.writeFileSync(
-            path.join(dir, "tsconfig.json"),
-            JSON.stringify({
-              compilerOptions: {
-                noImplicitAny: false,
-                target: "ES2022",
-                module: "ES2022",
-                moduleResolution: "Bundler",
-                skipLibCheck: true,
-                noEmit: true,
-              },
-              include: ["**/*.ts"],
-            }),
-          );
+          fs.writeFileSync(path.join(dir, "tsconfig.json"), TSCONFIG);
           const pricing = path.join(dir, "pricing.ts");
           const pricingSource = "export function price(a) {\n  return a;\n}\n";
           fs.writeFileSync(pricing, pricingSource);
@@ -450,9 +457,9 @@ describe("cli", () => {
 
           runInDir(dir, "apply", "types.json");
 
-          expect(fs.readFileSync(pricing, "utf-8")).toBe(
-            "export function price(a: number): number {\n  return a;\n}\n",
-          );
+          const priced = fileAfter(pricing, pricingSource);
+          expect(priced).toAnnotate("a", "number");
+          expect(priced).toAnnotate({ returnOf: "price" }, "number");
           expect(fs.readFileSync(orders, "utf-8")).toBe(ordersSource);
         });
       });
@@ -464,20 +471,7 @@ describe("cli", () => {
           // paths in types.json never match `userFiles` and the verify gate
           // silently switches off — the test would pass for the wrong reason.
           const dir = fs.realpathSync(rawDir);
-          fs.writeFileSync(
-            path.join(dir, "tsconfig.json"),
-            JSON.stringify({
-              compilerOptions: {
-                noImplicitAny: false,
-                target: "ES2022",
-                module: "ES2022",
-                moduleResolution: "Bundler",
-                skipLibCheck: true,
-                noEmit: true,
-              },
-              include: ["**/*.ts"],
-            }),
-          );
+          fs.writeFileSync(path.join(dir, "tsconfig.json"), TSCONFIG);
           const aFile = path.join(dir, "a.ts");
           const bFile = path.join(dir, "b.ts");
           const aSource = "export function makeValue(x) {\n  return x;\n}\n";
@@ -507,10 +501,10 @@ describe("cli", () => {
 
           const { exitCode } = runInDir(dir, "apply", jsonFile);
           expect(exitCode).toBe(0);
-          expect(fs.readFileSync(aFile, "utf-8")).toContain("x: string");
+          expect(fileAfter(aFile, aSource)).toAnnotate("x", "string");
           // The union annotation on `v` must be rejected: with `x: string`
           // already on disk, `makeValue(v)` would not type-check.
-          expect(fs.readFileSync(bFile, "utf-8")).not.toMatch(/v:[^)]*\|/);
+          expect(fileAfter(bFile, bSource)).toLeaveUntyped("v");
         });
       });
 
@@ -521,20 +515,7 @@ describe("cli", () => {
       it("dry-run previews the same files the real run would write", () => {
         withTmpDir((rawDir) => {
           const dir = fs.realpathSync(rawDir);
-          fs.writeFileSync(
-            path.join(dir, "tsconfig.json"),
-            JSON.stringify({
-              compilerOptions: {
-                noImplicitAny: false,
-                target: "ES2022",
-                module: "ES2022",
-                moduleResolution: "Bundler",
-                skipLibCheck: true,
-                noEmit: true,
-              },
-              include: ["**/*.ts"],
-            }),
-          );
+          fs.writeFileSync(path.join(dir, "tsconfig.json"), TSCONFIG);
           const aFile = path.join(dir, "a.ts");
           const bFile = path.join(dir, "b.ts");
           const aSource = "export function makeValue(x) {\n  return x;\n}\n";
@@ -576,7 +557,7 @@ describe("cli", () => {
         // svelte — it must still be applied normally.
         withTmpDir((dir) => {
           const file = path.join(dir, "svelte-utils.ts");
-          fs.writeFileSync(file, "function foo(a) { return a; }");
+          fs.writeFileSync(file, FOO);
 
           const typeInfo = [[file, 14, [["string", undefined]], {}]];
           const jsonFile = path.join(dir, "types.json");
@@ -584,7 +565,7 @@ describe("cli", () => {
 
           const { exitCode } = run("apply", jsonFile);
           expect(exitCode).toBe(0);
-          expect(fs.readFileSync(file, "utf-8")).toContain("a: string");
+          expect(fileAfter(file, FOO)).toAnnotate("a", "string");
         });
       });
     });
@@ -601,33 +582,20 @@ describe("cli", () => {
       function applyFixture(
         source: string,
         entries: (dir: string, src: string) => unknown[],
-      ): string {
-        let out = "";
+      ): Applied {
+        let out: Applied | undefined;
         withTmpDir((rawDir) => {
           const dir = fs.realpathSync(rawDir);
-          fs.writeFileSync(
-            path.join(dir, "tsconfig.json"),
-            JSON.stringify({
-              compilerOptions: {
-                noImplicitAny: false,
-                target: "ES2022",
-                module: "ES2022",
-                moduleResolution: "Bundler",
-                skipLibCheck: true,
-                noEmit: true,
-              },
-              include: ["**/*.ts"],
-            }),
-          );
+          fs.writeFileSync(path.join(dir, "tsconfig.json"), TSCONFIG);
           const file = path.join(dir, "a.ts");
           fs.writeFileSync(file, source);
           const jsonFile = path.join(dir, "types.json");
           fs.writeFileSync(jsonFile, JSON.stringify(entries(file, source)));
           const { exitCode } = runInDir(dir, "apply", jsonFile);
           expect(exitCode).toBe(0);
-          out = fs.readFileSync(file, "utf-8");
+          out = fileAfter(file, source);
         });
-        return out;
+        return out!;
       }
 
       // Fixtures deliberately use a pass-through parameter, so the vacuous
@@ -644,28 +612,28 @@ describe("cli", () => {
         const result = applyFixture(PASSTHROUGH, (file, src) => [
           [file, src.indexOf("(x)") + 2, [["Promise<unknown>", null]], {}],
         ]);
-        expect(result).toBe(PASSTHROUGH);
+        expect(result.text).toBe(PASSTHROUGH);
       });
 
       it("skips a bare `unknown`", () => {
         const result = applyFixture(PASSTHROUGH, (file, src) => [
           [file, src.indexOf("(x)") + 2, [["unknown", null]], {}],
         ]);
-        expect(result).toBe(PASSTHROUGH);
+        expect(result.text).toBe(PASSTHROUGH);
       });
 
       it("skips a function type whose parameters are all `unknown`", () => {
         const result = applyFixture(PASSTHROUGH, (file, src) => [
           [file, src.indexOf("(x)") + 2, [["(a: unknown) => unknown", null]], {}],
         ]);
-        expect(result).toBe(PASSTHROUGH);
+        expect(result.text).toBe(PASSTHROUGH);
       });
 
       it("still writes a type that describes the value", () => {
         const result = applyFixture(PASSTHROUGH, (file, src) => [
           [file, src.indexOf("(x)") + 2, [["string", null]], {}],
         ]);
-        expect(result).toContain("x: string");
+        expect(result).toAnnotate("x", "string");
       });
     });
 
@@ -677,24 +645,11 @@ describe("cli", () => {
         source: string,
         pos: (src: string) => number,
         extraArgs: string[] = [],
-      ): string {
-        let out = "";
+      ): Applied {
+        let out: Applied | undefined;
         withTmpDir((rawDir) => {
           const dir = fs.realpathSync(rawDir);
-          fs.writeFileSync(
-            path.join(dir, "tsconfig.json"),
-            JSON.stringify({
-              compilerOptions: {
-                noImplicitAny: false,
-                target: "ES2022",
-                module: "ES2022",
-                moduleResolution: "Bundler",
-                skipLibCheck: true,
-                noEmit: true,
-              },
-              include: ["**/*.ts"],
-            }),
-          );
+          fs.writeFileSync(path.join(dir, "tsconfig.json"), TSCONFIG);
           const file = path.join(dir, "a.ts");
           fs.writeFileSync(file, source);
           const jsonFile = path.join(dir, "types.json");
@@ -704,9 +659,9 @@ describe("cli", () => {
           );
           const { exitCode } = runInDir(dir, "apply", jsonFile, ...extraArgs);
           expect(exitCode).toBe(0);
-          out = fs.readFileSync(file, "utf-8");
+          out = fileAfter(file, source);
         });
-        return out;
+        return out!;
       }
 
       // The offset-based applier serves pass-through entries even when
@@ -716,17 +671,21 @@ describe("cli", () => {
         const source = "export function run(cb) {\n  cb();\n}\n";
         expect(
           applyReturnFixture(source, (s) => s.indexOf("(cb)") + 4, ["--infer.cstAware=false"]),
-        ).toBe(source);
+        ).toLeaveUntyped({ returnOf: "run" });
       });
 
       it("skips `: void` on a function declaration", () => {
         const source = "export function run(cb) {\n  cb();\n}\n";
-        expect(applyReturnFixture(source, (s) => s.indexOf("(cb)") + 4)).toBe(source);
+        expect(applyReturnFixture(source, (s) => s.indexOf("(cb)") + 4)).toLeaveUntyped({
+          returnOf: "run",
+        });
       });
 
       it("skips `: void` on a class method", () => {
         const source = "export class A {\n  run(cb) {\n    cb();\n  }\n}\n";
-        expect(applyReturnFixture(source, (s) => s.indexOf("(cb)") + 4)).toBe(source);
+        expect(applyReturnFixture(source, (s) => s.indexOf("(cb)") + 4)).toLeaveUntyped({
+          returnOf: "run",
+        });
       });
 
       // The nest case: `public get(...args: any[])` is the *implementation* of
@@ -739,12 +698,17 @@ describe("cli", () => {
           "  run(p: string, cb: () => void): void;\n" +
           "  run(...args: any[]) {\n    args;\n  }\n" +
           "}\n";
-        expect(applyReturnFixture(source, (s) => s.indexOf("(...args: any[])") + 16)).toBe(source);
+        // The overload signatures are typed `run`s too, so the file is the claim.
+        expect(applyReturnFixture(source, (s) => s.indexOf("(...args: any[])") + 16).text).toBe(
+          source,
+        );
       });
 
       it("skips `: void` on an arrow function", () => {
         const source = "export const run = (cb) => {\n  cb();\n};\n";
-        expect(applyReturnFixture(source, (s) => s.indexOf("(cb)") + 4)).toBe(source);
+        expect(applyReturnFixture(source, (s) => s.indexOf("(cb)") + 4)).toLeaveUntyped({
+          returnOf: "run",
+        });
       });
     });
 
@@ -753,18 +717,6 @@ describe("cli", () => {
     // script sending a flag a newer version understands must keep working —
     // but they no longer pass in silence.
     describe("report of what was written and what was not", () => {
-      const TSCONFIG = JSON.stringify({
-        compilerOptions: {
-          noImplicitAny: false,
-          target: "ES2022",
-          module: "ES2022",
-          moduleResolution: "Bundler",
-          skipLibCheck: true,
-          noEmit: true,
-        },
-        include: ["**/*.ts"],
-      });
-
       function project(
         files: Record<string, string>,
         entries: (at: (file: string, marker: string) => [string, number]) => unknown[],
@@ -881,7 +833,7 @@ describe("cli", () => {
       it("warns instead of silently applying when a safety flag is misspelled", () => {
         withTmpDir((dir) => {
           const file = path.join(dir, "a.ts");
-          fs.writeFileSync(file, "function foo(a) { return a; }");
+          fs.writeFileSync(file, FOO);
           const jsonFile = path.join(dir, "types.json");
           fs.writeFileSync(jsonFile, JSON.stringify([[file, 14, [["string", undefined]], {}]]));
           const { exitCode, stderr } = runInDir(dir, "apply", jsonFile, "--comment");
@@ -894,7 +846,7 @@ describe("cli", () => {
       it("says nothing about the flags it knows", () => {
         withTmpDir((dir) => {
           const file = path.join(dir, "a.ts");
-          fs.writeFileSync(file, "function foo(a) { return a; }");
+          fs.writeFileSync(file, FOO);
           const jsonFile = path.join(dir, "types.json");
           fs.writeFileSync(jsonFile, JSON.stringify([[file, 14, [["string", undefined]], {}]]));
           const { stderr } = runInDir(dir, "apply", jsonFile, "--dry-run", "--comments");
@@ -907,8 +859,7 @@ describe("cli", () => {
       it("skips *.spec.ts files by default", () => {
         withTmpDir((dir) => {
           const specFile = path.join(dir, "math.spec.ts");
-          const original = "function foo(a) { return a; }";
-          fs.writeFileSync(specFile, original);
+          fs.writeFileSync(specFile, FOO);
 
           const typeInfo = [[specFile, 14, [["string", undefined]], {}]];
           const jsonFile = path.join(dir, "types.json");
@@ -917,7 +868,7 @@ describe("cli", () => {
           const { exitCode } = run("apply", jsonFile);
           expect(exitCode).toBe(0);
           // File should be unchanged
-          expect(fs.readFileSync(specFile, "utf-8")).toBe(original);
+          expect(fs.readFileSync(specFile, "utf-8")).toBe(FOO);
         });
       });
 
@@ -941,7 +892,7 @@ describe("cli", () => {
         withTmpDir((dir) => {
           // `inspector.ts` contains "spect" but isn't a spec file
           const file = path.join(dir, "inspector.ts");
-          fs.writeFileSync(file, "function foo(a) { return a; }");
+          fs.writeFileSync(file, FOO);
 
           const typeInfo = [[file, 14, [["string", undefined]], {}]];
           const jsonFile = path.join(dir, "types.json");
@@ -949,14 +900,14 @@ describe("cli", () => {
 
           const { exitCode } = run("apply", jsonFile);
           expect(exitCode).toBe(0);
-          expect(fs.readFileSync(file, "utf-8")).toContain("a: string");
+          expect(fileAfter(file, FOO)).toAnnotate("a", "string");
         });
       });
 
       it("--include-tests opts back in", () => {
         withTmpDir((dir) => {
           const specFile = path.join(dir, "math.spec.ts");
-          fs.writeFileSync(specFile, "function foo(a) { return a; }");
+          fs.writeFileSync(specFile, FOO);
 
           const typeInfo = [[specFile, 14, [["string", undefined]], {}]];
           const jsonFile = path.join(dir, "types.json");
@@ -964,7 +915,7 @@ describe("cli", () => {
 
           const { exitCode } = run("apply", jsonFile, "--include-tests");
           expect(exitCode).toBe(0);
-          expect(fs.readFileSync(specFile, "utf-8")).toContain("a: string");
+          expect(fileAfter(specFile, FOO)).toAnnotate("a", "string");
         });
       });
     });
@@ -981,8 +932,7 @@ describe("cli", () => {
             JSON.stringify({ apply: { skipFiles: ["**/*.gen.ts"] } }),
           );
           const genFile = path.join(dir, "api.gen.ts");
-          const original = "function foo(a) { return a; }";
-          fs.writeFileSync(genFile, original);
+          fs.writeFileSync(genFile, FOO);
 
           const typeInfo = [[genFile, 14, [["string", undefined]], {}]];
           const jsonFile = path.join(dir, "types.json");
@@ -990,7 +940,7 @@ describe("cli", () => {
 
           const { exitCode } = runInDir(dir, "apply", jsonFile);
           expect(exitCode).toBe(0);
-          expect(fs.readFileSync(genFile, "utf-8")).toBe(original);
+          expect(fs.readFileSync(genFile, "utf-8")).toBe(FOO);
         });
       });
 
@@ -1001,7 +951,7 @@ describe("cli", () => {
             JSON.stringify({ apply: { skipFiles: ["**/*.gen.ts"] } }),
           );
           const file = path.join(dir, "lib.ts");
-          fs.writeFileSync(file, "function foo(a) { return a; }");
+          fs.writeFileSync(file, FOO);
 
           const typeInfo = [[file, 14, [["string", undefined]], {}]];
           const jsonFile = path.join(dir, "types.json");
@@ -1009,7 +959,7 @@ describe("cli", () => {
 
           const { exitCode } = runInDir(dir, "apply", jsonFile);
           expect(exitCode).toBe(0);
-          expect(fs.readFileSync(file, "utf-8")).toContain("a: string");
+          expect(fileAfter(file, FOO)).toAnnotate("a", "string");
         });
       });
 
@@ -1020,8 +970,7 @@ describe("cli", () => {
             JSON.stringify({ apply: { skipFiles: ["**/*.{gen,generated}.ts"] } }),
           );
           const genFile = path.join(dir, "api.generated.ts");
-          const original = "function foo(a) { return a; }";
-          fs.writeFileSync(genFile, original);
+          fs.writeFileSync(genFile, FOO);
 
           const typeInfo = [[genFile, 14, [["string", undefined]], {}]];
           const jsonFile = path.join(dir, "types.json");
@@ -1029,7 +978,7 @@ describe("cli", () => {
 
           const { exitCode } = runInDir(dir, "apply", jsonFile);
           expect(exitCode).toBe(0);
-          expect(fs.readFileSync(genFile, "utf-8")).toBe(original);
+          expect(fs.readFileSync(genFile, "utf-8")).toBe(FOO);
         });
       });
 
@@ -1041,7 +990,7 @@ describe("cli", () => {
           );
           const keep = path.join(dir, "keep.spec.ts");
           const other = path.join(dir, "other.spec.ts");
-          fs.writeFileSync(keep, "function foo(a) { return a; }");
+          fs.writeFileSync(keep, FOO);
           fs.writeFileSync(other, "function bar(a) { return a; }");
 
           const typeInfo = [
@@ -1054,9 +1003,9 @@ describe("cli", () => {
           const { exitCode } = runInDir(dir, "apply", jsonFile);
           expect(exitCode).toBe(0);
           // re-included by negation
-          expect(fs.readFileSync(keep, "utf-8")).toContain("a: string");
+          expect(fileAfter(keep, FOO)).toAnnotate("a", "string");
           // still skipped by the built-in default
-          expect(fs.readFileSync(other, "utf-8")).not.toContain("a: string");
+          expect(fileAfter(other, "function bar(a) { return a; }")).toLeaveUntyped("a");
         });
       });
     });
@@ -1069,8 +1018,7 @@ describe("cli", () => {
       it("does not modify files when --dry-run is set", () => {
         withTmpDir((dir) => {
           const file = path.join(dir, "lib.ts");
-          const original = "function foo(a) { return a; }";
-          fs.writeFileSync(file, original);
+          fs.writeFileSync(file, FOO);
 
           const typeInfo = [[file, 14, [["string", undefined]], {}]];
           const jsonFile = path.join(dir, "types.json");
@@ -1078,7 +1026,7 @@ describe("cli", () => {
 
           const { exitCode, stdout } = run("apply", jsonFile, "--dry-run");
           expect(exitCode).toBe(0);
-          expect(fs.readFileSync(file, "utf-8")).toBe(original);
+          expect(fs.readFileSync(file, "utf-8")).toBe(FOO);
           // Output should mention the file that would have been changed
           expect(stdout).toContain(file);
         });
@@ -1087,8 +1035,7 @@ describe("cli", () => {
       it("reports files that would NOT change separately from changed", () => {
         withTmpDir((dir) => {
           const file = path.join(dir, "lib.ts");
-          const original = "function foo(a) { return a; }";
-          fs.writeFileSync(file, original);
+          fs.writeFileSync(file, FOO);
 
           // Empty types array → result will equal source → no-change
           const typeInfo = [[file, 14, [], {}]];
@@ -1097,7 +1044,7 @@ describe("cli", () => {
 
           const { exitCode, stdout } = run("apply", jsonFile, "--dry-run");
           expect(exitCode).toBe(0);
-          expect(fs.readFileSync(file, "utf-8")).toBe(original);
+          expect(fs.readFileSync(file, "utf-8")).toBe(FOO);
           // Reports something useful (a "0 files would change" or similar
           // summary). We assert "no" appears since the wording will likely
           // be like "no changes" — keeps the assertion loose so future
@@ -1151,7 +1098,9 @@ describe("cli", () => {
           // First apply: should annotate both params
           run("apply", jsonFile);
           const after1 = fs.readFileSync(file, "utf-8");
-          expect(after1).toBe("function foo(a: number, b: string) { return a; }");
+          const first = checked("function foo(a, b) { return a; }", after1);
+          expect(first).toAnnotate("a", "number");
+          expect(first).toAnnotate("b", "string");
 
           // Second apply: should be a no-op even though the in-source
           // pos-based check can't catch the second entry's shift.
@@ -1169,28 +1118,28 @@ describe("cli", () => {
       it("--comments is the preview mode", () => {
         withTmpDir((dir) => {
           const file = path.join(dir, "lib.ts");
-          fs.writeFileSync(file, "function foo(a) { return a; }");
+          fs.writeFileSync(file, FOO);
           const jsonFile = path.join(dir, "types.json");
           fs.writeFileSync(jsonFile, JSON.stringify([[file, 14, [["number", undefined]], {}]]));
 
           expect(run("apply", jsonFile, "--comments").exitCode).toBe(0);
-          const after = fs.readFileSync(file, "utf-8");
-          expect(after).toContain("@ts-capture[proposal]: `a` would be `number`");
-          expect(after).not.toContain("a: number");
+          const after = fileAfter(file, FOO);
+          expect(after.text).toContain("@ts-capture[proposal]: `a` would be `number`");
+          expect(after).toLeaveUntyped("a");
         });
       });
 
       it("--both writes the annotation and the note", () => {
         withTmpDir((dir) => {
           const file = path.join(dir, "lib.ts");
-          fs.writeFileSync(file, "function foo(a) { return a; }");
+          fs.writeFileSync(file, FOO);
           const jsonFile = path.join(dir, "types.json");
           fs.writeFileSync(jsonFile, JSON.stringify([[file, 14, [["number", undefined]], {}]]));
 
           expect(run("apply", jsonFile, "--both").exitCode).toBe(0);
-          const after = fs.readFileSync(file, "utf-8");
-          expect(after).toContain("@ts-capture[applied]: `a` observed once");
-          expect(after).toContain("a: number");
+          const after = fileAfter(file, FOO);
+          expect(after.text).toContain("@ts-capture[applied]: `a` observed once");
+          expect(after).toAnnotate("a", "number");
         });
       });
 
@@ -1199,14 +1148,14 @@ describe("cli", () => {
       it("--infer.outputMode overrides the shorthand", () => {
         withTmpDir((dir) => {
           const file = path.join(dir, "lib.ts");
-          fs.writeFileSync(file, "function foo(a) { return a; }");
+          fs.writeFileSync(file, FOO);
           const jsonFile = path.join(dir, "types.json");
           fs.writeFileSync(jsonFile, JSON.stringify([[file, 14, [["number", undefined]], {}]]));
 
           run("apply", jsonFile, "--comments", "--infer.outputMode=annotations");
-          const after = fs.readFileSync(file, "utf-8");
-          expect(after).toContain("a: number");
-          expect(after).not.toContain("@ts-capture");
+          const after = fileAfter(file, FOO);
+          expect(after).toAnnotate("a", "number");
+          expect(after.text).not.toContain("@ts-capture");
         });
       });
 
@@ -1217,7 +1166,7 @@ describe("cli", () => {
       it("a preview does not claim the types.json was applied", () => {
         withTmpDir((dir) => {
           const file = path.join(dir, "lib.ts");
-          fs.writeFileSync(file, "function foo(a) { return a; }");
+          fs.writeFileSync(file, FOO);
           const jsonFile = path.join(dir, "types.json");
           fs.writeFileSync(jsonFile, JSON.stringify([[file, 14, [["number", undefined]], {}]]));
 
@@ -1229,9 +1178,9 @@ describe("cli", () => {
           // The point of the whole thing: the apply that follows lands.
           const { exitCode } = run("apply", jsonFile);
           expect(exitCode).toBe(0);
-          const after = fs.readFileSync(file, "utf-8");
-          expect(after).toContain("a: number");
-          expect(after).not.toContain("@ts-capture");
+          const after = fileAfter(file, FOO);
+          expect(after).toAnnotate("a", "number");
+          expect(after.text).not.toContain("@ts-capture");
         });
       });
 
@@ -1258,14 +1207,14 @@ describe("cli", () => {
       it("re-running with a different types.json applies normally", () => {
         withTmpDir((dir) => {
           const file = path.join(dir, "lib.ts");
-          fs.writeFileSync(file, "function foo(a) { return a; }");
+          fs.writeFileSync(file, FOO);
 
           // First apply with one entry
           const ti1 = [[file, 14, [["number", undefined]], {}]];
           const json1 = path.join(dir, "v1.json");
           fs.writeFileSync(json1, JSON.stringify(ti1));
           run("apply", json1);
-          expect(fs.readFileSync(file, "utf-8")).toContain(": number");
+          expect(fileAfter(file, FOO)).toAnnotate("a", "number");
 
           // Different types.json with the same hash-key — should still apply
           // since manifest is keyed per-types.json-path.
@@ -1285,7 +1234,7 @@ describe("cli", () => {
       it("--force bypasses the manifest idempotency check", () => {
         withTmpDir((dir) => {
           const file = path.join(dir, "lib.ts");
-          fs.writeFileSync(file, "function foo(a) { return a; }");
+          fs.writeFileSync(file, FOO);
           const typeInfo = [[file, 14, [["string", undefined]], {}]];
           const jsonFile = path.join(dir, "types.json");
           fs.writeFileSync(jsonFile, JSON.stringify(typeInfo));
@@ -1303,7 +1252,7 @@ describe("cli", () => {
       it("dry-run does NOT write a manifest", () => {
         withTmpDir((dir) => {
           const file = path.join(dir, "lib.ts");
-          fs.writeFileSync(file, "function foo(a) { return a; }");
+          fs.writeFileSync(file, FOO);
           const typeInfo = [[file, 14, [["string", undefined]], {}]];
           const jsonFile = path.join(dir, "types.json");
           fs.writeFileSync(jsonFile, JSON.stringify(typeInfo));
@@ -1326,7 +1275,7 @@ describe("cli", () => {
         withTmpDir((dir) => {
           const file = path.join(dir, "lib.ts");
           // Collect-time source: parameter `a` is at offset 13.
-          fs.writeFileSync(file, "function foo(a) { return a; }");
+          fs.writeFileSync(file, FOO);
           const typeInfo = [[file, 13, [["string", undefined]], {}]];
           const jsonFile = path.join(dir, "types.json");
           fs.writeFileSync(jsonFile, JSON.stringify(typeInfo));
@@ -1340,18 +1289,11 @@ describe("cli", () => {
 
           const { exitCode } = run("apply", jsonFile);
           const after = fs.readFileSync(file, "utf-8");
-          // Cheap structural check: ts.parse should accept the result.
-          // If apply silently mangled the file (inserted `: string`
-          // mid-comment, e.g.) the parser surfaces it as a SyntaxError.
-          // Eitherrun went through OK and produced valid TS, or exited
-          // non-zero and left the file untouched. Both are acceptable;
-          // silent corruption is not.
+          // Either the run went through and produced TypeScript that parses,
+          // or it exited non-zero and left the file alone. Both are
+          // acceptable; silent corruption is not.
           if (exitCode === 0) {
-            const sf = ts.createSourceFile("v2.ts", after, ts.ScriptTarget.Latest, true);
-            const diags = (sf as ts.SourceFile & { parseDiagnostics?: ts.Diagnostic[] })
-              .parseDiagnostics;
-            const errors = (diags ?? []).filter((d) => d.category === ts.DiagnosticCategory.Error);
-            expect(errors.length).toBe(0);
+            expect(parseErrors(checked(v2, after))).toEqual([]);
           } else {
             // Acceptable alternative: refuse and exit non-zero. File
             // should be left as-is (or at least still valid TS).
@@ -1364,7 +1306,7 @@ describe("cli", () => {
         withTmpDir((dir) => {
           const file = path.join(dir, "lib.ts");
           // v1: parameter at offset 13.
-          fs.writeFileSync(file, "function foo(a) { return a; }");
+          fs.writeFileSync(file, FOO);
           const typeInfo = [[file, 13, [["number", undefined]], {}]];
           const jsonFile = path.join(dir, "types.json");
           fs.writeFileSync(jsonFile, JSON.stringify(typeInfo));
@@ -1378,11 +1320,7 @@ describe("cli", () => {
           const { exitCode } = run("apply", jsonFile);
           const after = fs.readFileSync(file, "utf-8");
           if (exitCode === 0) {
-            const sf = ts.createSourceFile("v2.ts", after, ts.ScriptTarget.Latest, true);
-            const diags = (sf as ts.SourceFile & { parseDiagnostics?: ts.Diagnostic[] })
-              .parseDiagnostics;
-            const errors = (diags ?? []).filter((d) => d.category === ts.DiagnosticCategory.Error);
-            expect(errors.length).toBe(0);
+            expect(parseErrors(checked(v2, after))).toEqual([]);
           } else {
             expect(after).toBe(v2);
           }
