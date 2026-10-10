@@ -279,10 +279,19 @@ function isTupleLike(names: Array<string | null>): boolean {
   return kinds.size > 1;
 }
 
+/**
+ * The kind of an element, for telling a pair from a list. Literals widen to
+ * their base; every object shape is one kind, as is every array, tuple and
+ * function: a list of orders whose shapes differ is still a list of orders.
+ */
 function widenedKind(name: string): string {
   if (name.startsWith('"')) return "string";
   if (name === "true" || name === "false") return "boolean";
   if (/^-?\d/.test(name)) return "number";
+  if (name.startsWith("{")) return "object";
+  if (name.endsWith("[]") || name.startsWith("Array<")) return "array";
+  if (name.startsWith("[")) return "tuple";
+  if (name.startsWith("(") && name.includes("=>")) return "function";
   return name;
 }
 

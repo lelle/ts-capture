@@ -54,6 +54,13 @@ describe("createValueWalker → WalkResult", () => {
 
     it("keeps same-kind and long arrays as arrays", () => {
       expect(walk([1, 2])).toMatchObject({ type: "number[]" });
+      expect(walk([{ a: 1 }, { b: 2 }])).toMatchObject({
+        type: "Array<{ a: number } | { b: number }>",
+      });
+      expect(walk([[1], ["a"]])).toMatchObject({ type: "Array<number[] | string[]>" });
+      expect(walk([() => 1, (x: number) => x])).toMatchObject({
+        type: "Array<() => unknown | (x: unknown) => unknown>",
+      });
       expect(walk(["a", 1, true, null])).toMatchObject({
         type: "Array<boolean | null | number | string>",
       });
