@@ -148,7 +148,8 @@ function atom(node: ts.TypeNode, faithful = false): string {
 }
 
 function renderMember(member: ts.TypeElement, faithful = false): string {
-  if (!ts.isPropertySignature(member)) return collapse(member.getText());
+  // The parser keeps a member's trailing `,` or `;` inside the node.
+  if (!ts.isPropertySignature(member)) return collapse(member.getText()).replace(/[,;]$/, "");
   const readonly = member.modifiers?.some((m) => m.kind === ts.SyntaxKind.ReadonlyKeyword)
     ? "readonly "
     : "";
