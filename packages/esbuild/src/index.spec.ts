@@ -5,6 +5,11 @@ import path from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import {
+  inspected,
+  type Instrumented,
+} from "../../core/src/test-utils/instrumented.js";
+import "../../core/src/test-utils/matchers.js";
+import {
   tsCaptureEsbuildPlugin,
   type TsCaptureEsbuildPluginOptions,
 } from "./index.js";
@@ -19,7 +24,10 @@ describe("@ts-capture/esbuild", () => {
   let tmpDir: string;
 
   beforeAll(() => {
-    tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "ts-capture-esbuild-test-"));
+    // esbuild hands the plugin real paths, and the system tmpdir can be a symlink.
+    tmpDir = fs.realpathSync(
+      fs.mkdtempSync(path.join(os.tmpdir(), "ts-capture-esbuild-test-")),
+    );
   });
 
   afterAll(() => {
@@ -32,7 +40,7 @@ describe("@ts-capture/esbuild", () => {
       filename?: string;
       pluginOpts?: TsCaptureEsbuildPluginOptions;
     } = {},
-  ): Promise<string> {
+  ): Promise<Instrumented> {
     const filename = opts.filename ?? "test.ts";
     const filepath = path.join(tmpDir, filename);
     fs.writeFileSync(filepath, source);
@@ -48,22 +56,30 @@ describe("@ts-capture/esbuild", () => {
     if (result.outputFiles.length === 0) {
       throw new Error("esbuild produced no output files");
     }
-    return result.outputFiles[0].text;
+    // esbuild rewrites the module around the calls, so the output is held to
+    // parsing and to each call recording at a site of the source, not to
+    // being the source plus calls.
+    return inspected(result.outputFiles[0].text, { input: source, filename });
   }
+
+  const pathOf = (filename: string): string => path.join(tmpDir, filename);
 
   it("instruments untyped function parameters in .ts files", async () => {
     const output = await buildSource(
       `export function greet(name) { return "Hello " + name; }`,
     );
-    expect(output).toContain("__tscptr__");
-    expect(output).toContain("greet");
+    expect(output.text).toContain("__tscptr__");
+    expect(output.text).toContain("greet");
+    expect(output).toTrack("name", { in: pathOf("test.ts") });
+    expect(output).toWrapReturnOf("greet");
   });
 
   it("does not instrument .js files (only TS extensions pass the filter)", async () => {
     const output = await buildSource(`export function f(x) { return x + 1; }`, {
       filename: "passthrough.js",
     });
-    expect(output).not.toContain("__tscptr__");
+    expect(output.text).not.toContain("__tscptr__");
+    expect(output.calls).toEqual([]);
   });
 
   it("respects exclude regex", async () => {
@@ -71,7 +87,8 @@ describe("@ts-capture/esbuild", () => {
       filename: "excluded.ts",
       pluginOpts: { exclude: /excluded/ },
     });
-    expect(output).not.toContain("__tscptr__");
+    expect(output.text).not.toContain("__tscptr__");
+    expect(output.calls).toEqual([]);
   });
 
   it("include regex acts as whitelist — matching files instrument", async () => {
@@ -79,7 +96,8 @@ describe("@ts-capture/esbuild", () => {
       filename: "yes-pattern.ts",
       pluginOpts: { include: /yes-pattern/ },
     });
-    expect(matched).toContain("__tscptr__");
+    expect(matched.text).toContain("__tscptr__");
+    expect(matched).toTrack("x", { in: pathOf("yes-pattern.ts") });
   });
 
   it("include regex acts as whitelist — non-matching files pass through", async () => {
@@ -87,7 +105,8 @@ describe("@ts-capture/esbuild", () => {
       filename: "other-pattern.ts",
       pluginOpts: { include: /yes-pattern/ },
     });
-    expect(skipped).not.toContain("__tscptr__");
+    expect(skipped.text).not.toContain("__tscptr__");
+    expect(skipped.calls).toEqual([]);
   });
 
   it("handles .tsx files via the tsx loader (JSX transpiled)", async () => {
@@ -95,12 +114,14 @@ describe("@ts-capture/esbuild", () => {
       `export const Greet = (props) => <div>{props.name}</div>;`,
       { filename: "Greet.tsx" },
     );
-    expect(output).toContain("__tscptr__");
+    expect(output.text).toContain("__tscptr__");
+    expect(output).toTrack("props", { arrow: true });
+    expect(output).toWrapReturnOf("Greet");
     // esbuild's default JSX transform emits `React.createElement` (classic
     // runtime). If this changes upstream, accept any of the well-known
     // forms — we only care that the JSX was actually transpiled, proving
     // the tsx loader path executed.
-    expect(output).toMatch(/createElement|_jsx|h\(/);
+    expect(output.text).toMatch(/createElement|_jsx|h\(/);
   });
 
   it("injectRuntime prepends require to an entry file", async () => {
@@ -108,8 +129,11 @@ describe("@ts-capture/esbuild", () => {
       filename: "entry.ts",
       pluginOpts: { injectRuntime: true },
     });
-    expect(output).toMatch(/require\(["']@ts-capture\/core\/preload["']\)/);
-    expect(output).toContain("__tscptr__");
+    expect(output.text).toMatch(
+      /require\(["']@ts-capture\/core\/preload["']\)/,
+    );
+    expect(output.text).toContain("__tscptr__");
+    expect(output).toTrack("x");
   });
 
   it("injectRuntime omits the require when option is false (default)", async () => {
@@ -117,8 +141,11 @@ describe("@ts-capture/esbuild", () => {
       filename: "no-inject.ts",
       pluginOpts: { injectRuntime: false },
     });
-    expect(output).not.toMatch(/require\(["']@ts-capture\/core\/preload["']\)/);
-    expect(output).toContain("__tscptr__");
+    expect(output.text).not.toMatch(
+      /require\(["']@ts-capture\/core\/preload["']\)/,
+    );
+    expect(output.text).toContain("__tscptr__");
+    expect(output).toTrack("x");
   });
 
   it("injectRuntime only touches entry files, not bundled imports", async () => {
@@ -152,6 +179,9 @@ describe("@ts-capture/esbuild", () => {
     // Both files instrumented — multiple __tscptr__ occurrences.
     const tscptrCount = (output.match(/__tscptr__/g) ?? []).length;
     expect(tscptrCount).toBeGreaterThan(1);
+    const out = inspected(output);
+    expect(out).toTrack("x", { in: entry });
+    expect(out).toTrack("x", { in: helper });
 
     // Only ONE runtime require — the entry's. The bundled helper must
     // not have its own (would be redundant after Node's module cache).
@@ -178,6 +208,7 @@ describe("@ts-capture/esbuild", () => {
     const output = result.outputFiles[0].text;
     expect(output).toContain("__tscptr__");
     expect(output).toMatch(/require\(["']@ts-capture\/core\/preload["']\)/);
+    expect(inspected(output)).toTrack("x", { in: entry });
   });
 
   it("handles entryPoints in {in, out}[] form", async () => {
@@ -195,5 +226,6 @@ describe("@ts-capture/esbuild", () => {
     const output = result.outputFiles[0].text;
     expect(output).toContain("__tscptr__");
     expect(output).toMatch(/require\(["']@ts-capture\/core\/preload["']\)/);
+    expect(inspected(output)).toTrack("x", { in: entry });
   });
 });
