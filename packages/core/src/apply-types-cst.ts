@@ -7,7 +7,7 @@ import type { CollectedTypeInfo } from "./type-collector.js";
 
 import { advanceCurrentSource } from "./apply-types-verify.js";
 import { applyTypesToFile } from "./apply-types.js";
-import { INFER_DEFAULTS } from "./configuration.js";
+import { INFER_DEFAULTS, type InferOptions } from "./configuration.js";
 import { buildCstReplacements, type CstApplyContext } from "./cst-replacements.js";
 import { routeEntries } from "./cst-routing.js";
 import { buildCheckerSiteIndex, buildCstSiteIndex } from "./cst-site-index.js";
@@ -121,16 +121,7 @@ export function applyTypesToFileCst(
   }
   const infer = options.infer ?? INFER_DEFAULTS;
   const prefix = options.prefix ?? "";
-  // Scope check (mirrored from offset path). Prefers TypeChecker when
-  // Program + filename available.
-  const scopedTypeNames: Set<string> | undefined = (() => {
-    if (!infer.requireTypeRefInScope) return undefined;
-    if (program && options.filename) {
-      const fromTC = buildScopedTypeNamesViaTypeChecker(program, options.filename);
-      if (fromTC) return fromTC;
-    }
-    return buildScopedTypeNames(source, options.filename);
-  })();
+  const scopedTypeNames = scopedTypeNamesFor(source, program, options.filename, infer);
   // Unified named-type index (exact + subset) for substituting structural
   // annotations with the matching in-scope interface / type alias. Off
   // unless `preferNamedInScope`; the builder owns the cross-file vs
@@ -212,10 +203,17 @@ export function applyTypesToFileCst(
       moved.set(key, { kind: routed.kind, entry: [file, newPos, types, opts] });
     }
     const skippedBefore = telemetry?.skipped.length ?? 0;
+    // The names in scope are read again from the file as the first pass left
+    // it, so a type that pass declared is one the second can write.
+    const secondScoped = scopedTypeNamesFor(afterFirst, secondProgram, options.filename, infer);
     const secondReplacements = buildCstReplacements(moved, secondIndex, {
       ...ctx,
       program: secondProgram,
       checkerIndex: buildCheckerSiteIndex(secondProgram, options.filename, afterFirst, infer),
+      scopedTypeNames: secondScoped,
+      namedTypeIndex: infer.preferNamedInScope
+        ? buildNamedTypeIndex(afterFirst, secondProgram, options.filename, secondScoped)
+        : undefined,
       source: afterFirst,
       stripNotes: false,
     });
@@ -307,6 +305,25 @@ export function applyTypesToFileCst(
     }
   }
   return result;
+}
+
+/**
+ * The type names the file can reach, for the scope check (mirrored from the
+ * offset path). From the TypeChecker when a Program holds the file, else from
+ * the text.
+ */
+function scopedTypeNamesFor(
+  source: string,
+  program: ts.Program | undefined,
+  filename: string | undefined,
+  infer: InferOptions,
+): Set<string> | undefined {
+  if (!infer.requireTypeRefInScope) return undefined;
+  if (program && filename) {
+    const fromTC = buildScopedTypeNamesViaTypeChecker(program, filename);
+    if (fromTC) return fromTC;
+  }
+  return buildScopedTypeNames(source, filename);
 }
 
 function parseDetached(source: string): ts.SourceFile {

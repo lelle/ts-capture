@@ -2072,6 +2072,58 @@ describe("applyTypesToFileCst — TypeChecker verify integration", () => {
       ),
     ).toContain("make(f): Builder {");
   });
+
+  describe("infer.aliasRepeatedShapes with the type-check oracle", () => {
+    function applyWithVerify(
+      src: string,
+      typeInfoFor: (src: string, target: string) => CollectedTypeInfo,
+    ): string {
+      const proj = makeProject({ "target.ts": src });
+      const project = createProjectVerificationContext(
+        proj.fileNames,
+        proj.compilerOptions,
+        proj.dir,
+      );
+      const verify = createVerificationContext(project, proj.target, proj.targetSource);
+      return applyTypesToFileCst(
+        proj.targetSource,
+        typeInfoFor(proj.targetSource, proj.target),
+        { filename: proj.target, verify, ...ALIAS },
+        project.service.getProgram(),
+      );
+    }
+
+    it("verifies the annotations with the declaration they name", () => {
+      const src =
+        "export function a(product) { return product.sku; }\n" +
+        "export function b(item) { return item.price; }\n";
+      expect(applyWithVerify(src, (s, t) => twoParams(t, s))).toBe(
+        "type Product = { price: number; sku: string };\n\n" +
+          "export function a(product: Product) { return product.sku; }\n" +
+          "export function b(item: Product) { return item.price; }\n",
+      );
+    });
+
+    it("declares nothing when no annotation naming it is written", () => {
+      const src =
+        "export function a(product) { return product.weight; }\n" +
+        "export function b(item) { return item.weight; }\n";
+      expect(applyWithVerify(src, (s, t) => twoParams(t, s))).toBe(src);
+    });
+
+    it("names a local after a type the same run declared for the file's signatures", () => {
+      const src =
+        "export function a(product) { return product.sku; }\n" +
+        "export function b(item) { return item.price; }\n" +
+        'export const parsed = JSON.parse("{}");\n';
+      const out = applyWithVerify(src, (s, t) => [
+        ...twoParams(t, s),
+        entry(t, s.indexOf("parsed") + 6, [[PRODUCT]], { varDecl: true }),
+      ]);
+      expect(out).toContain("export const parsed: Product = ");
+      expect(out.match(/type Product/g)).toHaveLength(1);
+    });
+  });
 });
 
 describe("applyTypesToFileCst — infer.ignoreExistingTypes", () => {
@@ -2223,5 +2275,61 @@ describe("infer.narrowParamShapes", () => {
       opts,
     ]) as CollectedTypeInfo;
     expect(applyTypesToFileCst(withAlias, shifted, NARROW)).toContain("product: Priced,");
+  });
+});
+
+// A shape the run saw at several positions in one file is one type, and
+// writing it out at each of them says so nowhere. With `aliasRepeatedShapes`
+// on, apply declares it once, named after the first position that holds it.
+const PRODUCT = "{ price: number, sku: string }";
+const ALIAS = { infer: { ...INFER_DEFAULTS, aliasRepeatedShapes: true } };
+const twoParams = (file: string, src: string): CollectedTypeInfo => [
+  entry(file, src.indexOf("(product)") + 8, [[PRODUCT]]),
+  entry(file, src.indexOf("(item)") + 5, [[PRODUCT]]),
+];
+
+describe("infer.aliasRepeatedShapes", () => {
+  const source =
+    'import { x } from "./x";\n\n' +
+    "export function a(product) { return x(product); }\n" +
+    "export function b(item) { return x(item); }\n";
+  it("is off by default and writes the shape at each site", () => {
+    const out = applyTypesToFileCst(source, twoParams("test.ts", source), {});
+    expect(out).toContain("a(product: { price: number; sku: string })");
+    expect(out).toContain("b(item: { price: number; sku: string })");
+    expect(out).not.toContain("type Product");
+  });
+
+  it("declares the shape once after the imports and names it at each site", () => {
+    expect(applyTypesToFileCst(source, twoParams("test.ts", source), ALIAS)).toBe(
+      'import { x } from "./x";\n\n' +
+        "type Product = { price: number; sku: string };\n\n" +
+        "export function a(product: Product) { return x(product); }\n" +
+        "export function b(item: Product) { return x(item); }\n",
+    );
+  });
+
+  it("declares the shape at the top of a file without imports", () => {
+    const src = source.slice(source.indexOf("export"));
+    expect(applyTypesToFileCst(src, twoParams("test.ts", src), ALIAS)).toBe(
+      "type Product = { price: number; sku: string };\n\n" +
+        "export function a(product: Product) { return x(product); }\n" +
+        "export function b(item: Product) { return x(item); }\n",
+    );
+  });
+
+  it("takes the next site's name when the file already uses the first", () => {
+    const src = "class Product {}\n" + source;
+    expect(applyTypesToFileCst(src, twoParams("test.ts", src), ALIAS)).toContain(
+      "type Item = { price: number; sku: string };",
+    );
+  });
+
+  it("writes an in-scope type the shape matches rather than declaring its own", () => {
+    const src = "interface Product { price: number; sku: string }\n" + source;
+    const out = applyTypesToFileCst(src, twoParams("test.ts", src), ALIAS);
+    expect(out).not.toContain("type ");
+    expect(out).toContain("a(product: Product)");
+    expect(out).toContain("b(item: Product)");
   });
 });

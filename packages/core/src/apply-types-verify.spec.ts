@@ -8,6 +8,7 @@ import {
   commitReplacements,
   createProjectVerificationContext,
   createVerificationContext,
+  filterAcceptedReplacements,
   orderByImports,
   wouldIntroduceErrors,
 } from "./apply-types-verify.js";
@@ -263,6 +264,31 @@ describe("apply-types-verify", () => {
     // Both contexts share the same graph (identity comparison) — no
     // rebuild between them.
     expect(ctx1.project.reverseImportGraph).toBe(ctx2.project.reverseImportGraph);
+  });
+
+  // An annotation that names a type apply is about to declare only
+  // type-checks with the declaration beside it, and the declaration alone is
+  // an unused local wherever `noUnusedLocals` is on. So each probe carries the
+  // declarations its candidates refer to, and no others.
+  it("probes each candidate subset with the declarations it refers to", () => {
+    const src = "function a(p) { return p.x; }\nfunction b(q) { return q.y; }\n";
+    const proj = makeProject({ "target.ts": src });
+    const project = createProjectVerificationContext(
+      proj.fileNames,
+      { ...proj.compilerOptions, noUnusedLocals: true },
+      proj.dir,
+    );
+    const ctx = createVerificationContext(project, proj.target, src);
+    const declaration = { start: 0, end: 0, text: "type P = { x: number };\n" };
+    const supporting = (subset: ReadonlyArray<{ text: string }>) =>
+      subset.some((c) => /\bP\b/.test(c.text)) ? [declaration] : [];
+    const pos = (needle: string) => src.indexOf(needle) + needle.length;
+    const candidates = [
+      { start: pos("a(p"), end: pos("a(p"), text: ": P" },
+      { start: pos("b(q"), end: pos("b(q"), text: ": { y: boolean }" },
+      { start: pos("b(q"), end: pos("b(q"), text: ": { z: boolean }" },
+    ];
+    expect(filterAcceptedReplacements(ctx, candidates, supporting)).toEqual([0, 1]);
   });
 });
 
