@@ -8,6 +8,7 @@ import {
   commitReplacements,
   createProjectVerificationContext,
   createVerificationContext,
+  orderByImports,
   wouldIntroduceErrors,
 } from "./apply-types-verify.js";
 
@@ -262,5 +263,24 @@ describe("apply-types-verify", () => {
     // Both contexts share the same graph (identity comparison) — no
     // rebuild between them.
     expect(ctx1.project.reverseImportGraph).toBe(ctx2.project.reverseImportGraph);
+  });
+});
+
+describe("orderByImports", () => {
+  it("puts a file after the files it imports, keeps ties and cycles in the given order", () => {
+    const importersOf = new Map([
+      ["/p/pricing.ts", new Set(["/p/orders.ts"])],
+      ["/p/a.ts", new Set(["/p/b.ts"])],
+      ["/p/b.ts", new Set(["/p/a.ts"])],
+      ["/p/elsewhere.ts", new Set(["/p/other.ts"])],
+    ]);
+    const files = ["/p/orders.ts", "/p/other.ts", "/p/pricing.ts", "/p/a.ts", "/p/b.ts"];
+    expect(orderByImports(files, importersOf)).toEqual([
+      "/p/other.ts",
+      "/p/pricing.ts",
+      "/p/orders.ts",
+      "/p/a.ts",
+      "/p/b.ts",
+    ]);
   });
 });

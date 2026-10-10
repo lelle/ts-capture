@@ -14,6 +14,7 @@ import {
 } from "./apply-types-verify.js";
 import { applyTypesToFile } from "./apply-types.js";
 import { INFER_DEFAULTS } from "./configuration.js";
+import { newApplyTelemetry } from "./contract.js";
 
 type LooseTypeTuple =
   [string | undefined] | [string | undefined, SourceLocation | undefined] | DiscoveredType;
@@ -1239,6 +1240,69 @@ describe("applyTypesToFileCst — TypeChecker verify integration", () => {
     };
     expect(applyTypesToFileCst(proj.targetSource, typeInfo, opts, program)).toBe(proj.targetSource);
     expect(applyTypesToFile(proj.targetSource, typeInfo, opts, program)).toBe(proj.targetSource);
+  });
+
+  // Redundancy used to be judged against the program as it stood before apply:
+  // a local initialised from a call to an untyped function inferred `any`, the
+  // gate bailed, and the local got an annotation TypeScript would infer as soon
+  // as the callee had the signature the same run was writing. Signatures go
+  // first; locals and callbacks are judged against the file as it then reads.
+  describe("redundancy is judged against the file as apply leaves it", () => {
+    function applyWithVerify(
+      src: string,
+      typeInfoFor: (src: string, target: string) => CollectedTypeInfo,
+      telemetry = newApplyTelemetry(),
+    ): string {
+      const proj = makeProject({ "target.ts": src });
+      const project = createProjectVerificationContext(
+        proj.fileNames,
+        proj.compilerOptions,
+        proj.dir,
+      );
+      const verify = createVerificationContext(project, proj.target, proj.targetSource);
+      return applyTypesToFileCst(
+        proj.targetSource,
+        typeInfoFor(proj.targetSource, proj.target),
+        { filename: proj.target, verify, telemetry },
+        project.service.getProgram(),
+      );
+    }
+    const idSource = "function id(a) {\n  return a;\n}\nexport const p = id(3);\n";
+    const idEntries = (s: string, t: string): CollectedTypeInfo => [
+      entry(t, s.indexOf("(a)") + 2, [["number"]]),
+      entry(t, s.indexOf("(a)") + 3, [["number"]], { returnType: true }),
+      entry(t, s.indexOf("const p") + 7, [["number"]], { varDecl: true }),
+    ];
+
+    it("drops a local whose callee gets its signature in the same run", () => {
+      expect(applyWithVerify(idSource, idEntries)).toBe(
+        "function id(a: number): number {\n  return a;\n}\nexport const p = id(3);\n",
+      );
+    });
+
+    it("drops callback parameters and return once the outer parameter types them", () => {
+      const src =
+        "export function sum(values) {\n  return values.reduce((total, value) => total + value, 0);\n}\n";
+      const out = applyWithVerify(src, (s, t) => [
+        entry(t, s.indexOf("(values)") + 7, [["number[]"]]),
+        entry(t, s.indexOf("(values)") + 8, [["number"]], { returnType: true }),
+        entry(t, s.indexOf("(total") + 6, [["number"]]),
+        entry(t, s.indexOf(" value)") + 6, [["number"]]),
+        entry(t, s.indexOf(" value)") + 7, [["number"]], { returnType: true }),
+      ]);
+      expect(out).toBe(
+        "export function sum(values: number[]): number {\n  return values.reduce((total, value) => total + value, 0);\n}\n",
+      );
+    });
+
+    it("reports the dropped local at its position in the original source", () => {
+      const telemetry = newApplyTelemetry();
+      applyWithVerify(idSource, idEntries, telemetry);
+      expect(telemetry.redundant).toBe(1);
+      expect(telemetry.skipped).toContainEqual(
+        expect.objectContaining({ pos: idSource.indexOf("const p") + 7, reason: "redundant" }),
+      );
+    });
   });
 
   // A line start inside a multi-line template is inside the *string*. Writing

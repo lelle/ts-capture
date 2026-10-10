@@ -1,16 +1,18 @@
 import ts from "typescript";
 
 import type { ApplyTelemetry, ApplyTypesOptions } from "./contract.js";
+import type { RoutedEntry } from "./cst-routing.js";
+import type { CstSiteIndex } from "./cst-site-index.js";
 import type { CollectedTypeInfo } from "./type-collector.js";
 
 import { advanceCurrentSource } from "./apply-types-verify.js";
 import { applyTypesToFile } from "./apply-types.js";
 import { INFER_DEFAULTS } from "./configuration.js";
-import { buildCstReplacements } from "./cst-replacements.js";
+import { buildCstReplacements, type CstApplyContext } from "./cst-replacements.js";
 import { routeEntries } from "./cst-routing.js";
 import { buildCheckerSiteIndex, buildCstSiteIndex } from "./cst-site-index.js";
 import { buildNamedTypeIndex, type NamedTypeIndex } from "./named-type-rewrite.js";
-import { applyReplacements } from "./replacement.js";
+import { applyReplacements, type Replacement } from "./replacement.js";
 import {
   buildCtorArityMap,
   buildScopedTypeNames,
@@ -141,13 +143,7 @@ export function applyTypesToFileCst(
   const ctorArityMap: Map<string, number> | undefined =
     program && options.filename ? buildCtorArityMap(program, options.filename) : undefined;
 
-  const sf = ts.createSourceFile(
-    "__ts-capture_apply_cst.ts",
-    source,
-    ts.ScriptTarget.Latest,
-    /*setParentNodes*/ true,
-    ts.ScriptKind.TS,
-  );
+  const sf = parseDetached(source);
 
   // --- Build AST-site indices ---
 
@@ -164,7 +160,7 @@ export function applyTypesToFileCst(
 
   // --- Build CST replacements ---
 
-  const cstReplacements = buildCstReplacements(deduped, cstIndex, {
+  const ctx: CstApplyContext = {
     infer,
     prefix,
     program,
@@ -176,9 +172,61 @@ export function applyTypesToFileCst(
     checkerIndex,
     source,
     filename: options.filename,
-  });
+  };
 
-  const afterCst = applyReplacements(source, cstReplacements);
+  // Redundancy is judged against the file as apply leaves it, not as it was
+  // on disk. A local initialised from a call to an untyped function infers
+  // `any` until the callee has its signature, and the same run is writing that
+  // signature. So the signatures go first, and the sites whose inference
+  // depends on them — locals, class fields, and the parameters and return of a
+  // callback, which the typed outer call now types contextually — are judged
+  // in a second pass against a program holding the first. That program is the
+  // verify context's; without one the file is applied in one pass, as before.
+  const verify = options.verify;
+  const { signatures, dependents } = verify
+    ? splitByDependency(deduped, cstIndex)
+    : { signatures: deduped, dependents: new Map<string, RoutedEntry>() };
+
+  const firstReplacements = buildCstReplacements(signatures, cstIndex, ctx);
+  const afterFirst = applyReplacements(source, firstReplacements);
+  const throughFirst = rebaser(firstReplacements);
+  let afterCst = afterFirst;
+  let throughCst = throughFirst;
+
+  if (verify && dependents.size > 0) {
+    advanceCurrentSource(verify, afterFirst);
+    const secondProgram = verify.project.service.getProgram() ?? program;
+    const secondIndex = buildCstSiteIndex(parseDetached(afterFirst), afterFirst, infer);
+    // Sites keep their kind from the first routing; only their offsets moved.
+    // One that no longer resolves goes to the offset applier with the rest.
+    const originalPos = new Map<number, number>();
+    const moved = new Map<string, RoutedEntry>();
+    for (const [key, routed] of dependents) {
+      const [file, pos, types, opts] = routed.entry;
+      const newPos = throughFirst(pos);
+      if (!hasSite(secondIndex, routed.kind, newPos)) {
+        passThrough.push(routed.entry);
+        continue;
+      }
+      originalPos.set(newPos, pos);
+      moved.set(key, { kind: routed.kind, entry: [file, newPos, types, opts] });
+    }
+    const skippedBefore = telemetry?.skipped.length ?? 0;
+    const secondReplacements = buildCstReplacements(moved, secondIndex, {
+      ...ctx,
+      program: secondProgram,
+      checkerIndex: buildCheckerSiteIndex(secondProgram, options.filename, afterFirst, infer),
+      source: afterFirst,
+      stripNotes: false,
+    });
+    // The report locates a skip in the source the caller handed over.
+    for (const skip of telemetry?.skipped.slice(skippedBefore) ?? []) {
+      skip.pos = originalPos.get(skip.pos) ?? skip.pos;
+    }
+    afterCst = applyReplacements(afterFirst, secondReplacements);
+    const throughSecond = rebaser(secondReplacements);
+    throughCst = (pos) => throughSecond(throughFirst(pos));
+  }
 
   if (passThrough.length === 0) return afterCst;
 
@@ -192,29 +240,11 @@ export function applyTypesToFileCst(
     advanceCurrentSource(options.verify, afterCst);
   }
 
-  // --- Rebase pass-through offsets through CST insertions ---
+  // --- Rebase pass-through offsets through the CST passes ---
   //
-  // The CST pass inserted text at known offsets in the original source.
-  // Each pass-through entry's `pos` is relative to the original source;
-  // to splice into `afterCst` correctly, shift each pos by the
-  // cumulative length of CST insertions whose offset is STRICTLY less
-  // than the pass-through pos. Strict less-than handles the param-end
-  // == retPos collision case correctly: when both inserts target the
-  // same offset, the offset-based path needs to land AFTER the CST
-  // insertion, which is exactly what `pos + shift` produces.
-  const sortedInsertions = cstReplacements
-    .filter((r) => r.start === r.end)
-    .map((r) => ({ pos: r.start, len: r.text.length }))
-    .sort((a, b) => a.pos - b.pos);
-
-  function rebaseOffset(pos: number): number {
-    let shift = 0;
-    for (const ins of sortedInsertions) {
-      if (ins.pos < pos) shift += ins.len;
-      else break;
-    }
-    return pos + shift;
-  }
+  // Each pass-through entry's `pos` is relative to the original source; to
+  // splice into `afterCst` it moves through every edit the CST passes made.
+  const rebaseOffset = throughCst;
 
   const rebasedPassThrough: CollectedTypeInfo = passThrough.map(([file, pos, types, opts]) => [
     file,
@@ -277,4 +307,77 @@ export function applyTypesToFileCst(
     }
   }
   return result;
+}
+
+function parseDetached(source: string): ts.SourceFile {
+  return ts.createSourceFile(
+    "__ts-capture_apply_cst.ts",
+    source,
+    ts.ScriptTarget.Latest,
+    /*setParentNodes*/ true,
+    ts.ScriptKind.TS,
+  );
+}
+
+/**
+ * The sites whose annotation other sites' inference depends on, and the sites
+ * that depend on them: every local and class field, and every site on a
+ * function passed as an argument, since the call it is passed to types it
+ * contextually once the callee's own parameters are written.
+ */
+function splitByDependency(
+  eligible: Map<string, RoutedEntry>,
+  index: CstSiteIndex,
+): { signatures: Map<string, RoutedEntry>; dependents: Map<string, RoutedEntry> } {
+  const signatures = new Map<string, RoutedEntry>();
+  const dependents = new Map<string, RoutedEntry>();
+  for (const [key, routed] of eligible) {
+    const fn = functionOfSite(index, routed);
+    const dependent = routed.kind === "varDecl" || (fn !== undefined && isCallbackArgument(fn));
+    (dependent ? dependents : signatures).set(key, routed);
+  }
+  return { signatures, dependents };
+}
+
+function functionOfSite(index: CstSiteIndex, routed: RoutedEntry): ts.Node | undefined {
+  const pos = routed.entry[1];
+  if (routed.kind === "param") return index.paramSites.get(pos)?.node.parent;
+  if (routed.kind === "returnType") return index.returnTypeSites.get(pos)?.node;
+  if (routed.kind === "thisType") return index.thisTypeSites.get(pos)?.node;
+  return undefined;
+}
+
+function isCallbackArgument(fn: ts.Node): boolean {
+  let node: ts.Node = fn;
+  while (ts.isParenthesizedExpression(node.parent)) node = node.parent;
+  const parent = node.parent;
+  if (!ts.isCallExpression(parent) && !ts.isNewExpression(parent)) return false;
+  return parent.arguments?.some((arg) => arg === node) ?? false;
+}
+
+function hasSite(index: CstSiteIndex, kind: RoutedEntry["kind"], pos: number): boolean {
+  if (kind === "param") return index.paramSites.has(pos);
+  if (kind === "returnType") return index.returnTypeSites.has(pos);
+  if (kind === "thisType") return index.thisTypeSites.has(pos);
+  return index.varDeclSites.has(pos);
+}
+
+/**
+ * Maps an offset in the text before `replacements` to the same point after
+ * them. An edit moves a position only when it lies entirely before it, so an
+ * insertion at the position itself leaves it where it is: text inserted there
+ * belongs to the site, and the position is where the next insertion lands.
+ */
+function rebaser(replacements: readonly Replacement[]): (pos: number) => number {
+  const edits = replacements
+    .map((r) => ({ start: r.start, end: r.end, delta: r.text.length - (r.end - r.start) }))
+    .sort((a, b) => a.start - b.start);
+  return (pos) => {
+    let shift = 0;
+    for (const edit of edits) {
+      if (edit.start >= pos) break;
+      if (edit.end <= pos) shift += edit.delta;
+    }
+    return pos + shift;
+  };
 }

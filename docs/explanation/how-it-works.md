@@ -93,6 +93,9 @@ Apply is conservative by design:
   filled.
 - **A type-check gate** (`infer.typecheckVerify`, on by default) drops any
   candidate annotation that would introduce a new TypeScript error.
+- **It writes nothing TypeScript infers on its own** — judged against the
+  project as apply leaves it: signatures first, then the locals and callbacks
+  that depend on them, files in import order.
 - **It is idempotent** — a `<types.json>.applied` manifest records what was
   written so re-running is a no-op (use `--force` to bypass).
 - **Test files are skipped** by default (`--include-tests` to opt in).
