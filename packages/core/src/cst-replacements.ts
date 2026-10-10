@@ -34,6 +34,7 @@ import {
   isSymbolCall,
 } from "./initializer-inference.js";
 import { type NamedTypeIndex, rewriteToNamedInScope } from "./named-type-rewrite.js";
+import { narrowParamShape } from "./param-shape-narrowing.js";
 import { isParseableTypeString } from "./parseable.js";
 import {
   describeInferred,
@@ -340,8 +341,13 @@ export function buildCstReplacements(
         skip("no-information");
         continue;
       }
+      // The contract first: a shape that is an in-scope type in full is that
+      // type. What is left structural is cut to what the body reads, and may
+      // then be a smaller in-scope type.
       const named = rewriteToNamedInScope(computed, namedTypeIndex);
-      const emitted = ctorArityMap ? expandCtorArity(named, ctorArityMap) : named;
+      const narrowed = infer.narrowParamShapes ? narrowParamShape(named, site.node) : named;
+      const shaped = narrowed === named ? named : rewriteToNamedInScope(narrowed, namedTypeIndex);
+      const emitted = ctorArityMap ? expandCtorArity(shaped, ctorArityMap) : shaped;
       if (outOfScope(emitted)) {
         // Paren-less single-param arrow: even when we skip emitting the
         // param annotation, the sibling returnType entry will try to

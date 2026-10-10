@@ -136,6 +136,17 @@ Two things that look like they would help, and do not:
   at startup, a singleton, a bootstrap payload. Those shapes are perfectly
   stable. How often code runs says nothing about whether its shape is right.
 
+One thing that does help, where it applies: `infer.narrowParamShapes`. For a
+parameter, the function body is a second witness. A function that reads
+`product.sku` and `product.price` needs those two keys and nothing else, so with
+the flag on the annotation says no more than that, whatever else the fixture
+carried. It stops where the body passes the parameter on, returns it or stores
+it, because what the rest of the program expects of the value is then out of
+sight, and it says nothing about a return type or a local. Off by default, since
+the narrowed shape is a different claim from the observed one: a caller passing
+an object literal with more keys than the body reads gets an excess-property
+error it did not have.
+
 **What to do about it.** Read object shapes in the diff and ask "is this the
 contract, or is this one caller's payload?" — a field named `foo`, or a key
 that matches a fixture, answers itself. `apply --dry-run` first; see
