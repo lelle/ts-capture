@@ -2,14 +2,16 @@ import fs from "node:fs";
 import path from "node:path";
 
 import type { CollectedTypeInfo } from "../type-collector.js";
+import type { VerifyEntry } from "../verify.js";
 
 import { getProgram } from "../compiler-helper.js";
 import { verifyTypes } from "../verify.js";
 
 /**
  * `ts-capture verify <types.json> --project <tsconfig.json> [--threshold=N]` —
- * compare runtime observations to declared types, printing mismatches grouped
- * by file. Exits 2 when a `--threshold` is set and the match ratio is below it.
+ * compare runtime observations with the type TypeScript has at each observed
+ * position, printing every mismatch with its location. Exits 2 when a
+ * `--threshold` is set and the match ratio is below it.
  */
 export function cmdVerify(args: string[]) {
   const positional = args.filter((a) => !a.startsWith("-") && a !== "verify");
@@ -43,27 +45,23 @@ export function cmdVerify(args: string[]) {
 
   const report = verifyTypes(typeInfo, program);
 
-  // Print mismatches grouped by file
-  const byFile = new Map<string, typeof report.entries>();
-  for (const e of report.entries) {
-    if (e.verdict !== "mismatch") continue;
-    const list = byFile.get(e.file) ?? [];
-    list.push(e);
-    byFile.set(e.file, list);
-  }
-  for (const [file, mismatches] of [...byFile.entries()].sort()) {
-    process.stdout.write(`\n${file}\n`);
-    for (const m of mismatches) {
-      process.stdout.write(
-        `  pos ${m.pos}: declared=${m.declared}  observed=[${m.observed.join(", ")}]\n`,
-      );
-    }
+  const mismatches = report.entries
+    .filter((e) => e.verdict === "mismatch")
+    .sort((a, b) => a.file.localeCompare(b.file) || (a.line ?? 0) - (b.line ?? 0));
+  if (mismatches.length > 0) process.stdout.write("\n");
+  for (const m of mismatches) {
+    process.stdout.write(
+      `${location(m)}  ${m.name ?? ""}\n  declared  ${m.declared}\n  observed  ${m.observed.join(" | ")}\n`,
+    );
   }
 
   const t = report.totals;
   process.stdout.write(
-    `\nTotal: ${t.total}  match=${t.match}  mismatch=${t.mismatch}  unverifiable=${t.unverifiable}  no-decl=${t.noDeclaration}\n`,
+    `\n${t.total} observed positions: ${t.match} match, ${t.mismatch} mismatch, ` +
+      `${t.unverifiable} unverifiable, ${t.noDeclaration} without a declaration.\n`,
   );
+  const byReason = countByReason(report.entries.filter((e) => e.verdict === "unverifiable"));
+  if (byReason.length > 0) process.stdout.write(`  unverifiable: ${byReason.join(", ")}\n`);
 
   if (threshold !== null) {
     const verifiable = t.match + t.mismatch;
@@ -75,4 +73,19 @@ export function cmdVerify(args: string[]) {
       process.exit(2);
     }
   }
+}
+
+function location(entry: VerifyEntry): string {
+  const file = path.relative(process.cwd(), entry.file) || entry.file;
+  return entry.line === undefined
+    ? `${file}:pos ${entry.pos}`
+    : `${file}:${entry.line}:${entry.column}`;
+}
+
+/** `"98 declared any, 6 complex declared type"`, most frequent first. */
+function countByReason(entries: VerifyEntry[]): string[] {
+  const counts = new Map<string, number>();
+  for (const e of entries)
+    counts.set(e.reason ?? "unknown", (counts.get(e.reason ?? "unknown") ?? 0) + 1);
+  return [...counts].sort((a, b) => b[1] - a[1]).map(([reason, n]) => `${n} ${reason}`);
 }

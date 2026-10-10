@@ -11,6 +11,10 @@ type VerifyOutcome = { verdict: VerifyVerdict; reason?: string };
 export interface VerifyEntry {
   file: string;
   pos: number;
+  /** One-based, at the declaration name or the return-type position. Absent when the file is not in the program. */
+  line?: number;
+  column?: number;
+  name?: string;
   declared: string | null;
   observed: string[];
   verdict: VerifyVerdict;
@@ -30,7 +34,9 @@ export interface VerifyReport {
 }
 
 /**
- * Compare runtime-observed types against the source's declared types.
+ * Compare runtime-observed types with the type TypeScript has at each observed
+ * position. Instrumentation skips annotated positions, so in practice that is
+ * what TypeScript infers there; an annotation is used when one is present.
  *
  * Reuses the same `CollectedTypeInfo` produced by the regular instrument →
  * collect pipeline; only the comparison step is new. Honest-by-design: returns
@@ -79,6 +85,7 @@ export function verifyTypes(typeInfo: CollectedTypeInfo, program: ts.Program): V
       entries.push({
         file,
         pos,
+        ...locate(sourceFile, pos),
         declared: null,
         observed: [],
         verdict: "no-declaration",
@@ -93,11 +100,26 @@ export function verifyTypes(typeInfo: CollectedTypeInfo, program: ts.Program): V
     const observed = observedTuples.map(([t]) => t).filter((t): t is string => Boolean(t));
     const { verdict, reason } = isCompatible(observed, declared);
 
-    entries.push({ file, pos, declared, observed, verdict, reason, opts });
+    entries.push({
+      file,
+      pos,
+      ...locate(sourceFile, isFunctionLike(declNode) ? pos : declNode.name.getStart(sourceFile)),
+      name: isFunctionLike(declNode) ? "return type" : declNode.name.getText(sourceFile),
+      declared,
+      observed,
+      verdict,
+      reason,
+      opts,
+    });
     totals[verdict === "match" ? "match" : verdict === "mismatch" ? "mismatch" : "unverifiable"]++;
   }
 
   return { entries, totals };
+}
+
+function locate(sourceFile: ts.SourceFile, pos: number): { line: number; column: number } {
+  const { line, character } = sourceFile.getLineAndCharacterOfPosition(pos);
+  return { line: line + 1, column: character + 1 };
 }
 
 /**
@@ -126,8 +148,14 @@ function resolveDeclaredType(node: ts.Node, checker: ts.TypeChecker): string {
  * which is exactly where a `: Type` annotation would be inserted, so this
  * matches the position the runtime data was tagged with.
  */
-function findDeclarationByPos(sourceFile: ts.SourceFile, pos: number): ts.Declaration | null {
-  let found: ts.Declaration | null = null;
+type NamedDeclaration = (
+  ts.ParameterDeclaration | ts.VariableDeclaration | ts.PropertyDeclaration
+) & {
+  name: ts.Identifier;
+};
+
+function findDeclarationByPos(sourceFile: ts.SourceFile, pos: number): NamedDeclaration | null {
+  let found: NamedDeclaration | null = null;
   function visit(node: ts.Node) {
     if (found) return;
     if (
@@ -135,7 +163,7 @@ function findDeclarationByPos(sourceFile: ts.SourceFile, pos: number): ts.Declar
       ts.isIdentifier(node.name) &&
       (node.name.getEnd() === pos || node.name.getEnd() + 1 === pos) /* optional `?` */
     ) {
-      found = node;
+      found = node as NamedDeclaration;
       return;
     }
     ts.forEachChild(node, visit);
@@ -204,11 +232,16 @@ export function isCompatible(observed: string[], declared: string): VerifyOutcom
 
   const declaredNorm = normalize(declared);
 
-  // Anything declared as `any` cannot be invalidated by observations.
-  if (declaredNorm === "any") return { verdict: "unverifiable", reason: "declared any" };
+  // Anything declared as `any`, or as an array of it, cannot be invalidated by observations.
+  if (/^any(?:\[\])*$/.test(declaredNorm))
+    return { verdict: "unverifiable", reason: "declared any" };
 
   // unknown is similarly compatible with anything.
   if (declaredNorm === "unknown") return { verdict: "unverifiable", reason: "declared unknown" };
+
+  // Polymorphic `this` is the receiver's class, which the observation names
+  // but the declaration does not.
+  if (declaredNorm === "this") return { verdict: "unverifiable", reason: "declared this" };
 
   // Function types: declared `(args) => ret` (possibly with generics prefix).
   // Observed values from getTypeName for functions look like
@@ -362,6 +395,9 @@ function observedFits(observed: string, declaredVariants: string[]): boolean {
   }
 
   if (declaredVariants.includes(observed)) return true;
+
+  // A function without a return statement is inferred `void` and observed `undefined`.
+  if (observed === "undefined" && declaredVariants.includes("void")) return true;
 
   // Homogeneous array compatibility: observed `T[]` matches declared `T[]`.
   if (observed.endsWith("[]")) {

@@ -126,6 +126,24 @@ describe("isCompatible", () => {
       expect(isCompatible(["() => unknown", "string"], "() => void").verdict).toBe("mismatch");
     });
 
+    it("any[] declared type bails as unverifiable like any", () => {
+      expect(isCompatible(["string[]"], "any[]")).toEqual({
+        verdict: "unverifiable",
+        reason: "declared any",
+      });
+    });
+
+    it("undefined observed matches a void return", () => {
+      expect(isCompatible(["undefined"], "void")).toEqual({ verdict: "match" });
+    });
+
+    it("polymorphic this bails as unverifiable", () => {
+      expect(isCompatible(["Account"], "this")).toEqual({
+        verdict: "unverifiable",
+        reason: "declared this",
+      });
+    });
+
     it("no observations bails as unverifiable", () => {
       expect(isCompatible([], "string").verdict).toBe("unverifiable");
     });
@@ -179,6 +197,22 @@ describe("verifyTypes (integration with TS program)", () => {
     expect(report.totals.mismatch).toBe(1);
     expect(report.entries[0].declared).toBe("string");
     expect(report.entries[0].observed).toEqual(["number"]);
+  });
+
+  it("locates an entry at the declaration name, one-based", () => {
+    const { program, absPath } = buildProgramWithFile(
+      "// first line\nexport function add(a: string): string { return a + a; }\n",
+    );
+    const sf = program.getSourceFile(absPath)!;
+    const fn = sf.statements[0] as ts.FunctionDeclaration;
+    const paramPos = (fn.parameters[0].name as ts.Identifier).getEnd();
+
+    const typeInfo: CollectedTypeInfo = [
+      [absPath, paramPos, [["number", undefined]], { fnRetPos: paramPos + 10 }],
+    ];
+
+    const report = verifyTypes(typeInfo, program);
+    expect(report.entries[0]).toMatchObject({ line: 2, column: 21, name: "a" });
   });
 
   it("matches when observation agrees with declaration", () => {
