@@ -38,6 +38,21 @@ pair of numbers is `number[]`. Arrays of more than three elements are always
 arrays. When one run sees a tuple and another sees an array, or tuples of
 different lengths, the position widens back to an array of every element type.
 
+## A returned promise is observed when it settles
+
+A function that returns a promise it built by hand, `new Promise(...)` or a
+`.then` chain, gets `Promise<T>` from the value the promise settled with. The
+runtime keeps the returned promise aside and looks at it on each flush, every
+half second and at exit: one that has fulfilled is read and recorded, one still
+pending waits for the next flush, and one that rejected is never touched, so a
+rejection nobody handles is reported exactly as it would be without
+observation. Two things follow. A promise that fulfils after the last flush of
+the process is not recorded, and the function keeps whatever TypeScript infers.
+And only the Node runtimes do this; the browser collector still records a
+returned promise as `Promise<unknown>`, which `apply` drops. `async` functions
+are unaffected either way: TypeScript infers their promise type once the
+parameters are typed.
+
 ## Mixed-type union arithmetic produces TS errors
 
 ```ts title="Input"

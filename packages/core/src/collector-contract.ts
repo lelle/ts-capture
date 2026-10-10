@@ -101,6 +101,13 @@ export interface CollectionContext {
    * Lets a runtime skip a flush without building the output to compare it.
    */
   revision(): number;
+  /**
+   * Observe the returned promises that have settled since the last call,
+   * recording each fulfilled one's value as `Promise<T>` at its return
+   * position. Called before a flush. A promise is touched only once it is
+   * known to be fulfilled, so observation marks no rejection as handled.
+   */
+  settlePromises(): void;
   diagnostics: Diagnostic[];
 }
 
