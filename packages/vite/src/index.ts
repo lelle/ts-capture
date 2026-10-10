@@ -470,6 +470,10 @@ export function getCollectorSnippet(
           if (name.charAt(0) === '"') kinds.add("string");
           else if (name === "true" || name === "false") kinds.add("boolean");
           else if (/^-?\\d/.test(name)) kinds.add("number");
+          else if (name.charAt(0) === "{") kinds.add("object");
+          else if (name.slice(-2) === "[]" || name.indexOf("Array<") === 0) kinds.add("array");
+          else if (name.charAt(0) === "[") kinds.add("tuple");
+          else if (name.charAt(0) === "(" && name.indexOf("=>") !== -1) kinds.add("function");
           else kinds.add(name);
         }
         if (kinds.size > 1) {

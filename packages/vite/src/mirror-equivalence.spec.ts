@@ -206,6 +206,8 @@ describe("vite runtime mirror ≡ core walker", () => {
         ["k", 1],
         ["j", 2],
       ],
+      [{ a: 1 }, { b: 2 }],
+      [[1], ["a"]],
     ];
     values.forEach((value, i) => {
       it(`case ${i}: ${JSON.stringify(value)}`, () => {
