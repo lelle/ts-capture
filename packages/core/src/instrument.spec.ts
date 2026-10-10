@@ -8,32 +8,26 @@ const BARE = { skipTscptrDeclarations: true };
 describe("instrument", () => {
   it("instruments a function with unannotated parameter", () => {
     const out = instrumented("function foo(a) { return a; }");
-    expect(out.text).toContain('__tscptr__("a", a,');
-    expect(out.text).toContain('"test.ts"');
     expect(out).toTrack("a", { in: "test.ts" });
   });
 
   it("includes __tscptr__ declarations by default", () => {
     const out = instrumented("function foo(a) { return a; }");
-    expect(out.text).toContain("declare function __tscptr__");
     expect(out).toDeclareRuntime();
   });
 
   it("skips declarations when skipTscptrDeclarations is true", () => {
     const out = instrumented("const x = 1;", { options: { skipTscptrDeclarations: true } });
-    expect(out.text).not.toContain("declare function __tscptr__");
     expect(out).not.toDeclareRuntime();
   });
 
   it("does not instrument already-typed parameters", () => {
     const out = instrumented("function foo(a: string) { return a; }", { options: BARE });
-    expect(out.text).not.toContain('__tscptr__("a"');
     expect(out).toLeaveUntracked("a");
   });
 
   it("does not instrument parameters with default values", () => {
     const out = instrumented("function foo(a = 12) { return a; }", { options: BARE });
-    expect(out.text).not.toContain('__tscptr__("a"');
     expect(out).toLeaveUntracked("a");
   });
 
@@ -41,13 +35,11 @@ describe("instrument", () => {
     const out = instrumented("foo(bar)", {
       options: { ...BARE, instrumentCallExpressions: true },
     });
-    expect(out.text).toContain("__tscptr__.track(bar,");
     expect(out).toTrackArgument("bar");
   });
 
   it("does not instrument call expressions by default", () => {
     const out = instrumented("foo(bar)", { options: BARE });
-    expect(out.text).not.toContain("__tscptr__.track");
     expect(out).not.toTrackArgument("bar");
   });
 
@@ -56,7 +48,6 @@ describe("instrument", () => {
       filename: "src/my-file.ts",
       options: BARE,
     });
-    expect(out.text).toContain("src/my-file.ts");
     expect(out).toTrack("x", { in: "src/my-file.ts" });
   });
 
@@ -71,8 +62,6 @@ describe("instrument", () => {
     // instrumented() itself rejects an output that does not parse, or that is
     // anything but the input with calls added.
     const out = instrumented(input);
-    expect(out.text).toContain("greet(who)");
-    expect(out.text).toContain("__tscptr__");
     expect(out).toTrack("who");
     expect(out).toWrapReturnOf("greet");
   });
@@ -93,8 +82,6 @@ describe("instrument", () => {
       const out = instrumented("let x = myFn(1);", {
         options: { ...BARE, skipInitializerCalleeWhen: (name) => name === "myFn" },
       });
-      expect(out.text).toMatch(/let x = myFn\(1\)/);
-      expect(out.text).not.toMatch(/__tscptr__\.ret\(\s*myFn/);
       expect(out).not.toWrapInitializerOf("x");
     });
 
@@ -102,8 +89,6 @@ describe("instrument", () => {
       const out = instrumented("let x = ns.fn.member(1);", {
         options: { ...BARE, skipInitializerCalleeWhen: (name) => name === "ns" },
       });
-      expect(out.text).toMatch(/let x = ns\.fn\.member\(1\)/);
-      expect(out.text).not.toMatch(/__tscptr__\.ret/);
       expect(out).toLeaveUnchanged();
     });
 
@@ -111,14 +96,11 @@ describe("instrument", () => {
       const out = instrumented("class C { x = mark(0); }", {
         options: { ...BARE, skipInitializerCalleeWhen: (name) => name === "mark" },
       });
-      expect(out.text).toMatch(/x = mark\(0\)/);
-      expect(out.text).not.toMatch(/__tscptr__\.ret\(\s*mark/);
       expect(out).not.toWrapInitializerOf("x");
     });
 
     it("default behavior (no predicate) wraps every initializer", () => {
       const out = instrumented("let x = myFn(1);", { options: BARE });
-      expect(out.text).toMatch(/__tscptr__\.ret\(myFn\(1\)/);
       expect(out).toWrapInitializerOf("x");
     });
 
@@ -126,7 +108,6 @@ describe("instrument", () => {
       const out = instrumented("let x = myFn(1);", {
         options: { ...BARE, skipInitializerCalleeWhen: () => false },
       });
-      expect(out.text).toMatch(/__tscptr__\.ret\(myFn\(1\)/);
       expect(out).toWrapInitializerOf("x");
     });
   });
