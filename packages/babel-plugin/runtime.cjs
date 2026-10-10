@@ -75,6 +75,7 @@ let lastFlushedRevision = 0;
 // disk-full / unmounted-volume still silently lose data without this.
 let warnedWriteFailure = false;
 function flush() {
+  if (typeof ctx.settlePromises === "function") ctx.settlePromises();
   const revision = ctx.revision();
   if (revision === lastFlushedRevision) return;
   lastFlushedRevision = revision;

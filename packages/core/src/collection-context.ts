@@ -1,3 +1,5 @@
+import { inspect } from "node:util";
+
 // The stateful collection context + two-pass cross-ref signature engine. Owns
 // the per-run observation log and the deferred signature reconstruction that
 // turns scattered param / return / value observations into emitted types.
@@ -59,12 +61,156 @@ export function createCollectionContext(options?: CollectorOptions): CollectionC
   const seenFnKeys = new Map<string, Set<string>>();
   const seenMemberFnKeys = new Map<string, string>();
   const recordedAsValue = new WeakSet<Function>();
+  // Returned promises whose settlement has not been observed yet. Bounded: a
+  // hot loop returning promises that never settle must not grow memory.
+  const pendingPromises: Array<{
+    promise: Promise<unknown>;
+    name: string;
+    pos: number;
+    filename: string;
+    opts: ExtraOptions;
+  }> = [];
+  const PENDING_PROMISES_MAX = 1024;
 
   function register(fn: Function, retPos: number, filename: string): void {
     const known = registeredFns.get(fn);
     if (known?.retPos === retPos && known.filename === filename) return;
     registeredFns.set(fn, { retPos, filename });
     if (recordedAsValue.has(fn)) revision++;
+  }
+
+  /**
+   * Record one observation. `wrap` adjusts the walked type before it is
+   * stored, for a value observed through a container the walker never saw.
+   */
+  function store(
+    name: string,
+    value: unknown,
+    pos: number,
+    filename: string,
+    opts: ExtraOptions,
+    wrap?: (type: string) => string,
+  ): void {
+    // See `inRecord` declaration for rationale (Proxy-recursion guard).
+    // Make the nested call a no-op so the Proxy's get-handler runs
+    // cleanly without re-entering the collector.
+    if (inRecord) return;
+    inRecord = true;
+    try {
+      const key = JSON.stringify({ filename, pos, opts } satisfies LogKey);
+      const objectDeclaration =
+        value !== null && (typeof value === "object" || typeof value === "function")
+          ? trackedObjects.get(value as object)
+          : undefined;
+
+      let typeName: string | null;
+      let depthExceeded = false;
+      let reason: ApproximationReason | null = null;
+      try {
+        const result = walk(value);
+        // reentered: a nested walk on this context's bound walker (the
+        // inRecord guard normally prevents reaching here). Skip, same as a
+        // null type — don't store an entry.
+        if (result.kind === "reentered") return;
+        typeName = result.type;
+        depthExceeded = result.depthExceeded;
+        reason = result.reason;
+      } catch {
+        // Defense-in-depth: if the value walk throws (e.g. a getter that
+        // raises, or a Proxy variant we haven't anticipated), fall back
+        // to "unknown" rather than letting the host program crash.
+        typeName = "unknown";
+      }
+      if (typeName === null) {
+        // The walk produced nothing (depth-exceed or recursive walk). Skip
+        // the dedup write rather than store a null entry.
+        return;
+      }
+      if (wrap) typeName = wrap(typeName);
+
+      // Store parameter name for cross-referencing function signatures
+      if (!opts.returnType) {
+        const nameKey = `${filename}:${pos}`;
+        if (paramNames.get(nameKey) !== name) {
+          paramNames.set(nameKey, name);
+          revision++;
+        }
+      }
+
+      // Store function refs for deferred cross-referencing
+      if (typeof value === "function") {
+        const existing = recordedFunctions.get(key);
+        if (existing) existing.push(value);
+        else recordedFunctions.set(key, [value]);
+        recordedAsValue.add(value);
+        const info = registeredFns.get(value);
+        if (info) {
+          let fnKeys = seenFnKeys.get(key);
+          if (!fnKeys) {
+            fnKeys = new Set();
+            seenFnKeys.set(key, fnKeys);
+          }
+          const known = fnKeys.size;
+          fnKeys.add(`${info.filename}:${info.retPos}`);
+          if (fnKeys.size !== known) revision++;
+        }
+      }
+
+      // Store registered-fn refs found as object property values
+      if (typeof value === "object" && value !== null && !Array.isArray(value)) {
+        try {
+          const memberFns = new Map<string, Function>();
+          for (const [k, v] of Object.entries(value as Record<string, unknown>)) {
+            if (typeof v === "function" && registeredFns.has(v as Function)) {
+              memberFns.set(k, v as Function);
+            }
+          }
+          if (memberFns.size > 0) {
+            objectMemberFns.set(key, memberFns);
+            const memberFnKeys = [...memberFns]
+              .map(([member, fn]) => {
+                const info = registeredFns.get(fn)!;
+                return `${member}=${info.filename}:${info.retPos}`;
+              })
+              .join("|");
+            if (seenMemberFnKeys.get(key) !== memberFnKeys) {
+              seenMemberFnKeys.set(key, memberFnKeys);
+              revision++;
+            }
+          }
+        } catch {
+          // Exotic objects (Proxies with throwing traps) are silently
+          // ignored — we just won't upgrade any member function types.
+        }
+      }
+
+      if (depthExceeded) {
+        diagnostics.push({
+          type: "depth-exceeded",
+          message: `Type depth exceeded for parameter "${name}"`,
+          filename,
+          position: pos,
+        });
+      }
+
+      // Persist the approximation reason (from WalkResult) alongside the
+      // type-name. Apply uses this to emit `/* @ts-capture:<reason> */`
+      // markers when `infer.emitDiagnosticComments` is enabled. Only emit
+      // the 3rd slot when there's a reason — JSON.stringify turns undefined
+      // into null in arrays, which would break the `reason === undefined`
+      // checks downstream.
+      let set = logs.get(key);
+      if (!set) {
+        set = new Set();
+        logs.set(key, set);
+      }
+      const entry = reason ? [typeName, objectDeclaration, reason] : [typeName, objectDeclaration];
+      const seen = set.size;
+      set.add(JSON.stringify(entry));
+      if (set.size !== seen) revision++;
+    } finally {
+      inRecord = false;
+    }
   }
 
   return {
@@ -82,127 +228,32 @@ export function createCollectionContext(options?: CollectorOptions): CollectionC
     },
 
     record(name, value, pos, filename, opts) {
-      // See `inRecord` declaration for rationale (Proxy-recursion guard).
-      // Make the nested call a no-op so the Proxy's get-handler runs
-      // cleanly without re-entering the collector.
       if (inRecord) return;
-      inRecord = true;
-      try {
-        const key = JSON.stringify({ filename, pos, opts } satisfies LogKey);
-        const objectDeclaration =
-          value !== null && (typeof value === "object" || typeof value === "function")
-            ? trackedObjects.get(value as object)
-            : undefined;
-
-        let typeName: string | null;
-        let depthExceeded = false;
-        let reason: ApproximationReason | null = null;
-        try {
-          const result = walk(value);
-          // reentered: a nested walk on this context's bound walker (the
-          // inRecord guard normally prevents reaching here). Skip, same as a
-          // null type — don't store an entry.
-          if (result.kind === "reentered") return;
-          typeName = result.type;
-          depthExceeded = result.depthExceeded;
-          reason = result.reason;
-        } catch {
-          // Defense-in-depth: if the value walk throws (e.g. a getter that
-          // raises, or a Proxy variant we haven't anticipated), fall back
-          // to "unknown" rather than letting the host program crash.
-          typeName = "unknown";
-        }
-        if (typeName === null) {
-          // The walk produced nothing (depth-exceed or recursive walk). Skip
-          // the dedup write rather than store a null entry.
-          return;
-        }
-
-        // Store parameter name for cross-referencing function signatures
-        if (!opts.returnType) {
-          const nameKey = `${filename}:${pos}`;
-          if (paramNames.get(nameKey) !== name) {
-            paramNames.set(nameKey, name);
-            revision++;
-          }
-        }
-
-        // Store function refs for deferred cross-referencing
-        if (typeof value === "function") {
-          const existing = recordedFunctions.get(key);
-          if (existing) existing.push(value);
-          else recordedFunctions.set(key, [value]);
-          recordedAsValue.add(value);
-          const info = registeredFns.get(value);
-          if (info) {
-            let fnKeys = seenFnKeys.get(key);
-            if (!fnKeys) {
-              fnKeys = new Set();
-              seenFnKeys.set(key, fnKeys);
-            }
-            const known = fnKeys.size;
-            fnKeys.add(`${info.filename}:${info.retPos}`);
-            if (fnKeys.size !== known) revision++;
-          }
-        }
-
-        // Store registered-fn refs found as object property values
-        if (typeof value === "object" && value !== null && !Array.isArray(value)) {
-          try {
-            const memberFns = new Map<string, Function>();
-            for (const [k, v] of Object.entries(value as Record<string, unknown>)) {
-              if (typeof v === "function" && registeredFns.has(v as Function)) {
-                memberFns.set(k, v as Function);
-              }
-            }
-            if (memberFns.size > 0) {
-              objectMemberFns.set(key, memberFns);
-              const memberFnKeys = [...memberFns]
-                .map(([member, fn]) => {
-                  const info = registeredFns.get(fn)!;
-                  return `${member}=${info.filename}:${info.retPos}`;
-                })
-                .join("|");
-              if (seenMemberFnKeys.get(key) !== memberFnKeys) {
-                seenMemberFnKeys.set(key, memberFnKeys);
-                revision++;
-              }
-            }
-          } catch {
-            // Exotic objects (Proxies with throwing traps) are silently
-            // ignored — we just won't upgrade any member function types.
-          }
-        }
-
-        if (depthExceeded) {
-          diagnostics.push({
-            type: "depth-exceeded",
-            message: `Type depth exceeded for parameter "${name}"`,
-            filename,
-            position: pos,
-          });
-        }
-
-        // Persist the approximation reason (from WalkResult) alongside the
-        // type-name. Apply uses this to emit `/* @ts-capture:<reason> */`
-        // markers when `infer.emitDiagnosticComments` is enabled. Only emit
-        // the 3rd slot when there's a reason — JSON.stringify turns undefined
-        // into null in arrays, which would break the `reason === undefined`
-        // checks downstream.
-        let set = logs.get(key);
-        if (!set) {
-          set = new Set();
-          logs.set(key, set);
-        }
-        const entry = reason
-          ? [typeName, objectDeclaration, reason]
-          : [typeName, objectDeclaration];
-        const seen = set.size;
-        set.add(JSON.stringify(entry));
-        if (set.size !== seen) revision++;
-      } finally {
-        inRecord = false;
+      // A returned promise is observed once it has settled, by
+      // `settlePromises`. Recording the bare `Promise` now would be worse
+      // than nothing: `Promise<unknown>` subsumes the settled type at merge.
+      if (opts.returnType && value instanceof Promise) {
+        if (pendingPromises.length >= PENDING_PROMISES_MAX) pendingPromises.shift();
+        pendingPromises.push({ promise: value, name, pos, filename, opts });
+        return;
       }
+      store(name, value, pos, filename, opts);
+    },
+
+    settlePromises() {
+      const waiting: typeof pendingPromises = [];
+      for (const entry of pendingPromises) {
+        const state = promiseState(entry.promise);
+        if (state === "pending") waiting.push(entry);
+        if (state !== "fulfilled") continue;
+        const { name, pos, filename, opts } = entry;
+        entry.promise.then(
+          (settled) => store(name, settled, pos, filename, opts, (type) => `Promise<${type}>`),
+          () => {},
+        );
+      }
+      pendingPromises.length = 0;
+      pendingPromises.push(...waiting);
     },
 
     track<T>(value: T, filename: string, offset: number): T {
@@ -237,4 +288,20 @@ export function createCollectionContext(options?: CollectorOptions): CollectionC
       return crossReferenceObservations({ logs, paramNames, recordedFnKeys, objectMemberFnKeys });
     },
   };
+}
+
+/**
+ * A promise's state without touching it. `util.inspect` reads it off the
+ * engine, where `then` would register a reaction and mark a rejection handled.
+ */
+function promiseState(promise: Promise<unknown>): "fulfilled" | "pending" | "rejected" {
+  const text = inspect(promise, {
+    depth: 0,
+    maxStringLength: 0,
+    maxArrayLength: 0,
+    breakLength: Infinity,
+    colors: false,
+  });
+  const state = /^[^{]*\{\s*<(pending|rejected)>/.exec(text);
+  return state ? (state[1] as "pending" | "rejected") : "fulfilled";
 }

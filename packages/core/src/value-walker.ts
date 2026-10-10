@@ -287,10 +287,10 @@ function widenedKind(name: string): string {
 }
 
 /**
- * Promise instances always emit `Promise<unknown>`. Walking the resolved
- * value would require awaiting, which would deform the program (turn a
- * synchronous observation into an async one). The `unknown` is honest:
- * at observation time we don't know what the Promise will resolve to.
+ * Promise instances emit `Promise<unknown>`: at observation time the walker
+ * does not know what the promise will resolve to, and waiting would deform
+ * the program. A promise *returned* from a function is the exception, observed
+ * once it has settled by the collection context's `settlePromises`.
  */
 function resolvePromiseType(): string {
   return "Promise<unknown>";

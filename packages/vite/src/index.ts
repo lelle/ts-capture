@@ -408,6 +408,7 @@ export function getCollectorSnippet(
   // type at a known position is written without serializing on every call.
   var __tscptr__revision = 0;
   var __tscptr__revisionNow = function() { return __tscptr__revision; };
+  var __tscptr__settle = function() {};
 
   // Re-entry guard. Without this, observing a Proxy-backed value (Hono's
   // c.req.queries, Vue's reactive(), Solid signals, etc.) triggers a
@@ -739,6 +740,9 @@ export function getCollectorSnippet(
       __tscptr__.regFn = function(fn, retPos, filename) { return __tscptr__ctx.regFn(fn, retPos, filename); };
       __tscptr__.get = function() { return __tscptr__ctx.getCollectedTypes(); };
       __tscptr__revisionNow = function() { return __tscptr__ctx.revision(); };
+      if (typeof __tscptr__ctx.settlePromises === "function") {
+        __tscptr__settle = function() { __tscptr__ctx.settlePromises(); };
+      }
     } catch (e) { /* keep the built-in collector */ }
     var TYPES_DIR = process.env.TS_CAPTURE_TYPES_DIR || os.tmpdir();
     // Auto-create the dump directory. Without this, a TS_CAPTURE_TYPES_DIR
@@ -776,6 +780,7 @@ export function getCollectorSnippet(
     // this. Guarded so repeat flushes don't spam.
     var __tscptr__warned = false;
     function __tscptr__flush() {
+      __tscptr__settle();
       var revision = __tscptr__revisionNow();
       if (revision === lastFlushed) return;
       lastFlushed = revision;

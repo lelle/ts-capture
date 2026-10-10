@@ -118,6 +118,23 @@ describe("@ts-capture/core/preload", () => {
       expect(dump.length).toBeGreaterThan(0);
     });
 
+    it("records a returned promise's settled value across two flushes", async () => {
+      void tscptr.ret(
+        Promise.resolve(7),
+        400,
+        "/test/file.ts",
+        JSON.stringify({ returnType: true }),
+      );
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      process.emit("beforeExit", 0);
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      process.emit("beforeExit", 0);
+      const dump = JSON.parse(fs.readFileSync(findDumpFile(), "utf-8")) as Array<
+        [string, number, Array<[string]>]
+      >;
+      expect(dump.find((e) => e[1] === 400)?.[2][0][0]).toBe("Promise<7>");
+    });
+
     it("flush is a no-op when no new observations since last flush", () => {
       const before = fs.statSync(outFile).mtimeMs;
       // Nothing recorded between this flush and the previous one.

@@ -1,5 +1,5 @@
 import ts from "typescript";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import type { CollectionContext } from "./type-collector.js";
 
@@ -1446,5 +1446,50 @@ describe("CollectionContext.revision", () => {
       revision = nextRevision;
     }
     expect(changes).toBeGreaterThanOrEqual(5);
+  });
+});
+
+describe("createCollectionContext → returned promises", () => {
+  const settle = () => new Promise<void>((resolve) => setTimeout(resolve, 0));
+  const typeAt = (ctx: ReturnType<typeof createCollectionContext>, pos: number) =>
+    ctx.getCollectedTypes().find((e) => e[1] === pos)?.[2][0][0];
+
+  it("records the settled value of a returned promise as Promise<T>", async () => {
+    const ctx = createCollectionContext();
+    ctx.record("(return)", Promise.resolve("x"), 10, "f.ts", { returnType: true });
+    expect(ctx.getCollectedTypes()).toEqual([]);
+    await settle();
+    ctx.settlePromises();
+    await settle();
+    expect(typeAt(ctx, 10)).toBe("Promise<string>");
+  });
+
+  it("waits for a pending promise and never touches a rejected one", async () => {
+    const ctx = createCollectionContext();
+    let fulfil!: (value: number) => void;
+    const pending = new Promise<number>((resolve) => (fulfil = resolve));
+    const rejected = Promise.reject(new Error("boom"));
+    rejected.catch(() => {});
+    const then = vi.spyOn(rejected, "then");
+    ctx.record("(return)", pending, 1, "f.ts", { returnType: true });
+    ctx.record("(return)", rejected, 2, "f.ts", { returnType: true });
+    await settle();
+    ctx.settlePromises();
+    await settle();
+    expect(ctx.getCollectedTypes()).toEqual([]);
+    expect(then).not.toHaveBeenCalled();
+
+    fulfil(1);
+    await settle();
+    ctx.settlePromises();
+    await settle();
+    expect(typeAt(ctx, 1)).toBe("Promise<number>");
+    expect(typeAt(ctx, 2)).toBeUndefined();
+  });
+
+  it("records a promise at a non-return position as before", () => {
+    const ctx = createCollectionContext();
+    ctx.record("p", Promise.resolve(1), 5, "f.ts", {});
+    expect(typeAt(ctx, 5)).toBe("Promise<unknown>");
   });
 });

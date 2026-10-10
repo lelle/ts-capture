@@ -107,6 +107,7 @@ export function installTsCaptureRuntime(): void {
   // silently lose data without this.
   let warnedWriteFailure = false;
   function flush(): void {
+    ctx.settlePromises();
     const revision = ctx.revision();
     if (revision === lastFlushedRevision) return;
     lastFlushedRevision = revision;
