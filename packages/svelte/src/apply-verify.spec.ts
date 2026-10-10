@@ -106,8 +106,6 @@ describe("svelte apply typecheck-verify", () => {
     const noVerify = sveltePlugin().apply(svelteSource, typeInfo, {
       filename: svelteFile,
     });
-    expect(noVerify).toMatch(/matched\s*:\s*string\[\]/);
-    expect(noVerify).toMatch(/ctxVal\s*:\s*\{[^}]*plate/);
     const unverified = appliedSvelte(svelteSource, noVerify, { files }).script;
     expect(unverified).toAnnotate("matched", "string[]");
     expect(unverified).toAnnotate("ctxVal", "{ plate: string }");
@@ -123,8 +121,6 @@ describe("svelte apply typecheck-verify", () => {
       filename: svelteFile,
       projectVerify,
     });
-    expect(verified).not.toMatch(/matched\s*:\s*string\[\]/);
-    expect(verified).not.toMatch(/ctxVal\s*:\s*\{[^}]*plate/);
     const out = appliedSvelte(svelteSource, verified, { files }).script;
     expect(out).toLeaveUntyped("matched");
     expect(out).toLeaveUntyped("ctxVal");
@@ -160,7 +156,6 @@ describe("svelte apply typecheck-verify", () => {
       filename: svelteFile,
       projectVerify,
     });
-    expect(verified).toMatch(/\{ host, guest \}\s*:\s*\{[^}]*host: string/);
     const out = appliedSvelte(svelteSource, verified).script;
     expect(out).toAnnotate(
       "{ host, guest }",
@@ -213,9 +208,7 @@ describe("svelte apply typecheck-verify", () => {
       filename: svelteFile,
       projectVerify,
     });
-    expect(verified).toMatch(/sound\s*:\s*string \| undefined/);
     // `unsound` drops the undefined branch and must be rejected by verify.
-    expect(verified).not.toMatch(/unsound\s*:\s*string(?!\s*\|)/);
     const out = appliedSvelte(svelteSource, verified, { files }).script;
     expect(out).toAnnotate("sound", "string | undefined");
     expect(out).toLeaveUntyped("unsound");
