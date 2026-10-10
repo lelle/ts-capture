@@ -91,8 +91,9 @@ function render(node: ts.TypeNode, faithful = false): string {
   if (ts.isTypeReferenceNode(n)) {
     const name = collapse(n.typeName.getText());
     // Observation spells a mixed array `Array<A | B>`; in source it is written
-    // `(A | B)[]`, the form the applier already uses for `T[]`.
-    if (faithful && name === "Array" && n.typeArguments?.length === 1) {
+    // `(A | B)[]`, the form the applier already uses for `T[]`, and the two
+    // are one type to compare.
+    if (name === "Array" && n.typeArguments?.length === 1) {
       return `${atom(n.typeArguments[0], faithful)}[]`;
     }
     const args = n.typeArguments?.map((t) => render(t, faithful));
