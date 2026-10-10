@@ -277,6 +277,26 @@ export interface InferOptions {
    * would be exactly the fix the tool declines to choose.
    */
   outputMode: "annotations" | "comments" | "both";
+
+  /**
+   * Write a parameter's object shape with only the properties the function
+   * body reads from it.
+   *
+   * The observed shape is the caller's object, and under a test run the
+   * caller is a fixture, so every key the fixture happens to carry becomes a
+   * requirement on every caller. The body is a second witness: a function
+   * that reads `product.sku` and `product.price` needs those two and nothing
+   * else. The whole shape stays wherever the body passes the parameter on,
+   * returns it, stores it or otherwise lets it go — what the rest of the
+   * program expects of it is then out of sight.
+   *
+   * A shape that matches an in-scope type in full is written as that type
+   * and not narrowed. Off by default: the narrowed shape is a different
+   * claim from the observed one, and a caller passing an object literal
+   * with more keys than the body reads gets an excess-property error it
+   * did not have.
+   */
+  narrowParamShapes: boolean;
 }
 
 export const INFER_DEFAULTS: InferOptions = {
@@ -310,6 +330,7 @@ export const INFER_DEFAULTS: InferOptions = {
   maxAnnotationChars: 4096,
   emitConflictComments: true,
   outputMode: "annotations",
+  narrowParamShapes: false,
 };
 
 /**

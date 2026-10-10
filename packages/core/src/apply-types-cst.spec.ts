@@ -2167,3 +2167,61 @@ describe("a const assertion is never overwritten", () => {
     );
   });
 });
+
+// A parameter's observed shape is the caller's object, and in a test run the
+// caller is a fixture. The body says which properties the function actually
+// needs; with `narrowParamShapes` on, the annotation says no more than that.
+describe("infer.narrowParamShapes", () => {
+  const PRODUCT = "{ name: string, price: number, sku: string, tags: string[], weight: number }";
+  const source =
+    "export function addLine(cart, product, quantity) {\n" +
+    "  cart.lines.push({ sku: product.sku, quantity, unitPrice: product.price });\n" +
+    "  return cart;\n" +
+    "}\n";
+  const entries = (file: string): CollectedTypeInfo => [
+    entry(file, source.indexOf("cart,") + 4, [["{ lines: { sku: string }[] }"]]),
+    entry(file, source.indexOf("product,") + 7, [[PRODUCT]]),
+  ];
+  const NARROW = { infer: { ...INFER_DEFAULTS, narrowParamShapes: true } };
+
+  it("is off by default and writes the shape the run observed", () => {
+    expect(applyTypesToFileCst(source, entries("test.ts"), {})).toContain(
+      "product: { name: string; price: number; sku: string; tags: string[]; weight: number }",
+    );
+  });
+
+  it("writes only the properties the body reads, and the whole shape where it escapes", () => {
+    expect(applyTypesToFileCst(source, entries("test.ts"), NARROW)).toBe(
+      "export function addLine(cart: { lines: { sku: string }[] }, product: { price: number; sku: string }, quantity) {\n" +
+        "  cart.lines.push({ sku: product.sku, quantity, unitPrice: product.price });\n" +
+        "  return cart;\n" +
+        "}\n",
+    );
+  });
+
+  // The contract beats the fixture: a named type the whole shape matches is
+  // what the parameter is, and narrowing it would hide that.
+  it("prefers an in-scope type the whole shape matches over narrowing", () => {
+    const withInterface =
+      "interface Product { name: string; price: number; sku: string; tags: string[]; weight: number }\n" +
+      source;
+    const shifted = entries("test.ts").map(([file, pos, types, opts]) => [
+      file,
+      pos + withInterface.length - source.length,
+      types,
+      opts,
+    ]) as CollectedTypeInfo;
+    expect(applyTypesToFileCst(withInterface, shifted, NARROW)).toContain("product: Product,");
+  });
+
+  it("writes the narrowed shape as an in-scope type it matches exactly", () => {
+    const withAlias = "type Priced = { price: number; sku: string };\n" + source;
+    const shifted = entries("test.ts").map(([file, pos, types, opts]) => [
+      file,
+      pos + withAlias.length - source.length,
+      types,
+      opts,
+    ]) as CollectedTypeInfo;
+    expect(applyTypesToFileCst(withAlias, shifted, NARROW)).toContain("product: Priced,");
+  });
+});
