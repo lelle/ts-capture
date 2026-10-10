@@ -176,3 +176,19 @@ describe("checked", () => {
     expect(out.newDiagnostics.map((d) => d.code)).toEqual([2339]);
   });
 });
+
+describe("toBeTheType", () => {
+  it("accepts one type in another spelling, one string or a list", () => {
+    expect("number|undefined").toBeTheType("undefined | number");
+    expect(["{ a: number, b?: string }", "string[]"]).toBeTheType([
+      "{ b?: string; a: number }",
+      "Array<string>",
+    ]);
+  });
+
+  it("names the type it got when it differs, and a null", () => {
+    expect(() => expect("number|undefined").toBeTheType("number")).toThrow(/number \| undefined/);
+    expect(() => expect(null).toBeTheType("number")).toThrow(/null/);
+    expect(() => expect(["string"]).toBeTheType(["string", "number"])).toThrow(/2 types/);
+  });
+});
