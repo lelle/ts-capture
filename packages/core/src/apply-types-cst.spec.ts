@@ -15,7 +15,13 @@ import {
 import { applyTypesToFile } from "./apply-types.js";
 import { INFER_DEFAULTS } from "./configuration.js";
 import { newApplyTelemetry } from "./contract.js";
-import { aliasesDeclared, applied, nodesOf } from "./test-utils/applied.js";
+import {
+  aliasesDeclared,
+  applied,
+  nodesOf,
+  parseErrors,
+  printedAst,
+} from "./test-utils/applied.js";
 
 type LooseTypeTuple =
   [string | undefined] | [string | undefined, SourceLocation | undefined] | DiscoveredType;
@@ -39,17 +45,221 @@ function entry(
 // parity and offset handling, not about the skip, so they pin it off.
 const KEEP_INFERABLE = { infer: { ...INFER_DEFAULTS, skipRedundantAnnotations: false } };
 
-describe("applyTypesToFileCst — param annotations via AST lookup", () => {
-  // The spike's narrow scope: function parameters get routed through
-  // the AST-aware path. Tests check parity with the offset-based
-  // applier on the cases the spike handles, plus the AST-native
-  // idempotency that comes for free.
+// The CST applier and the offset applier read the same observations into the
+// same file. Each row is one fixture both are run on; the two outputs must be
+// the same program, token for token. A case where the CST applier is more
+// capable on purpose is not listed here but asserted on its own below.
+const PARITY: Array<
+  [string, string, (src: string) => CollectedTypeInfo, { infer?: typeof INFER_DEFAULTS }?]
+> = [
+  ["a single param", "function foo(a) {}", () => [entry("test.ts", 14, [["string"]])]],
+  [
+    "several params",
+    "function foo(a, b, c) { return a; }",
+    () => [
+      entry("test.ts", 14, [["number"]]),
+      entry("test.ts", 17, [["string"]]),
+      entry("test.ts", 20, [["boolean"]]),
+    ],
+  ],
+  [
+    "an optional param",
+    "function foo(a?) {}",
+    () => [entry("test.ts", 15, [["number"], ["undefined"]])],
+  ],
+  ["a union", "function foo(a) {}", () => [entry("test.ts", 14, [["string"], ["number"]])]],
+  [
+    "a class method param",
+    "class C { foo(x) { return x; } }",
+    (src) => [entry("test.ts", src.indexOf("x)") + 1, [["number"]])],
+  ],
+  [
+    "a parameter property",
+    "class C { constructor(public x) {} }",
+    (src) => [entry("test.ts", src.indexOf("x)") + 1, [["number"]])],
+  ],
+  [
+    "an object binding pattern",
+    "function foo({ a, b }) { return a; }",
+    (src) => [entry("test.ts", src.indexOf(")"), [["{ a: number, b: number }"]])],
+  ],
+  [
+    "an array binding pattern",
+    "function foo([a, b]) { return a + b; }",
+    (src) => [entry("test.ts", src.indexOf(")"), [["[number, number]"]])],
+  ],
+  [
+    "a local before a param",
+    "let x = 5;\nfunction foo(a) { return a; }",
+    (src) => [
+      entry("test.ts", src.indexOf("x ") + 1, [["number"]], { varDecl: true }),
+      entry("test.ts", src.indexOf("a)") + 1, [["string"]]),
+    ],
+    KEEP_INFERABLE,
+  ],
+  [
+    "a local before a param, with the redundancy skip on",
+    "let x = 5;\nfunction foo(a) { return a; }",
+    (src) => [
+      entry("test.ts", src.indexOf("x ") + 1, [["number"]], { varDecl: true }),
+      entry("test.ts", src.indexOf("a)") + 1, [["string"]]),
+    ],
+  ],
+  [
+    "a union with a shape",
+    "function foo(a) { return a; }",
+    (src) => [entry("test.ts", src.indexOf("a)") + 1, [["{ x: number, y: string }"], ["number"]])],
+    KEEP_INFERABLE,
+  ],
+  [
+    "a destructured declaration",
+    "let { host, guest } = getProps();",
+    (src) => [
+      entry("test.ts", src.indexOf("} =") + 1, [["{ host: string, guest: string }"]], {
+        varDecl: true,
+      }),
+    ],
+    KEEP_INFERABLE,
+  ],
+  [
+    "a param before a local",
+    "function foo(a) { return a; }\nlet x = 5;",
+    (src) => [
+      entry("test.ts", src.indexOf("a)") + 1, [["string"]]),
+      entry("test.ts", src.indexOf("x ") + 1, [["number"]], { varDecl: true }),
+    ],
+    KEEP_INFERABLE,
+  ],
+  [
+    "two params and a local",
+    "let x = 5;\nfunction foo(a, b) { return a + b; }",
+    (src) => [
+      entry("test.ts", src.indexOf("x ") + 1, [["number"]], { varDecl: true }),
+      entry("test.ts", src.indexOf("(a") + 2, [["number"]]),
+      entry("test.ts", src.indexOf(", b") + 3, [["number"]]),
+    ],
+    KEEP_INFERABLE,
+  ],
+  [
+    "a return type",
+    "function foo() { return 5; }",
+    () => [entry("test.ts", 14, [["number"]], { returnType: true })],
+  ],
+  [
+    "an async return type",
+    "async function foo() { return 5; }",
+    (src) => [
+      entry("test.ts", src.indexOf(")") + 1, [["number"]], { returnType: true, async: true }),
+    ],
+  ],
+  [
+    "a param and a return type",
+    "function foo(a) { return a; }",
+    (src) => [
+      entry("test.ts", src.indexOf("a)") + 1, [["string"]]),
+      entry("test.ts", src.indexOf(")") + 1, [["string"]], { returnType: true }),
+    ],
+  ],
+  [
+    "a generator's param",
+    "function* gen(a) { yield a; }",
+    (src) => [entry("test.ts", src.indexOf("a)") + 1, [["number"]])],
+  ],
+  [
+    "an optional param observed only as undefined",
+    "function foo(a?) {}",
+    () => [entry("test.ts", 15, [["undefined"]])],
+  ],
+  [
+    "a `let` local",
+    "let x = 5;",
+    () => [entry("test.ts", 5, [["number"]], { varDecl: true })],
+    KEEP_INFERABLE,
+  ],
+  [
+    "a `const` local",
+    'const name = "hi";',
+    (src) => [entry("test.ts", src.indexOf("name") + 4, [["string"]], { varDecl: true })],
+    KEEP_INFERABLE,
+  ],
+  [
+    "a class field",
+    "class C { value = 42; }",
+    (src) => [entry("test.ts", src.indexOf("value") + 5, [["number"]], { varDecl: true })],
+    KEEP_INFERABLE,
+  ],
+  [
+    "a local whose initializer is a function",
+    "const fn = (x) => x + 1;",
+    (src) => [
+      entry("test.ts", src.indexOf("fn") + 2, [["(x: unknown) => unknown"]], { varDecl: true }),
+    ],
+  ],
+  [
+    "a const literal, with the redundancy skip on",
+    "const FLAG = 'on';",
+    (src) => [entry("test.ts", src.indexOf("FLAG") + 4, [["string"]], { varDecl: true })],
+  ],
+  [
+    "a `let` local, with the redundancy skip on",
+    "let x = 5;",
+    () => [entry("test.ts", 5, [["number"]], { varDecl: true })],
+  ],
+  [
+    "a local, a param and a return type",
+    "let n = 0;\nfunction foo(a) { return a; }",
+    (src) => [
+      entry("test.ts", src.indexOf("n ") + 1, [["number"]], { varDecl: true }),
+      entry("test.ts", src.indexOf("a)") + 1, [["string"]]),
+      entry("test.ts", src.indexOf(")") + 1, [["string"]], { returnType: true }),
+    ],
+    KEEP_INFERABLE,
+  ],
+  [
+    "a paren-less arrow param",
+    "const inc = x => x + 1;",
+    (src) => {
+      const pos = src.indexOf("x ") + 1;
+      return [entry("test.ts", pos, [["number"]], { arrow: true, parens: [pos - 1, pos] })];
+    },
+  ],
+  [
+    "a parenthesised arrow param",
+    "const inc = (x) => x + 1;",
+    (src) => [entry("test.ts", src.indexOf("x)") + 1, [["number"]])],
+  ],
+  [
+    "a `this` type",
+    "function greet() { return this.text; }",
+    () => [entry("test.ts", 15, [["Date"]], { thisType: true })],
+  ],
+  [
+    "a `this` type beside a param, with the separator flag",
+    "function greet(name) { return this.text + name; }",
+    () => [
+      entry("test.ts", 15, [["Date"]], { thisType: true, thisNeedsComma: true }),
+      entry("test.ts", 19, [["string"]]),
+    ],
+  ],
+  [
+    "a `this` type at no function",
+    "function greet() { return this.text; }",
+    () => [entry("test.ts", 999, [["Date"]], { thisType: true })],
+  ],
+];
 
-  it("annotates a single param the same as the offset-based applier", () => {
-    const source = "function foo(a) {}";
-    const typeInfo: CollectedTypeInfo = [entry("test.ts", 14, [["string"]])];
-    expect(applyTypesToFileCst(source, typeInfo, {})).toBe(applyTypesToFile(source, typeInfo, {}));
-    expect(applyTypesToFileCst(source, typeInfo, {})).toBe("function foo(a: string) {}");
+describe("the CST and offset appliers agree", () => {
+  it.each(PARITY)("on %s", (_, source, entries, options) => {
+    const cst = applied(source, entries(source), options);
+    const offset = applied(source, entries(source), { ...options, applier: "offset" });
+    expect(printedAst(offset.text)).toBe(printedAst(cst.text));
+  });
+});
+
+describe("applyTypesToFileCst — param annotations via AST lookup", () => {
+  it("annotates a single param", () => {
+    const out = applied("function foo(a) {}", [entry("test.ts", 14, [["string"]])]);
+    expect(out).toAnnotate("a", "string");
   });
 
   // Regression: nestjs/nest, packages/core/router/router-response-controller.ts.
@@ -71,139 +281,125 @@ describe("applyTypesToFileCst — param annotations via AST lookup", () => {
     // Keying dedup by site kind alone merged the two into `Function|undefined`
     // — parseable, and wrong. `crossReferenceObservations` drops paramReturn
     // records before apply ever sees them; this covers the direct-API route.
-    const expected = "const run = (resolve: Function) => { resolve(); };";
-    expect(applyTypesToFileCst(source, typeInfo, {})).toBe(expected);
-    expect(applyTypesToFile(source, typeInfo, {})).toBe(expected);
+    for (const applier of ["cst", "offset"] as const) {
+      const out = applied(source, typeInfo, { applier });
+      expect(parseErrors(out)).toEqual([]);
+      expect(out).toAnnotate("resolve", "Function");
+    }
   });
 
-  it("annotates multiple params the same as the offset-based applier", () => {
-    const source = "function foo(a, b, c) { return a; }";
-    const typeInfo: CollectedTypeInfo = [
+  it("annotates several params", () => {
+    const out = applied("function foo(a, b, c) { return a; }", [
       entry("test.ts", 14, [["number"]]),
       entry("test.ts", 17, [["string"]]),
       entry("test.ts", 20, [["boolean"]]),
-    ];
-    expect(applyTypesToFileCst(source, typeInfo, {})).toBe(applyTypesToFile(source, typeInfo, {}));
+    ]);
+    expect(out).toAnnotate("a", "number");
+    expect(out).toAnnotate("b", "string");
+    expect(out).toAnnotate("c", "boolean");
   });
 
-  it("optional param: AST honours questionToken (no `source[pos-1] === '?'` reliance)", () => {
-    const source = "function foo(a?) {}";
+  it("keeps an optional param optional and drops the undefined it implies", () => {
     // pos accounts for the `?`: name.end (14) + 1 = 15
-    const typeInfo: CollectedTypeInfo = [entry("test.ts", 15, [["number"], ["undefined"]])];
-    const cst = applyTypesToFileCst(source, typeInfo, {});
-    expect(cst).toBe("function foo(a?: number) {}");
-    expect(cst).toBe(applyTypesToFile(source, typeInfo, {}));
+    const out = applied("function foo(a?) {}", [entry("test.ts", 15, [["number"], ["undefined"]])]);
+    expect(out).toAnnotate("a", "number");
+    expect(nodesOf(out, ts.isParameter)[0].questionToken).toBeDefined();
   });
 
   it("idempotency: re-apply on already-annotated param is a no-op", () => {
-    const source = "function foo(a: string) {}";
     // Same pos as before annotation — but the AST now sees `a: string`,
-    // so paramSites doesn't index this position. CST applier silently
-    // skips, no offset-string matching needed.
-    const typeInfo: CollectedTypeInfo = [entry("test.ts", 14, [["string"]])];
-    expect(applyTypesToFileCst(source, typeInfo, {})).toBe(source);
+    // so paramSites doesn't index this position.
+    const source = "function foo(a: string) {}";
+    expect(applied(source, [entry("test.ts", 14, [["string"]])]).text).toBe(source);
   });
 
-  it("union type: same join character as offset-based applier (`|`)", () => {
-    const source = "function foo(a) {}";
-    const typeInfo: CollectedTypeInfo = [entry("test.ts", 14, [["string"], ["number"]])];
-    expect(applyTypesToFileCst(source, typeInfo, {})).toBe(applyTypesToFile(source, typeInfo, {}));
+  it("joins several observations into a union", () => {
+    const out = applied("function foo(a) {}", [entry("test.ts", 14, [["string"], ["number"]])]);
+    expect(out).toAnnotate("a", "number | string");
   });
 
-  it("class method param annotated correctly", () => {
+  it("annotates a class method param", () => {
     const source = "class C { foo(x) { return x; } }";
-    // class C { foo(x) { ... } } — pos of `x`'s name end:
-    const pos = source.indexOf("x)") + 1;
-    const typeInfo: CollectedTypeInfo = [entry("test.ts", pos, [["number"]])];
-    const cst = applyTypesToFileCst(source, typeInfo, {});
-    expect(cst).toContain("foo(x: number)");
-    expect(cst).toBe(applyTypesToFile(source, typeInfo, {}));
+    const out = applied(source, [entry("test.ts", source.indexOf("x)") + 1, [["number"]])]);
+    expect(out).toAnnotate("x", "number");
   });
 
-  it("constructor param with parameter property modifier (public x)", () => {
+  it("annotates a parameter property and keeps its modifier", () => {
     const source = "class C { constructor(public x) {} }";
-    const pos = source.indexOf("x)") + 1;
-    const typeInfo: CollectedTypeInfo = [entry("test.ts", pos, [["number"]])];
-    const cst = applyTypesToFileCst(source, typeInfo, {});
-    expect(cst).toContain("public x: number");
-    expect(cst).toBe(applyTypesToFile(source, typeInfo, {}));
+    const out = applied(source, [entry("test.ts", source.indexOf("x)") + 1, [["number"]])]);
+    expect(out).toAnnotate("x", "number");
+    const modifiers = ts.getModifiers(nodesOf(out, ts.isParameter)[0]) ?? [];
+    expect(modifiers.map((m) => m.kind)).toEqual([ts.SyntaxKind.PublicKeyword]);
   });
 
-  it("destructure-pattern params (object binding) routed through CST: name.end works for BindingPattern too", () => {
-    // BindingPattern.end is after the closing `}`. The CST path used
-    // to skip non-Identifier params; now the visitor indexes them too
-    // and the apply lands `: T` at that position. Output matches the
-    // offset-based applier byte-for-byte.
+  it("annotates an object binding pattern at the pattern's end", () => {
     const source = "function foo({ a, b }) { return a; }";
-    const pos = source.indexOf(")");
-    const typeInfo: CollectedTypeInfo = [entry("test.ts", pos, [["{ a: number, b: number }"]])];
-    const cst = applyTypesToFileCst(source, typeInfo, {});
-    expect(cst).toBe(applyTypesToFile(source, typeInfo, {}));
-    expect(cst).toContain("{ a, b }: { a: number; b: number }");
+    const out = applied(source, [
+      entry("test.ts", source.indexOf(")"), [["{ a: number, b: number }"]]),
+    ]);
+    expect(out).toAnnotate("{ a, b }", "{ a: number; b: number }");
   });
 
-  it("destructure-pattern params (array binding): same path", () => {
+  it("annotates an array binding pattern", () => {
     const source = "function foo([a, b]) { return a + b; }";
-    const pos = source.indexOf(")");
-    const typeInfo: CollectedTypeInfo = [entry("test.ts", pos, [["[number, number]"]])];
-    const cst = applyTypesToFileCst(source, typeInfo, {});
-    expect(cst).toBe(applyTypesToFile(source, typeInfo, {}));
-    expect(cst).toContain("[a, b]: [number, number]");
+    const out = applied(source, [entry("test.ts", source.indexOf(")"), [["[number, number]"]])]);
+    expect(out).toAnnotate("[a, b]", "[number, number]");
   });
 
-  it("mixed entries (param + varDecl, both via CST): output matches offset-based applier", () => {
-    // Both entries route through CST now. Output must be
-    // byte-identical to the all-offset-based path.
+  it("annotates a param and a local in one file", () => {
     const source = "let x = 5;\nfunction foo(a) { return a; }";
-    const xPos = source.indexOf("x ") + 1;
-    const aPos = source.indexOf("a)") + 1;
-    const typeInfo: CollectedTypeInfo = [
-      entry("test.ts", xPos, [["number"]], { varDecl: true }),
-      entry("test.ts", aPos, [["string"]]),
-    ];
-    const cst = applyTypesToFileCst(source, typeInfo, KEEP_INFERABLE);
-    expect(cst).toBe(applyTypesToFile(source, typeInfo, KEEP_INFERABLE));
-    expect(cst).toContain("let x: number = 5");
-    expect(cst).toContain("function foo(a: string)");
+    const out = applied(
+      source,
+      [
+        entry("test.ts", source.indexOf("x ") + 1, [["number"]], { varDecl: true }),
+        entry("test.ts", source.indexOf("a)") + 1, [["string"]]),
+      ],
+      KEEP_INFERABLE,
+    );
+    expect(out).toAnnotate("x", "number");
+    expect(out).toAnnotate("a", "string");
   });
 
+  // Presentation, so the text is the claim: this is the punctuation a
+  // formatter would leave alone.
   it("writes separators a formatter would leave alone", () => {
     const source = "function foo(a) { return a; }";
-    const aPos = source.indexOf("a)") + 1;
-    const typeInfo: CollectedTypeInfo = [
-      entry("test.ts", aPos, [["{ x: number, y: string }"], ["number"]]),
-    ];
-    const cst = applyTypesToFileCst(source, typeInfo, KEEP_INFERABLE);
-    expect(cst).toBe(applyTypesToFile(source, typeInfo, KEEP_INFERABLE));
-    expect(cst).toContain("a: number | { x: number; y: string }");
+    const out = applied(
+      source,
+      [entry("test.ts", source.indexOf("a)") + 1, [["{ x: number, y: string }"], ["number"]])],
+      KEEP_INFERABLE,
+    );
+    expect(out.text).toContain("a: number | { x: number; y: string }");
   });
 
   it("annotates a destructured declaration", () => {
     const source = "let { host, guest } = getProps();";
-    const pos = source.indexOf("} =") + 1;
-    const typeInfo: CollectedTypeInfo = [
-      entry("test.ts", pos, [["{ host: string, guest: string }"]], { varDecl: true }),
-    ];
-    const cst = applyTypesToFileCst(source, typeInfo, KEEP_INFERABLE);
-    expect(cst).toBe(applyTypesToFile(source, typeInfo, KEEP_INFERABLE));
-    expect(cst).toContain("let { host, guest }: { host: string; guest: string } = getProps()");
+    const out = applied(
+      source,
+      [
+        entry("test.ts", source.indexOf("} =") + 1, [["{ host: string, guest: string }"]], {
+          varDecl: true,
+        }),
+      ],
+      KEEP_INFERABLE,
+    );
+    expect(out).toAnnotate("{ host, guest }", "{ host: string; guest: string }");
   });
 
-  it("mixed: param BEFORE varDecl in source — varDecl pos rebased correctly", () => {
-    // Order matters for the rebase: when CST insertion is at a
-    // smaller offset than the pass-through entry, the pass-through
-    // pos must shift forward by the inserted length.
+  // The local goes through the offset applier after the CST pass inserted
+  // before it; its position has to move with the insertion.
+  it("places a local that follows a param", () => {
     const source = "function foo(a) { return a; }\nlet x = 5;";
-    const aPos = source.indexOf("a)") + 1;
-    const xPos = source.indexOf("x ") + 1;
-    const typeInfo: CollectedTypeInfo = [
-      entry("test.ts", aPos, [["string"]]),
-      entry("test.ts", xPos, [["number"]], { varDecl: true }),
-    ];
-    const cst = applyTypesToFileCst(source, typeInfo, KEEP_INFERABLE);
-    expect(cst).toBe(applyTypesToFile(source, typeInfo, KEEP_INFERABLE));
-    expect(cst).toContain("function foo(a: string)");
-    expect(cst).toContain("let x: number = 5");
+    const out = applied(
+      source,
+      [
+        entry("test.ts", source.indexOf("a)") + 1, [["string"]]),
+        entry("test.ts", source.indexOf("x ") + 1, [["number"]], { varDecl: true }),
+      ],
+      KEEP_INFERABLE,
+    );
+    expect(out).toAnnotate("a", "string");
+    expect(out).toAnnotate("x", "number");
   });
 
   // The offsets in a types.json are pristine: they describe the source as it
@@ -216,138 +412,109 @@ describe("applyTypesToFileCst — param annotations via AST lookup", () => {
   // path that has notes in the file to begin with).
   it("a note left by a previous run does not move a pass-through offset", () => {
     const pristine = "function f(a) {}\nexport function* gen() {}\n";
-    const aPos = pristine.indexOf("a)") + 1;
-    const genRet = pristine.indexOf("gen()") + "gen()".length;
     // `a` is a CST site and inserts; a generator's return type is not indexed,
     // so it routes to passThrough and its offset goes through the rebase.
     const typeInfo: CollectedTypeInfo = [
-      entry("test.ts", aPos, [["string"]]),
-      entry("test.ts", genRet, [["Generator<number>"]], { returnType: true }),
+      entry("test.ts", pristine.indexOf("a)") + 1, [["string"]]),
+      entry("test.ts", pristine.indexOf("gen()") + "gen()".length, [["Generator<number>"]], {
+        returnType: true,
+      }),
     ];
-    const expected = "function f(a: string) {}\nexport function* gen(): Generator<number> {}\n";
-    expect(applyTypesToFileCst(pristine, typeInfo, {})).toBe(expected);
-
     // Same entries, same offsets — but a stale note now sits between the two
     // sites, so the removal and the insertion straddle the pass-through entry.
     const noted =
       "function f(a) {}\n" +
       "// @ts-capture[proposal]: `gen` return would be `Generator<number>`\n" +
       "export function* gen() {}\n";
-    expect(applyTypesToFileCst(noted, typeInfo, {})).toBe(expected);
+    for (const source of [pristine, noted]) {
+      const out = applied(source, typeInfo);
+      expect(out).toAnnotate("a", "string");
+      expect(out).toAnnotate({ returnOf: "gen" }, "Generator<number>");
+      expect(out.text).not.toContain("@ts-capture");
+    }
   });
 
-  it("mixed: varDecl BEFORE param in source — param pos unaffected by varDecl going first", () => {
-    // varDecl is in passThrough; CST runs first (params), then offset-
-    // based applies varDecl on the modified source. varDecl's pos was
-    // < param's pos, so rebase doesn't shift it. The offset-based pass
-    // sees the source with the param annotation already applied; that
-    // doesn't perturb the varDecl pos.
+  it("leaves a redundant local alone and annotates the param after it", () => {
     const source = "let x = 5;\nfunction foo(a) { return a; }";
-    const xPos = source.indexOf("x ") + 1;
-    const aPos = source.indexOf("a)") + 1;
-    const typeInfo: CollectedTypeInfo = [
-      entry("test.ts", xPos, [["number"]], { varDecl: true }),
-      entry("test.ts", aPos, [["string"]]),
-    ];
-    const cst = applyTypesToFileCst(source, typeInfo, {});
-    expect(cst).toBe(applyTypesToFile(source, typeInfo, {}));
+    const out = applied(source, [
+      entry("test.ts", source.indexOf("x ") + 1, [["number"]], { varDecl: true }),
+      entry("test.ts", source.indexOf("a)") + 1, [["string"]]),
+    ]);
+    expect(out).toLeaveUntyped("x");
+    expect(out).toAnnotate("a", "string");
   });
 
-  it("two params (both CST) plus varDecl (offset-based): all three correctly placed", () => {
+  it("places two params and a local", () => {
     const source = "let x = 5;\nfunction foo(a, b) { return a + b; }";
-    const xPos = source.indexOf("x ") + 1;
-    const aPos = source.indexOf("(a") + 2;
-    const bPos = source.indexOf(", b") + 3;
-    const typeInfo: CollectedTypeInfo = [
-      entry("test.ts", xPos, [["number"]], { varDecl: true }),
-      entry("test.ts", aPos, [["number"]]),
-      entry("test.ts", bPos, [["number"]]),
-    ];
-    const cst = applyTypesToFileCst(source, typeInfo, KEEP_INFERABLE);
-    expect(cst).toBe(applyTypesToFile(source, typeInfo, KEEP_INFERABLE));
-    expect(cst).toContain("let x: number = 5");
-    expect(cst).toContain("function foo(a: number, b: number)");
+    const out = applied(
+      source,
+      [
+        entry("test.ts", source.indexOf("x ") + 1, [["number"]], { varDecl: true }),
+        entry("test.ts", source.indexOf("(a") + 2, [["number"]]),
+        entry("test.ts", source.indexOf(", b") + 3, [["number"]]),
+      ],
+      KEEP_INFERABLE,
+    );
+    expect(out).toAnnotate("x", "number");
+    expect(out).toAnnotate("a", "number");
+    expect(out).toAnnotate("b", "number");
   });
 
   it("entry with no AST match (stale offset): silently skipped", () => {
-    // Entry pos doesn't match any param in the AST. CST applier just
-    // doesn't see it, no insertion happens. The offset-based applier
-    // would have hit positionLooksLikeInsertionSite — which would also
-    // have skipped it — so behaviour matches.
     const source = "function foo(a) {}";
-    const typeInfo: CollectedTypeInfo = [
-      entry("test.ts", 99, [["string"]]), // pos out of range
-    ];
-    expect(applyTypesToFileCst(source, typeInfo, {})).toBe(source);
+    expect(applied(source, [entry("test.ts", 99, [["string"]])]).text).toBe(source);
   });
 
-  it("returnType entry routed through CST path matches offset-based applier", () => {
-    const source = "function foo() { return 5; }";
+  it("annotates a return type", () => {
     // pos right after `)` of `function foo()` — `(` at 12, `)` at 13, retPos=14
-    const typeInfo: CollectedTypeInfo = [entry("test.ts", 14, [["number"]], { returnType: true })];
-    expect(applyTypesToFileCst(source, typeInfo, {})).toBe(applyTypesToFile(source, typeInfo, {}));
-    expect(applyTypesToFileCst(source, typeInfo, {})).toBe("function foo(): number { return 5; }");
+    const out = applied("function foo() { return 5; }", [
+      entry("test.ts", 14, [["number"]], { returnType: true }),
+    ]);
+    expect(out).toAnnotate({ returnOf: "foo" }, "number");
   });
 
   it("returnType idempotency: AST-native skip when function already has a return type", () => {
-    // Function already declares `: number`. CST path's returnTypeSites
-    // sees `node.type !== undefined` and skips — without the
-    // offset-based path's `isAlreadyApplied` source-string check.
     const source = "function foo(): number { return 5; }";
-    const pos = source.indexOf(")") + 1;
-    const typeInfo: CollectedTypeInfo = [entry("test.ts", pos, [["number"]], { returnType: true })];
-    expect(applyTypesToFileCst(source, typeInfo, {})).toBe(source);
+    const typeInfo = [
+      entry("test.ts", source.indexOf(")") + 1, [["number"]], { returnType: true }),
+    ];
+    expect(applied(source, typeInfo).text).toBe(source);
   });
 
-  it("async returnType: Promise<...> wrapping happens in shared computeAnnotationTypeString", () => {
+  it("wraps an async return type in a Promise", () => {
     const source = "async function foo() { return 5; }";
-    const pos = source.indexOf(")") + 1;
-    const typeInfo: CollectedTypeInfo = [
-      entry("test.ts", pos, [["number"]], { returnType: true, async: true }),
-    ];
-    expect(applyTypesToFileCst(source, typeInfo, {})).toBe(applyTypesToFile(source, typeInfo, {}));
-    expect(applyTypesToFileCst(source, typeInfo, {})).toContain("(): Promise<number>");
+    const out = applied(source, [
+      entry("test.ts", source.indexOf(")") + 1, [["number"]], { returnType: true, async: true }),
+    ]);
+    expect(out).toAnnotate({ returnOf: "foo" }, "Promise<number>");
   });
 
-  it("param + returnType on same function (both CST): parity with offset-based output", () => {
+  it("annotates a param and the return type of one function", () => {
     const source = "function foo(a) { return a; }";
-    const aPos = source.indexOf("a)") + 1;
-    const retPos = source.indexOf(")") + 1;
-    const typeInfo: CollectedTypeInfo = [
-      entry("test.ts", aPos, [["string"]]),
-      entry("test.ts", retPos, [["string"]], { returnType: true }),
-    ];
-    expect(applyTypesToFileCst(source, typeInfo, {})).toBe(applyTypesToFile(source, typeInfo, {}));
-    expect(applyTypesToFileCst(source, typeInfo, {})).toBe(
-      "function foo(a: string): string { return a; }",
-    );
+    const out = applied(source, [
+      entry("test.ts", source.indexOf("a)") + 1, [["string"]]),
+      entry("test.ts", source.indexOf(")") + 1, [["string"]], { returnType: true }),
+    ]);
+    expect(out).toAnnotate("a", "string");
+    expect(out).toAnnotate({ returnOf: "foo" }, "string");
   });
 
-  it("generator function return type NOT indexed (matches transformer's skip)", () => {
-    // The transformer doesn't instrument generator return types, so a
-    // typeInfo entry with returnType opt at a generator's pos shouldn't
-    // come from a real run. Defensive: if one does arrive, the CST path
-    // doesn't index generators in returnTypeSites and the entry falls
-    // through to passThrough.
+  it("annotates a generator's param", () => {
+    // The transformer doesn't instrument generator return types; its params
+    // are ordinary sites.
     const source = "function* gen(a) { yield a; }";
-    const aPos = source.indexOf("a)") + 1;
-    const typeInfo: CollectedTypeInfo = [entry("test.ts", aPos, [["number"]])];
-    const cst = applyTypesToFileCst(source, typeInfo, {});
-    expect(cst).toBe(applyTypesToFile(source, typeInfo, {}));
-    expect(cst).toContain("gen(a: number)");
+    const out = applied(source, [entry("test.ts", source.indexOf("a)") + 1, [["number"]])]);
+    expect(out).toAnnotate("a", "number");
   });
 
   it("empty typeInfo returns source unchanged", () => {
     const source = "function foo(a) {}";
-    expect(applyTypesToFileCst(source, [], {})).toBe(source);
+    expect(applied(source, []).text).toBe(source);
   });
 
-  it("filtered observations (all undefined for optional param) skip cleanly", () => {
-    const source = "function foo(a?) {}";
-    const typeInfo: CollectedTypeInfo = [entry("test.ts", 15, [["undefined"]])];
-    const cst = applyTypesToFileCst(source, typeInfo, {});
-    expect(cst).toBe("function foo(a?) {}");
-    expect(cst).toBe(applyTypesToFile(source, typeInfo, {}));
+  it("leaves an optional param alone when every observation was undefined", () => {
+    const out = applied("function foo(a?) {}", [entry("test.ts", 15, [["undefined"]])]);
+    expect(out).toLeaveUntyped("a");
   });
 });
 
@@ -358,46 +525,48 @@ describe("applyTypesToFileCst — varDecl + class-field annotations via AST look
   // skipRedundantAnnotations (skip when TS would already infer the same
   // type) are all expressed against the AST.
 
-  it("annotates `let x = 5` the same as the offset-based applier", () => {
-    const source = "let x = 5;";
-    const typeInfo: CollectedTypeInfo = [entry("test.ts", 5, [["number"]], { varDecl: true })];
-    const cst = applyTypesToFileCst(source, typeInfo, KEEP_INFERABLE);
-    expect(cst).toBe("let x: number = 5;");
-    expect(cst).toBe(applyTypesToFile(source, typeInfo, KEEP_INFERABLE));
+  it("annotates `let x = 5`", () => {
+    const out = applied(
+      "let x = 5;",
+      [entry("test.ts", 5, [["number"]], { varDecl: true })],
+      KEEP_INFERABLE,
+    );
+    expect(out).toAnnotate("x", "number");
   });
 
-  it('annotates `const name = "hi"` the same as the offset-based applier', () => {
+  it('annotates `const name = "hi"`', () => {
     const source = 'const name = "hi";';
-    const pos = source.indexOf("name") + 4;
-    const typeInfo: CollectedTypeInfo = [entry("test.ts", pos, [["string"]], { varDecl: true })];
-    const cst = applyTypesToFileCst(source, typeInfo, KEEP_INFERABLE);
-    expect(cst).toBe('const name: string = "hi";');
-    expect(cst).toBe(applyTypesToFile(source, typeInfo, KEEP_INFERABLE));
+    const out = applied(
+      source,
+      [entry("test.ts", source.indexOf("name") + 4, [["string"]], { varDecl: true })],
+      KEEP_INFERABLE,
+    );
+    expect(out).toAnnotate("name", "string");
   });
 
-  it("annotates a class field initializer the same as the offset-based applier", () => {
+  it("annotates a class field initializer", () => {
     const source = "class C { value = 42; }";
-    const pos = source.indexOf("value") + 5;
-    const typeInfo: CollectedTypeInfo = [entry("test.ts", pos, [["number"]], { varDecl: true })];
-    const cst = applyTypesToFileCst(source, typeInfo, KEEP_INFERABLE);
-    expect(cst).toBe("class C { value: number = 42; }");
-    expect(cst).toBe(applyTypesToFile(source, typeInfo, KEEP_INFERABLE));
+    const out = applied(
+      source,
+      [entry("test.ts", source.indexOf("value") + 5, [["number"]], { varDecl: true })],
+      KEEP_INFERABLE,
+    );
+    expect(out).toAnnotate("value", "number");
   });
 
   it("idempotency: re-apply on already-typed varDecl is a no-op (AST-native)", () => {
-    // The CST path doesn't even index already-typed varDecls in the
-    // skip set — varDeclSites HAS them but with `hasType: true`, so the
-    // entry is dropped at routing. No source-string `:` heuristic.
     const source = "let x: number = 5;";
-    const typeInfo: CollectedTypeInfo = [entry("test.ts", 5, [["number"]], { varDecl: true })];
-    expect(applyTypesToFileCst(source, typeInfo, {})).toBe(source);
+    expect(applied(source, [entry("test.ts", 5, [["number"]], { varDecl: true })]).text).toBe(
+      source,
+    );
   });
 
   it("idempotency: re-apply on already-typed class field is a no-op", () => {
     const source = "class C { value: bigint = 42n; }";
-    const pos = source.indexOf("value") + 5;
-    const typeInfo: CollectedTypeInfo = [entry("test.ts", pos, [["number"]], { varDecl: true })];
-    expect(applyTypesToFileCst(source, typeInfo, {})).toBe(source);
+    const typeInfo = [
+      entry("test.ts", source.indexOf("value") + 5, [["number"]], { varDecl: true }),
+    ];
+    expect(applied(source, typeInfo).text).toBe(source);
   });
 
   it("skips outer annotation when varDecl RHS is a function expression", () => {
@@ -406,40 +575,35 @@ describe("applyTypesToFileCst — varDecl + class-field annotations via AST look
     // produce. CST routes the entry to a site whose rhsIsFunction=true
     // and drops it; no insertion in the AST path.
     const source = "const fn = (x) => x + 1;";
-    const fnPos = source.indexOf("fn") + 2;
-    const typeInfo: CollectedTypeInfo = [
-      entry("test.ts", fnPos, [["(x: unknown) => unknown"]], { varDecl: true }),
+    const typeInfo = [
+      entry("test.ts", source.indexOf("fn") + 2, [["(x: unknown) => unknown"]], { varDecl: true }),
     ];
-    const cst = applyTypesToFileCst(source, typeInfo, {});
-    expect(cst).toBe(source); // unchanged — outer skipped
-    expect(cst).toBe(applyTypesToFile(source, typeInfo, {}));
+    expect(applied(source, typeInfo).text).toBe(source);
   });
 
   it("skips outer annotation when RHS is a function expression (function keyword)", () => {
     const source = "const fn = function (n) { return n; };";
-    const fnPos = source.indexOf("fn") + 2;
-    const typeInfo: CollectedTypeInfo = [
-      entry("test.ts", fnPos, [["(n: unknown) => unknown"]], { varDecl: true }),
+    const typeInfo = [
+      entry("test.ts", source.indexOf("fn") + 2, [["(n: unknown) => unknown"]], { varDecl: true }),
     ];
-    const cst = applyTypesToFileCst(source, typeInfo, {});
-    expect(cst).toBe(source);
+    expect(applied(source, typeInfo).text).toBe(source);
   });
 
   it("function-RHS guard does NOT fire for non-function RHS", () => {
     const source = "const count = 42;";
-    const pos = source.indexOf("count") + 5;
-    const typeInfo: CollectedTypeInfo = [entry("test.ts", pos, [["number"]], { varDecl: true })];
-    const cst = applyTypesToFileCst(source, typeInfo, KEEP_INFERABLE);
-    expect(cst).toBe("const count: number = 42;");
+    const out = applied(
+      source,
+      [entry("test.ts", source.indexOf("count") + 5, [["number"]], { varDecl: true })],
+      KEEP_INFERABLE,
+    );
+    expect(out).toAnnotate("count", "number");
   });
 
   it("skipRedundantAnnotations (off): annotation lands as usual", () => {
-    const source = "let x = 5;";
-    const typeInfo: CollectedTypeInfo = [entry("test.ts", 5, [["number"]], { varDecl: true })];
-    const cst = applyTypesToFileCst(source, typeInfo, {
+    const out = applied("let x = 5;", [entry("test.ts", 5, [["number"]], { varDecl: true })], {
       infer: { ...INFER_DEFAULTS, skipRedundantAnnotations: false },
     });
-    expect(cst).toBe("let x: number = 5;");
+    expect(out).toAnnotate("x", "number");
   });
 
   // Defaults matter here: annotating `const X = 'lit'` with `: string` does not
@@ -448,185 +612,126 @@ describe("applyTypesToFileCst — varDecl + class-field annotations via AST look
   // 105 such widening annotations, ~8% of the whole diff.
   it("skipRedundantAnnotations is on by default: a const literal keeps its narrow type", () => {
     const source = "const FLAG = 'on';";
-    const typeInfo: CollectedTypeInfo = [
+    const typeInfo = [
       entry("test.ts", source.indexOf("FLAG") + 4, [["string"]], { varDecl: true }),
     ];
-    expect(applyTypesToFileCst(source, typeInfo, {})).toBe(source);
-    expect(applyTypesToFile(source, typeInfo, {})).toBe(source);
+    const out = applied(source, typeInfo);
+    expect(out).toLeaveUntyped("FLAG");
+    expect(out).toTypeAs("FLAG", '"on"');
   });
 
-  it("skipRedundantAnnotations (on): `let x = 5` skips redundant `: number`", () => {
-    const source = "let x = 5;";
-    const typeInfo: CollectedTypeInfo = [entry("test.ts", 5, [["number"]], { varDecl: true })];
-    const cst = applyTypesToFileCst(source, typeInfo, {
-      infer: { ...INFER_DEFAULTS, skipRedundantAnnotations: true },
-    });
-    expect(cst).toBe(source);
-    expect(cst).toBe(
-      applyTypesToFile(source, typeInfo, {
-        infer: { ...INFER_DEFAULTS, skipRedundantAnnotations: true },
-      }),
-    );
-  });
-
-  it("skipRedundantAnnotations (on): `const x = 5` SKIPS annotation", () => {
-    // Without skipRedundantAnnotations, ts-capture would widen TS's
-    // literal `5` to `: number`. With the flag on, TS's literal
-    // narrowing wins.
-    const source = "const x = 5;";
-    const pos = source.indexOf("x") + 1;
-    const typeInfo: CollectedTypeInfo = [entry("test.ts", pos, [["number"]], { varDecl: true })];
-    const cst = applyTypesToFileCst(source, typeInfo, {
-      infer: { ...INFER_DEFAULTS, skipRedundantAnnotations: true },
-    });
-    expect(cst).toBe(source);
-  });
-
-  it("skipRedundantAnnotations (on): `readonly` class field with primitive SKIPS annotation", () => {
-    const source = "class C { readonly x = 5; }";
+  it.each([
+    ["`let x = 5`", "let x = 5;"],
+    ["`const x = 5`", "const x = 5;"],
+    ["a `readonly` class field with a primitive", "class C { readonly x = 5; }"],
+  ])("skipRedundantAnnotations (on): %s skips the restatement", (_, source) => {
     const pos = source.indexOf("x = 5") + 1;
-    const typeInfo: CollectedTypeInfo = [entry("test.ts", pos, [["number"]], { varDecl: true })];
-    const cst = applyTypesToFileCst(source, typeInfo, {
+    const out = applied(source, [entry("test.ts", pos, [["number"]], { varDecl: true })], {
       infer: { ...INFER_DEFAULTS, skipRedundantAnnotations: true },
     });
-    expect(cst).toBe(source);
+    expect(out).toLeaveUntyped("x");
   });
 
   it("skipRedundantAnnotations (on): `as const` on object literal SKIPS annotation", () => {
     const source = "const X = { a: 1 } as const;";
-    const pos = source.indexOf("X") + 1;
-    const typeInfo: CollectedTypeInfo = [
-      entry("test.ts", pos, [["{ a: number }"]], { varDecl: true }),
-    ];
-    const cst = applyTypesToFileCst(source, typeInfo, {
-      infer: { ...INFER_DEFAULTS, skipRedundantAnnotations: true },
-    });
-    expect(cst).toBe(source);
+    const out = applied(
+      source,
+      [entry("test.ts", source.indexOf("X") + 1, [["{ a: number }"]], { varDecl: true })],
+      { infer: { ...INFER_DEFAULTS, skipRedundantAnnotations: true } },
+    );
+    expect(out).toLeaveUntyped("X");
   });
 
-  it("varDecl + param + returnType in one file: all three through CST, parity with offset-based", () => {
-    // The big mixed test: every entry kind we currently route through
-    // CST coexisting in one file. Output must match the offset-based
-    // applier byte-for-byte.
+  it("annotates a local, a param and a return type in one file", () => {
     const source = "let n = 0;\nfunction foo(a) { return a; }";
-    const nPos = source.indexOf("n ") + 1;
-    const aPos = source.indexOf("a)") + 1;
-    const retPos = source.indexOf(")") + 1;
-    const typeInfo: CollectedTypeInfo = [
-      entry("test.ts", nPos, [["number"]], { varDecl: true }),
-      entry("test.ts", aPos, [["string"]]),
-      entry("test.ts", retPos, [["string"]], { returnType: true }),
-    ];
-    const cst = applyTypesToFileCst(source, typeInfo, KEEP_INFERABLE);
-    expect(cst).toBe(applyTypesToFile(source, typeInfo, KEEP_INFERABLE));
-    expect(cst).toContain("let n: number = 0");
-    expect(cst).toContain("function foo(a: string): string");
+    const out = applied(
+      source,
+      [
+        entry("test.ts", source.indexOf("n ") + 1, [["number"]], { varDecl: true }),
+        entry("test.ts", source.indexOf("a)") + 1, [["string"]]),
+        entry("test.ts", source.indexOf(")") + 1, [["string"]], { returnType: true }),
+      ],
+      KEEP_INFERABLE,
+    );
+    expect(out).toAnnotate("n", "number");
+    expect(out).toAnnotate("a", "string");
+    expect(out).toAnnotate({ returnOf: "foo" }, "string");
   });
 });
 
 describe("applyTypesToFileCst — paren-less arrow params + thisType (final routing items)", () => {
-  // The remaining offset-based-only cases: paren-less single-param
-  // arrows (`x => body`) need both an opening `(` and a `: T)` insert,
-  // and `this` parameters need `this: T` (or `this: T, ` if other
-  // params follow). Both are now indexed in the AST pass.
+  // Paren-less single-param arrows (`x => body`) need both an opening `(` and
+  // a `: T)` insert, and `this` parameters need `this: T` (or `this: T, ` if
+  // other params follow). The parens and the separator are text, and the
+  // claim about them is that the result parses with the annotation in place.
 
-  it("paren-less arrow param: `x => x + 1` wraps with parens via CST", () => {
+  it("paren-less arrow param: `x => x + 1` wraps with parens", () => {
     const source = "const inc = x => x + 1;";
-    // pos in typeInfo for paren-less arrow param: name.end = position after `x`
     const pos = source.indexOf("x ") + 1;
-    const typeInfo: CollectedTypeInfo = [
+    const out = applied(source, [
       entry("test.ts", pos, [["number"]], { arrow: true, parens: [pos - 1, pos] }),
-    ];
-    const cst = applyTypesToFileCst(source, typeInfo, {});
-    expect(cst).toBe(applyTypesToFile(source, typeInfo, {}));
-    expect(cst).toContain("(x: number) =>");
+    ]);
+    expect(out).toAnnotate("x", "number");
+    expect(out.text).toContain("(x: number) =>");
   });
 
-  it("paren-less arrow + return type: CST applies BOTH (offset-based skips return due to its position-validity guard)", () => {
-    // CST is strictly better here: both inserts target the SAME offset
-    // (paren-less arrow has retPos === parameters.end === paramPos),
-    // and the CST priority ordering (-1 for return) lets the offset-
-    // collision resolve cleanly to `(x: T1): T2 => body`. The offset-
-    // based path's positionLooksLikeInsertionSite requires `before
-    // === ")"` for returnType entries; paren-less arrows have `x ` at
-    // that position, so the offset path skips the return annotation
-    // and only emits `(x: number) => x + 1;`. We assert the CST
-    // behaviour explicitly here.
+  // Both inserts target the same offset (a paren-less arrow has
+  // retPos === parameters.end === paramPos), and the CST priority ordering
+  // (-1 for return) resolves the collision to `(x: T1): T2 => body`. The
+  // offset applier's position guard requires `)` before a return type, so it
+  // skips the return here; this is a case where the CST applier is more
+  // capable on purpose and parity is not asserted.
+  it("paren-less arrow + return type: both land inside the parens", () => {
     const source = "const inc = x => x + 1;";
-    const paramPos = source.indexOf("x ") + 1;
-    const typeInfo: CollectedTypeInfo = [
-      entry("test.ts", paramPos, [["number"]], { arrow: true, parens: [paramPos - 1, paramPos] }),
-      entry("test.ts", paramPos, [["number"]], { returnType: true }),
-    ];
-    const cst = applyTypesToFileCst(source, typeInfo, {});
-    expect(cst).toContain("(x: number): number =>");
-    // Note: NOT asserting parity with applyTypesToFile here — this is
-    // a known case where CST is strictly more capable.
+    const pos = source.indexOf("x ") + 1;
+    const out = applied(source, [
+      entry("test.ts", pos, [["number"]], { arrow: true, parens: [pos - 1, pos] }),
+      entry("test.ts", pos, [["number"]], { returnType: true }),
+    ]);
+    expect(out).toAnnotate("x", "number");
+    expect(out).toAnnotate({ returnOf: "inc" }, "number");
+    expect(out.text).toContain("(x: number): number =>");
   });
 
-  it("regular paren'd arrow param NOT wrapped: parensOpenPos undefined for parens-on-source case", () => {
+  it("regular paren'd arrow param is not wrapped again", () => {
     const source = "const inc = (x) => x + 1;";
-    const pos = source.indexOf("x)") + 1;
-    const typeInfo: CollectedTypeInfo = [entry("test.ts", pos, [["number"]])];
-    const cst = applyTypesToFileCst(source, typeInfo, {});
-    expect(cst).toBe(applyTypesToFile(source, typeInfo, {}));
-    expect(cst).toContain("(x: number) =>");
+    const out = applied(source, [entry("test.ts", source.indexOf("x)") + 1, [["number"]])]);
+    expect(out).toAnnotate("x", "number");
+    expect(out.text).toContain("= (x: number) =>");
   });
 
   it("thisType: `function greet() { return this.text; }` gets `this: Date`", () => {
-    const source = "function greet() { return this.text; }";
     // parameters.pos is right after `(` — offset 15
-    const typeInfo: CollectedTypeInfo = [entry("test.ts", 15, [["Date"]], { thisType: true })];
-    const cst = applyTypesToFileCst(source, typeInfo, {});
-    expect(cst).toBe("function greet(this: Date) { return this.text; }");
-    expect(cst).toBe(applyTypesToFile(source, typeInfo, {}));
-  });
-
-  it("thisType with other params: AST reads `, ` need from parameters.length (no thisNeedsComma flag required)", () => {
-    // The transformer normally sets `thisNeedsComma: true` when the
-    // function already has params; the offset-based path uses that
-    // flag. The CST path reads `node.parameters.length > 0` directly
-    // from the AST and adds the separator without needing the flag.
-    // To test parity, we include `thisNeedsComma` in the typeInfo (as
-    // the real transformer would) — both paths then produce the same
-    // output.
-    const source = "function greet(name) { return this.text + name; }";
-    // parameters.pos = 15 (after `(`); name's name.end = 19
-    const typeInfo: CollectedTypeInfo = [
-      entry("test.ts", 15, [["Date"]], { thisType: true, thisNeedsComma: true }),
-      entry("test.ts", 19, [["string"]]),
-    ];
-    const cst = applyTypesToFileCst(source, typeInfo, {});
-    expect(cst).toBe("function greet(this: Date, name: string) { return this.text + name; }");
-    expect(cst).toBe(applyTypesToFile(source, typeInfo, {}));
-  });
-
-  it("thisType with other params: CST handles missing `thisNeedsComma` flag too (AST-derived)", () => {
-    // Even if the typeInfo entry doesn't carry `thisNeedsComma`
-    // (legacy dump file, third-party producer), the CST path's
-    // AST-derived hasOtherParams check still emits the separator
-    // correctly. The offset-based path would produce `this: Datename`
-    // (broken) in this case — CST is more robust.
-    const source = "function greet(name) { return this.text + name; }";
-    const typeInfo: CollectedTypeInfo = [
+    const out = applied("function greet() { return this.text; }", [
       entry("test.ts", 15, [["Date"]], { thisType: true }),
+    ]);
+    expect(out).toAnnotate("this", "Date");
+  });
+
+  // The transformer sets `thisNeedsComma` when the function already has
+  // params and the offset applier relies on it; the CST path reads
+  // `node.parameters.length > 0` from the AST, so the separator is right with
+  // or without the flag. That it parses is the claim.
+  it.each([
+    ["with the separator flag", { thisType: true, thisNeedsComma: true }],
+    ["without the separator flag", { thisType: true }],
+  ])("thisType beside a param, %s", (_, opts) => {
+    const out = applied("function greet(name) { return this.text + name; }", [
+      entry("test.ts", 15, [["Date"]], opts),
       entry("test.ts", 19, [["string"]]),
-    ];
-    const cst = applyTypesToFileCst(source, typeInfo, {});
-    expect(cst).toBe("function greet(this: Date, name: string) { return this.text + name; }");
+    ]);
+    expect(parseErrors(out)).toEqual([]);
+    expect(out).toAnnotate("this", "Date");
+    expect(out).toAnnotate("name", "string");
   });
 
   it("thisType: pos with no matching function falls through to passThrough", () => {
-    // typeInfo entry at a pos that doesn't correspond to any
-    // function's parameters.pos. AST-side index has nothing; entry
-    // routes to passThrough → offset-based applier handles (or
-    // skips via positionLooksLikeInsertionSite).
+    // Nothing in the AST index at this pos; the offset applier gets it and
+    // its own position guard skips it too.
     const source = "function greet() { return this.text; }";
-    const typeInfo: CollectedTypeInfo = [entry("test.ts", 999, [["Date"]], { thisType: true })];
-    const cst = applyTypesToFileCst(source, typeInfo, {});
-    expect(cst).toBe(applyTypesToFile(source, typeInfo, {}));
-    // Both produce the unchanged source (offset doesn't validate).
-    expect(cst).toBe(source);
+    expect(applied(source, [entry("test.ts", 999, [["Date"]], { thisType: true })]).text).toBe(
+      source,
+    );
   });
 });
 

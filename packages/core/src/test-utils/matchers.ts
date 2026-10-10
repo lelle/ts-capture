@@ -48,12 +48,8 @@ function findSite(out: Applied, site: Site): ts.NamedDeclaration | ts.SignatureD
   const visit = (node: ts.Node): void => {
     if (found) return;
     if (typeof site === "string") {
-      if (
-        isNamedSite(node) &&
-        node.name &&
-        ts.isIdentifier(node.name) &&
-        node.name.text === wanted
-      ) {
+      // A destructured site is named by its pattern as written: `{ a, b }`.
+      if (isNamedSite(node) && node.name && collapse(node.name.getText(out.sf)) === wanted) {
         found = node;
         return;
       }
@@ -99,6 +95,7 @@ function typeAtSite(out: Applied, site: Site): ts.Type {
 }
 
 const canonical = (text: string): string => canonicalTypeString(text) ?? text.trim();
+const collapse = (text: string): string => text.replace(/\s+/g, " ").trim();
 
 const PRINT_FLAGS = ts.TypeFormatFlags.NoTruncation | ts.TypeFormatFlags.InTypeAlias;
 
