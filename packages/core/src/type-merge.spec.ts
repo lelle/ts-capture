@@ -39,6 +39,21 @@ describe("mergeTypes", () => {
     expect(mergeTypes(["number[]", "string[]"], INFER_DEFAULTS)).toEqual(["number[]", "string[]"]);
   });
 
+  it("merges same-arity tuples element-wise", () => {
+    expect(mergeTypes(["[string, number]", "[string, null]"], INFER_DEFAULTS)).toEqual([
+      "[string, null | number]",
+    ]);
+  });
+
+  it("widens tuples of different arity, or a tuple beside an array, to one array", () => {
+    expect(mergeTypes(["[string, number]", "[string, number, boolean]"], INFER_DEFAULTS)).toEqual([
+      "Array<boolean | number | string>",
+    ]);
+    expect(mergeTypes(["[string, number]", "string[]"], INFER_DEFAULTS)).toEqual([
+      "Array<number | string>",
+    ]);
+  });
+
   it("merges cross-sample arrays into one element union when the flag is on", () => {
     const infer: InferOptions = { ...INFER_DEFAULTS, crossSampleArrayMerge: true };
     expect(mergeTypes(["number[]", "string[]"], infer)).toEqual(["Array<number | string>"]);

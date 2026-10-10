@@ -1242,6 +1242,16 @@ describe("applyTypesToFileCst — TypeChecker verify integration", () => {
     expect(applyTypesToFile(proj.targetSource, typeInfo, opts, program)).toBe(proj.targetSource);
   });
 
+  it("writes an observed tuple as a tuple", () => {
+    const src = "export function toPair(key, value) {\n  return [key, value];\n}\n";
+    const out = applyTypesToFileCst(
+      src,
+      [entry("t.ts", src.indexOf("value)") + 6, [["[string, number]"]], { returnType: true })],
+      { filename: "t.ts" },
+    );
+    expect(out).toContain("toPair(key, value): [string, number] {");
+  });
+
   // Redundancy used to be judged against the program as it stood before apply:
   // a local initialised from a call to an untyped function inferred `any`, the
   // gate bailed, and the local got an annotation TypeScript would infer as soon

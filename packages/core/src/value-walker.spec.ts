@@ -35,6 +35,36 @@ describe("createValueWalker → WalkResult", () => {
     });
   });
 
+  describe("tuples", () => {
+    const walk = createValueWalker();
+    const literal = createValueWalker({
+      literalOptions: { literalString: true, literalNumber: true, literalBoolean: true },
+    });
+
+    it("describes a short array of mixed element kinds as a tuple", () => {
+      expect(walk(["a", 1])).toMatchObject({ type: "[string, number]" });
+      expect(walk(["a", 1, true])).toMatchObject({ type: "[string, number, boolean]" });
+      expect(
+        walk([
+          ["k", 1],
+          ["j", 2],
+        ]),
+      ).toMatchObject({ type: "[string, number][]" });
+    });
+
+    it("keeps same-kind and long arrays as arrays", () => {
+      expect(walk([1, 2])).toMatchObject({ type: "number[]" });
+      expect(walk(["a", 1, true, null])).toMatchObject({
+        type: "Array<boolean | null | number | string>",
+      });
+    });
+
+    it("judges mixed kinds after widening literals", () => {
+      expect(literal(["a", "b"])).toMatchObject({ type: 'Array<"a" | "b">' });
+      expect(literal(["a", 1])).toMatchObject({ type: '["a", 1]' });
+    });
+  });
+
   it("describes a shared, non-cyclic object every time it appears", () => {
     const walk = createValueWalker();
     const shared = { x: 1 };
