@@ -10,12 +10,10 @@ ts-capture observes how your code is actually called at runtime — in tests, in
 dev, in the browser — and writes inferred TypeScript types back into your
 source. Turns implicit `any` into precise types, automatically.
 
-> **🚧 Pre-release — `@next` only.** The packages are published to npm
-> under the `next` dist-tag exclusively; there is no stable release, and
-> a plain `npm install @ts-capture/<pkg>` will not resolve. We're
-> deliberately holding back a stable `latest` until code, API, test
-> coverage, and documentation meet a quality bar that respects the first
-> impression. No public timeline.
+> **🚧 Pre-release.** The packages are on npm as 0.x. There is no 1.0, and
+> none is scheduled: the version stays below 1.0 until code, API, test
+> coverage and documentation meet a quality bar that respects the first
+> impression.
 
 > **0.x — API may change between minor versions.** Hobby/research
 > project; best-effort maintenance.
@@ -71,10 +69,8 @@ Full docs live in **[`docs/`](docs/README.md)**, organized by intent
 
 ## Quick start (with Vitest)
 
-> Pre-release: note the `@next` tags — see the notice above.
-
 ```sh
-npm install --save-dev @ts-capture/vite@next @ts-capture/core@next
+npm install --save-dev @ts-capture/vite @ts-capture/core
 ```
 
 ```ts
@@ -214,9 +210,9 @@ every `infer.*` / `apply.*` flag, its default, and what it does.
 
 ## Status
 
-**Release status: Pre-release (`@next` dist-tag only).** Capability-level
-state below reflects what works _internally_ — a stable `latest` release is
-gated on the quality work described in the Pre-release notice above.
+**Release status: 0.x pre-release.** Capability-level state below reflects
+what works _internally_ — 1.0 is gated on the quality work described in the
+Pre-release notice above.
 
 | Capability                | Where                      | Internal status                                                                                                 |
 | ------------------------- | -------------------------- | --------------------------------------------------------------------------------------------------------------- |

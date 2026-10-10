@@ -93,6 +93,15 @@ function greet(kind: "hi" | "bye") {
 With `literal.string` off (the default), the same observations widen to
 `kind: string`.
 
+> **Literals are a two-sided switch.** The runtime collector widens at
+> observation time and never reads `ts-capture.config.json`, so `literal.*` in
+> the config file alone changes nothing: `types.json` still holds `string`.
+> Turn the same flags on for the run that observes, through the
+> `TS_CAPTURE_LITERAL_*` [environment variables](#environment-variables) or the
+> `@ts-capture/vite` plugin's `literalOptions`, and in `infer.literal.*` for
+> `apply`. One side without the other widens: the collector records `string`,
+> or `apply` collapses the recorded `"hi" | "bye"` back to `string`.
+
 > **These flags put observed data in your source.** A literal annotation is the
 > value your code actually saw, copied verbatim into a `.ts` file and into
 > `types.json` — on a suite running against real fixtures that can be a token

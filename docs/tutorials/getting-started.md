@@ -11,7 +11,7 @@ watch ts-capture write a real type back into your source.
 ## 1. Install
 
 ```sh
-npm install --save-dev @ts-capture/vite@next @ts-capture/core@next
+npm install --save-dev @ts-capture/vite @ts-capture/core
 ```
 
 ## 2. Register the plugin

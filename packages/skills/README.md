@@ -18,7 +18,7 @@ Each directory is a self-contained skill with YAML metadata and instructions in
 Install the package in the project where the agent runs:
 
 ```sh
-npm install --save-dev @ts-capture/skills@next
+npm install --save-dev @ts-capture/skills
 ```
 
 Then link or copy the required skill directories from

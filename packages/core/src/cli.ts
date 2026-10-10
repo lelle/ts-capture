@@ -12,7 +12,7 @@ const USAGE = `ts-capture — automatically add TypeScript type annotations
 Usage:
   ts-capture instrument <file>  [--in-place]   Instrument a file with type tracking
   ts-capture apply <types.json> [--dry-run] [--comments|--both] [--include-tests] [--force]
-                                [--project <tsconfig.json>]
+                                [--report] [--telemetry] [--project <tsconfig.json>]
                                           Apply collected types to source files
                                           --dry-run        report what would change without writing
                                           --include-tests  apply to *.spec.* / *.test.* (default: skip)
@@ -24,6 +24,7 @@ Usage:
                                           --comments       write what would be annotated as notes in the
                                                            source, changing no code — a preview in the editor
                                           --both           write the annotations and the notes explaining them
+                                          --telemetry      print entry counts to stderr: emitted, and skipped by cause
   ts-capture merge <dir-or-files...> [--out <path>]
                                           Merge per-PID ts-capture-types-*.json dumps into a
                                           single types.json. Vitest's forks pool emits

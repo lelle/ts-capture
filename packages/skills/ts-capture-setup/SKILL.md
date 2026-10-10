@@ -215,13 +215,12 @@ silent injection is worse than a missed convenience.
 
 ### Step 4 — Install the deps (with confirmation)
 
-The packages are published under the `next` dist-tag only (see the
+The packages are 0.x pre-releases (see the
 [pre-release notice](https://github.com/lelle/ts-capture#ts-capture)
-on the project README) — a plain `npm install @ts-capture/<pkg>` will
-not resolve, so the `@next` suffix is required:
+on the project README); the API may change between minor versions:
 
 ```sh
-npm install --save-dev @ts-capture/core@next @ts-capture/<adapter>@next
+npm install --save-dev @ts-capture/core @ts-capture/<adapter>
 # Or, from a local clone of the monorepo:
 # npm install --save-dev /path/to/ts-capture/packages/core /path/to/ts-capture/packages/<adapter>
 ```
@@ -337,8 +336,5 @@ specific clarifying question — don't guess and proceed.
 - Does not migrate from a different type-inference tool (typewiz,
   TypeStat) — those have different config schemas and migration
   belongs in a separate skill if it ever matters.
-- Pre-release: packages ship under the `next` dist-tag only, so install
-  commands need the `@next` suffix. Once a stable release lands on
-  `latest`, they switch to the plain
-  `npm install --save-dev @ts-capture/...` form. Until then, set
-  expectations honestly.
+- Pre-release: the packages are 0.x and the API may change between
+  minor versions. Set expectations honestly.

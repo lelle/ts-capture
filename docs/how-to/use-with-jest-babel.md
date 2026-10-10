@@ -15,7 +15,7 @@ loader-integration to fight.
 ## Install
 
 ```sh
-npm install --save-dev @ts-capture/babel-plugin@next @ts-capture/core@next
+npm install --save-dev @ts-capture/babel-plugin @ts-capture/core
 ```
 
 ## Add the plugin to your Babel chain

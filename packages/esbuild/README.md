@@ -17,7 +17,7 @@ step. This plugin closes that gap.
 ## Install
 
 ```sh
-npm install --save-dev @ts-capture/esbuild@next @ts-capture/core@next
+npm install --save-dev @ts-capture/esbuild @ts-capture/core
 ```
 
 ## Use with tsup

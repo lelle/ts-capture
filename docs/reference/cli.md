@@ -24,16 +24,34 @@ Merge per-process `ts-capture-types-*.json` dumps into one `types.json`. Vitest'
 
 - `--out <path>` — output file (default: stdout).
 
-## `ts-capture apply <types.json> [--dry-run] [--include-tests] [--force] [--report]` ✏️
+## `ts-capture apply <types.json> [--dry-run] [--comments|--both] [--include-tests] [--force] [--report] [--telemetry] [--project <tsconfig.json>]` ✏️
 
 Apply collected types to source files. Editing those files between collection
 and apply invalidates the recorded offsets, and the output is not formatted —
 see [Review & apply safely](../how-to/review-and-apply-safely.md).
 
 - `--dry-run` — report what would change without writing.
+- `--comments` — write what would be annotated as notes in the source and
+  change no code: a preview in the editor. Shorthand for
+  `--infer.outputMode=comments`; see [Notes](configuration.md#notes).
+- `--both` — write the annotations and the notes explaining them. Shorthand for
+  `--infer.outputMode=both`. The explicit `--infer.outputMode=` wins over either
+  shorthand.
 - `--include-tests` — apply to `*.spec.*` / `*.test.*` (default: skip them).
 - `--force` — bypass the `<types.json>.applied` idempotency manifest.
 - `--report` — list every observed position that was not written, with the reason.
+- `--telemetry` — print entry counts to stderr: how many entries of `types.json`
+  were emitted, and how many were skipped by cause. Counts raw entries, so a
+  position observed in several processes is counted once per process; the
+  summary below counts positions.
+- `--project <tsconfig.json>` — the project to typecheck against. By default
+  the nearest `tsconfig.json` above the working directory is used; name one
+  when that file lists no sources (a solution-style config with
+  `references`), or every check that needs a project is off.
+
+Flags `apply` does not know are reported on stderr and the run continues
+without them, naming the nearest known flag: `--comment` is not `--comments`,
+and the difference is a preview against a rewrite.
 
 Every run says how much it wrote, and whether any observation went unused:
 
