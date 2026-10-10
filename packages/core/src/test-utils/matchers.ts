@@ -100,6 +100,42 @@ function typeAtSite(out: Applied, site: Site): ts.Type {
 
 const canonical = (text: string): string => canonicalTypeString(text) ?? text.trim();
 
+const PRINT_FLAGS = ts.TypeFormatFlags.NoTruncation | ts.TypeFormatFlags.InTypeAlias;
+
+/**
+ * The type spelled out by its members, one level deep. The checker prints an
+ * interface or a class instance by name, and a spec asking about shape wants
+ * the shape, whatever declared it. Unions are rendered arm by arm; anything
+ * with signatures or index signatures is left to the printer.
+ */
+function structureOf(checker: ts.TypeChecker, type: ts.Type): string {
+  if (type.isUnion()) return type.types.map((arm) => structureOf(checker, arm)).join(" | ");
+  const print = (t: ts.Type): string => checker.typeToString(t, undefined, PRINT_FLAGS);
+  if (!(type.flags & ts.TypeFlags.Object)) return print(type);
+  if (checker.getSignaturesOfType(type, ts.SignatureKind.Call).length > 0) return print(type);
+  if (checker.getIndexInfosOfType(type).length > 0) return print(type);
+  if (checker.isArrayType(type) || checker.isTupleType(type)) return print(type);
+  const members = type.getProperties().map((property) => {
+    const declaration = property.valueDeclaration ?? property.declarations?.[0];
+    const propertyType = declaration
+      ? checker.getTypeOfSymbolAtLocation(property, declaration)
+      : checker.getTypeOfSymbol(property);
+    const optional = property.flags & ts.SymbolFlags.Optional ? "?" : "";
+    const readonly =
+      declaration &&
+      ts.canHaveModifiers(declaration) &&
+      ts.getModifiers(declaration)?.some((m) => m.kind === ts.SyntaxKind.ReadonlyKeyword)
+        ? "readonly "
+        : "";
+    // An optional property's type carries `undefined` for the absence; `?` says it.
+    const text = print(
+      optional && propertyType.isUnion() ? checker.getNonNullableType(propertyType) : propertyType,
+    );
+    return `${readonly}${property.name}${optional}: ${text}`;
+  });
+  return members.length > 0 ? `{ ${members.join("; ")} }` : "{}";
+}
+
 const matchers = {
   toAnnotate(out: Applied, site: Site, expected: string | { ref: string }): Result {
     const node = annotationNode(out, site);
@@ -141,17 +177,15 @@ const matchers = {
 
   toTypeAs(out: Applied, site: Site, expected: string): Result {
     const type = typeAtSite(out, site);
-    const has = out.checker.typeToString(
-      type,
-      undefined,
-      ts.TypeFormatFlags.NoTruncation | ts.TypeFormatFlags.InTypeAlias,
-    );
-    const pass = canonical(has) === canonical(expected);
+    const printed = out.checker.typeToString(type, undefined, PRINT_FLAGS);
+    const structural = structureOf(out.checker, type);
+    const pass = [printed, structural].some((has) => canonical(has) === canonical(expected));
     return {
       pass,
       message: () =>
         `expected the type of ${siteName(site)} ${pass ? "not " : ""}to be ${canonical(expected)}, ` +
-        `but TypeScript has ${canonical(has)}`,
+        `but TypeScript has ${canonical(printed)}` +
+        (structural === printed ? "" : `, which is ${canonical(structural)}`),
     };
   },
 

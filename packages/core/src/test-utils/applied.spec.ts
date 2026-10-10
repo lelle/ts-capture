@@ -96,6 +96,20 @@ describe("toTypeAs", () => {
     expect(out).toTypeAs("p", "{ b: string; a: number }");
   });
 
+  // The checker prints an interface by name, unlike a type alias.
+  it("sees through an interface to its members", () => {
+    const src = "interface P { a: number; b: string }\n" + READS_A;
+    const out = applied(src, paramP(src));
+    expect(out).toAnnotate("p", { ref: "P" });
+    expect(out).toTypeAs("p", "{ b: string; a: number }");
+  });
+
+  it("renders an optional member with its question mark", () => {
+    const src = "interface P { a: number; b?: string }\nexport function f(p: P) { return p.a; }\n";
+    const out = applied(src, []);
+    expect(out).toTypeAs("p", "{ a: number; b?: string }");
+  });
+
   it("reports the type TypeScript has when it differs", () => {
     const out = applied(READS_A, paramP(READS_A));
     expect(() => expect(out).toTypeAs("p", "number")).toThrow(/a: number; b: string/);

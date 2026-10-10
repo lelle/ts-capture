@@ -15,6 +15,7 @@ import {
 import { applyTypesToFile } from "./apply-types.js";
 import { INFER_DEFAULTS } from "./configuration.js";
 import { newApplyTelemetry } from "./contract.js";
+import { aliasesDeclared, applied, nodesOf } from "./test-utils/applied.js";
 
 type LooseTypeTuple =
   [string | undefined] | [string | undefined, SourceLocation | undefined] | DiscoveredType;
@@ -1295,7 +1296,7 @@ describe("applyTypesToFileCst — TypeChecker verify integration", () => {
       );
     }
     const idSource = "function id(a) {\n  return a;\n}\nexport const p = id(3);\n";
-    const idEntries = (s: string, t: string): CollectedTypeInfo => [
+    const idEntries = (s: string, t = "target.ts"): CollectedTypeInfo => [
       entry(t, s.indexOf("(a)") + 2, [["number"]]),
       entry(t, s.indexOf("(a)") + 3, [["number"]], { returnType: true }),
       entry(t, s.indexOf("const p") + 7, [["number"]], { varDecl: true }),
@@ -1305,21 +1306,34 @@ describe("applyTypesToFileCst — TypeChecker verify integration", () => {
       expect(applyWithVerify(idSource, idEntries)).toBe(
         "function id(a: number): number {\n  return a;\n}\nexport const p = id(3);\n",
       );
+      const out = applied(idSource, idEntries(idSource), { verify: true });
+      expect(out).toAnnotate("a", "number");
+      expect(out).toAnnotate({ returnOf: "id" }, "number");
+      expect(out).toLeaveUntyped("p");
+      expect(out).toTypeAs("p", "number");
     });
 
     it("drops callback parameters and return once the outer parameter types them", () => {
       const src =
         "export function sum(values) {\n  return values.reduce((total, value) => total + value, 0);\n}\n";
-      const out = applyWithVerify(src, (s, t) => [
+      const entries = (s: string, t = "target.ts"): CollectedTypeInfo => [
         entry(t, s.indexOf("(values)") + 7, [["number[]"]]),
         entry(t, s.indexOf("(values)") + 8, [["number"]], { returnType: true }),
         entry(t, s.indexOf("(total") + 6, [["number"]]),
         entry(t, s.indexOf(" value)") + 6, [["number"]]),
         entry(t, s.indexOf(" value)") + 7, [["number"]], { returnType: true }),
-      ]);
-      expect(out).toBe(
+      ];
+      expect(applyWithVerify(src, entries)).toBe(
         "export function sum(values: number[]): number {\n  return values.reduce((total, value) => total + value, 0);\n}\n",
       );
+      const out = applied(src, entries(src), { verify: true });
+      expect(out).toAnnotate("values", "number[]");
+      expect(out).toAnnotate({ returnOf: "sum" }, "number");
+      for (const callbackParam of ["total", "value"]) {
+        expect(out).toLeaveUntyped(callbackParam);
+        expect(out).toTypeAs(callbackParam, "number");
+      }
+      expect(nodesOf(out, ts.isArrowFunction)[0].type).toBeUndefined();
     });
 
     // The first pass moves everything after its insertions, the file's own
@@ -1330,16 +1344,21 @@ describe("applyTypesToFileCst — TypeChecker verify integration", () => {
         "export function id(a) {\n  return a;\n}\n" +
         'export const p = JSON.parse("{}");\n' +
         'export const bad: number = "x";\n';
-      const out = applyWithVerify(src, (s, t) => [
+      const entries = (s: string, t = "target.ts"): CollectedTypeInfo => [
         entry(t, s.indexOf("(a)") + 2, [["number"]]),
         entry(t, s.indexOf("const p") + 7, [["{ x: number, y: number }"]], { varDecl: true }),
-      ]);
-      expect(out).toContain("export const p: { x: number; y: number } = ");
+      ];
+      expect(applyWithVerify(src, entries)).toContain(
+        "export const p: { x: number; y: number } = ",
+      );
+      const out = applied(src, entries(src), { verify: true });
+      expect(out).toAnnotate("p", "{ x: number; y: number }");
+      expect(out).toHaveNoNewDiagnostics();
     });
 
     it("reports the dropped local at its position in the original source", () => {
       const telemetry = newApplyTelemetry();
-      applyWithVerify(idSource, idEntries, telemetry);
+      applied(idSource, idEntries(idSource), { verify: true, telemetry });
       expect(telemetry.redundant).toBe(1);
       expect(telemetry.skipped).toContainEqual(
         expect.objectContaining({ pos: idSource.indexOf("const p") + 7, reason: "redundant" }),
@@ -2117,6 +2136,11 @@ describe("applyTypesToFileCst — TypeChecker verify integration", () => {
           "export function a(product: Product) { return product.sku; }\n" +
           "export function b(item: Product) { return item.price; }\n",
       );
+      const out = applied(src, twoParams("target.ts", src), { verify: true, ...ALIAS });
+      expect(out).toDeclareAlias("Product", PRODUCT);
+      expect(out).toAnnotate("product", { ref: "Product" });
+      expect(out).toAnnotate("item", { ref: "Product" });
+      expect(out).toHaveNoNewDiagnostics();
     });
 
     it("declares nothing when no annotation naming it is written", () => {
@@ -2124,6 +2148,10 @@ describe("applyTypesToFileCst — TypeChecker verify integration", () => {
         "export function a(product) { return product.weight; }\n" +
         "export function b(item) { return item.weight; }\n";
       expect(applyWithVerify(src, (s, t) => twoParams(t, s))).toBe(src);
+      const out = applied(src, twoParams("target.ts", src), { verify: true, ...ALIAS });
+      expect(out).toLeaveUntyped("product");
+      expect(out).toLeaveUntyped("item");
+      expect(aliasesDeclared(out)).toEqual([]);
     });
 
     it("names a local after a type the same run declared for the file's signatures", () => {
@@ -2131,12 +2159,17 @@ describe("applyTypesToFileCst — TypeChecker verify integration", () => {
         "export function a(product) { return product.sku; }\n" +
         "export function b(item) { return item.price; }\n" +
         'export const parsed = JSON.parse("{}");\n';
-      const out = applyWithVerify(src, (s, t) => [
+      const entries = (s: string, t = "target.ts"): CollectedTypeInfo => [
         ...twoParams(t, s),
         entry(t, s.indexOf("parsed") + 6, [[PRODUCT]], { varDecl: true }),
-      ]);
-      expect(out).toContain("export const parsed: Product = ");
-      expect(out.match(/type Product/g)).toHaveLength(1);
+      ];
+      const text = applyWithVerify(src, entries);
+      expect(text).toContain("export const parsed: Product = ");
+      expect(text.match(/type Product/g)).toHaveLength(1);
+      const out = applied(src, entries(src), { verify: true, ...ALIAS });
+      expect(out).toAnnotate("parsed", { ref: "Product" });
+      expect(out).toTypeAs("parsed", PRODUCT);
+      expect(aliasesDeclared(out)).toEqual(["Product"]);
     });
   });
 });
@@ -2245,9 +2278,9 @@ describe("infer.narrowParamShapes", () => {
     "  cart.lines.push({ sku: product.sku, quantity, unitPrice: product.price });\n" +
     "  return cart;\n" +
     "}\n";
-  const entries = (file: string): CollectedTypeInfo => [
-    entry(file, source.indexOf("cart,") + 4, [["{ lines: { sku: string }[] }"]]),
-    entry(file, source.indexOf("product,") + 7, [[PRODUCT]]),
+  const entries = (file: string, src = source): CollectedTypeInfo => [
+    entry(file, src.indexOf("cart,") + 4, [["{ lines: { sku: string }[] }"]]),
+    entry(file, src.indexOf("product,") + 7, [[PRODUCT]]),
   ];
   const NARROW = { infer: { ...INFER_DEFAULTS, narrowParamShapes: true } };
 
@@ -2255,6 +2288,7 @@ describe("infer.narrowParamShapes", () => {
     expect(applyTypesToFileCst(source, entries("test.ts"), {})).toContain(
       "product: { name: string; price: number; sku: string; tags: string[]; weight: number }",
     );
+    expect(applied(source, entries("test.ts"))).toAnnotate("product", PRODUCT);
   });
 
   it("writes only the properties the body reads, and the whole shape where it escapes", () => {
@@ -2264,6 +2298,10 @@ describe("infer.narrowParamShapes", () => {
         "  return cart;\n" +
         "}\n",
     );
+    const out = applied(source, entries("test.ts"), NARROW);
+    expect(out).toAnnotate("product", "{ price: number; sku: string }");
+    expect(out).toAnnotate("cart", "{ lines: { sku: string }[] }");
+    expect(out).toLeaveUntyped("quantity");
   });
 
   // The contract beats the fixture: a named type the whole shape matches is
@@ -2272,24 +2310,22 @@ describe("infer.narrowParamShapes", () => {
     const withInterface =
       "interface Product { name: string; price: number; sku: string; tags: string[]; weight: number }\n" +
       source;
-    const shifted = entries("test.ts").map(([file, pos, types, opts]) => [
-      file,
-      pos + withInterface.length - source.length,
-      types,
-      opts,
-    ]) as CollectedTypeInfo;
-    expect(applyTypesToFileCst(withInterface, shifted, NARROW)).toContain("product: Product,");
+    expect(applyTypesToFileCst(withInterface, entries("test.ts", withInterface), NARROW)).toContain(
+      "product: Product,",
+    );
+    const out = applied(withInterface, entries("test.ts", withInterface), NARROW);
+    expect(out).toAnnotate("product", { ref: "Product" });
+    expect(out).toTypeAs("product", PRODUCT);
   });
 
   it("writes the narrowed shape as an in-scope type it matches exactly", () => {
     const withAlias = "type Priced = { price: number; sku: string };\n" + source;
-    const shifted = entries("test.ts").map(([file, pos, types, opts]) => [
-      file,
-      pos + withAlias.length - source.length,
-      types,
-      opts,
-    ]) as CollectedTypeInfo;
-    expect(applyTypesToFileCst(withAlias, shifted, NARROW)).toContain("product: Priced,");
+    expect(applyTypesToFileCst(withAlias, entries("test.ts", withAlias), NARROW)).toContain(
+      "product: Priced,",
+    );
+    const out = applied(withAlias, entries("test.ts", withAlias), NARROW);
+    expect(out).toAnnotate("product", { ref: "Priced" });
+    expect(out).toTypeAs("product", "{ price: number; sku: string }");
   });
 });
 
@@ -2309,10 +2345,14 @@ describe("infer.aliasRepeatedShapes", () => {
     "export function a(product) { return x(product); }\n" +
     "export function b(item) { return x(item); }\n";
   it("is off by default and writes the shape at each site", () => {
-    const out = applyTypesToFileCst(source, twoParams("test.ts", source), {});
-    expect(out).toContain("a(product: { price: number; sku: string })");
-    expect(out).toContain("b(item: { price: number; sku: string })");
-    expect(out).not.toContain("type Product");
+    const text = applyTypesToFileCst(source, twoParams("test.ts", source), {});
+    expect(text).toContain("a(product: { price: number; sku: string })");
+    expect(text).toContain("b(item: { price: number; sku: string })");
+    expect(text).not.toContain("type Product");
+    const out = applied(source, twoParams("test.ts", source));
+    expect(out).toAnnotate("product", PRODUCT);
+    expect(out).toAnnotate("item", PRODUCT);
+    expect(aliasesDeclared(out)).toEqual([]);
   });
 
   it("declares the shape once after the imports and names it at each site", () => {
@@ -2322,6 +2362,11 @@ describe("infer.aliasRepeatedShapes", () => {
         "export function a(product: Product) { return x(product); }\n" +
         "export function b(item: Product) { return x(item); }\n",
     );
+    const out = applied(source, twoParams("test.ts", source), ALIAS);
+    expect(out).toDeclareAlias("Product", PRODUCT);
+    expect(out).toAnnotate("product", { ref: "Product" });
+    expect(out).toAnnotate("item", { ref: "Product" });
+    expect(out.sf.statements.findIndex(ts.isTypeAliasDeclaration)).toBe(1);
   });
 
   it("declares the shape at the top of a file without imports", () => {
@@ -2331,6 +2376,9 @@ describe("infer.aliasRepeatedShapes", () => {
         "export function a(product: Product) { return x(product); }\n" +
         "export function b(item: Product) { return x(item); }\n",
     );
+    const out = applied(src, twoParams("test.ts", src), ALIAS);
+    expect(out).toDeclareAlias("Product", PRODUCT);
+    expect(out.sf.statements.findIndex(ts.isTypeAliasDeclaration)).toBe(0);
   });
 
   it("takes the next site's name when the file already uses the first", () => {
@@ -2338,13 +2386,20 @@ describe("infer.aliasRepeatedShapes", () => {
     expect(applyTypesToFileCst(src, twoParams("test.ts", src), ALIAS)).toContain(
       "type Item = { price: number; sku: string };",
     );
+    const out = applied(src, twoParams("test.ts", src), ALIAS);
+    expect(out).toDeclareAlias("Item", PRODUCT);
+    expect(out).toAnnotate("product", { ref: "Item" });
   });
 
   it("writes an in-scope type the shape matches rather than declaring its own", () => {
     const src = "interface Product { price: number; sku: string }\n" + source;
-    const out = applyTypesToFileCst(src, twoParams("test.ts", src), ALIAS);
-    expect(out).not.toContain("type ");
-    expect(out).toContain("a(product: Product)");
-    expect(out).toContain("b(item: Product)");
+    const text = applyTypesToFileCst(src, twoParams("test.ts", src), ALIAS);
+    expect(text).not.toContain("type ");
+    expect(text).toContain("a(product: Product)");
+    expect(text).toContain("b(item: Product)");
+    const out = applied(src, twoParams("test.ts", src), ALIAS);
+    expect(aliasesDeclared(out)).toEqual([]);
+    expect(out).toAnnotate("product", { ref: "Product" });
+    expect(out).toAnnotate("item", { ref: "Product" });
   });
 });

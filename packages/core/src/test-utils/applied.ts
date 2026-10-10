@@ -125,6 +125,22 @@ export function reapplied(out: Applied): string {
   );
 }
 
+/** The names of the type aliases declared at the top level of the output, in order. */
+export function aliasesDeclared(out: Applied): string[] {
+  return out.sf.statements.filter(ts.isTypeAliasDeclaration).map((s) => s.name.text);
+}
+
+/** Every node of the output that satisfies `guard`, in source order. */
+export function nodesOf<T extends ts.Node>(out: Applied, guard: (node: ts.Node) => node is T): T[] {
+  const found: T[] = [];
+  const visit = (node: ts.Node): void => {
+    if (guard(node)) found.push(node);
+    ts.forEachChild(node, visit);
+  };
+  visit(out.sf);
+  return found;
+}
+
 /** Syntax errors in the output, each as `TS<code>: <message>`. */
 export function parseErrors(out: Applied): string[] {
   return out.program.getSyntacticDiagnostics(out.sf).map(describeDiagnostic);
