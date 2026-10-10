@@ -281,7 +281,7 @@ describe("discriminated union detection (applier wiring)", () => {
     const result = applyTypesToFile(source, typeInfo, {
       infer: { ...INFER_DEFAULTS, crossSampleArrayMerge: true },
     });
-    expect(result).toBe("function foo(a: Array<number | string> | boolean) {}");
+    expect(result).toBe("function foo(a: (number | string)[] | boolean) {}");
   });
 });
 
@@ -1701,10 +1701,7 @@ describe("cartesian-product collapse inside Array<...> (applier wiring)", () => 
       infer: { ...INFER_DEFAULTS, requireTypeRefInScope: false },
     });
     // a and b should both end up as null|number, not as 4-way object union.
-    // Accept both `{...}[]` and `Array<{...}>` forms and `|` vs ` | ` spacing.
-    expect(result).toMatch(
-      /let xs: (?:\{ a: null ?\| ?number; b: null ?\| ?number \}\[\]|Array<\{ a: null ?\| ?number; b: null ?\| ?number \}>)/,
-    );
+    expect(result).toContain("let xs: { a: number | null; b: number | null }[]");
   });
 });
 
