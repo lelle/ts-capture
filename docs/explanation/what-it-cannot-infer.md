@@ -87,7 +87,7 @@ for (const packageName of packageNames) {
   // `lookupPackage` returns whatever packages the user's .proto declares.
   // `test` and `test2` are the package names in the project's own test
   // .proto files, now written into the source as if they were the type.
-  const grpcPkg: null | { test: { service: boolean }, test2?: { service: boolean } } =
+  const grpcPkg: { test: { service: boolean }; test2?: { service: boolean } } | null =
     this.lookupPackage(grpcContext, packageName);
 ```
 

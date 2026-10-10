@@ -90,6 +90,11 @@ function render(node: ts.TypeNode, faithful = false): string {
 
   if (ts.isTypeReferenceNode(n)) {
     const name = collapse(n.typeName.getText());
+    // Observation spells a mixed array `Array<A | B>`; in source it is written
+    // `(A | B)[]`, the form the applier already uses for `T[]`.
+    if (faithful && name === "Array" && n.typeArguments?.length === 1) {
+      return `${atom(n.typeArguments[0], faithful)}[]`;
+    }
     const args = n.typeArguments?.map((t) => render(t, faithful));
     return args && args.length > 0 ? `${name}<${args.join(", ")}>` : name;
   }
@@ -119,10 +124,22 @@ function render(node: ts.TypeNode, faithful = false): string {
   return collapse(n.getText());
 }
 
-/** Union/intersection arms: sorted and deduped, or as written when `faithful`. */
+/**
+ * Union/intersection arms: sorted and deduped, or as written when `faithful`,
+ * except that a union's `null` and `undefined` go last. The canonical sort
+ * puts them first, and `null | string` is not how anyone writes it.
+ */
 function renderList(nodes: ts.NodeArray<ts.TypeNode>, separator: string, faithful = false): string {
   const arms = nodes.map((n) => atom(n, faithful));
-  return faithful ? arms.join(separator) : [...new Set(arms)].sort().join(separator);
+  if (!faithful) return [...new Set(arms)].sort().join(separator);
+  return separator === " | " ? nullishLast(arms).join(separator) : arms.join(separator);
+}
+
+const NULLISH_RANK: Record<string, number> = { null: 1, undefined: 2 };
+
+function nullishLast(arms: readonly string[]): string[] {
+  const rank = (arm: string): number => NULLISH_RANK[arm] ?? 0;
+  return [...arms].sort((a, b) => rank(a) - rank(b));
 }
 
 function atom(node: ts.TypeNode, faithful = false): string {

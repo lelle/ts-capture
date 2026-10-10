@@ -79,6 +79,30 @@ describe("typeStringForSource", () => {
     expect(typeStringForSource("string|number")).toBe("string | number");
   });
 
+  it("moves null and undefined to the end of a union, in that order", () => {
+    expect(typeStringForSource("null | string")).toBe("string | null");
+    expect(typeStringForSource("undefined | null | boolean | string")).toBe(
+      "boolean | string | null | undefined",
+    );
+    expect(typeStringForSource("{ a: undefined | number }")).toBe("{ a: number | undefined }");
+  });
+
+  it("writes Array<T> as T[]", () => {
+    expect(typeStringForSource("Array<string>")).toBe("string[]");
+    expect(typeStringForSource("Array<boolean | number | string>")).toBe(
+      "(boolean | number | string)[]",
+    );
+    expect(typeStringForSource("Map<string, Array<null | number>>")).toBe(
+      "Map<string, (number | null)[]>",
+    );
+    expect(typeStringForSource("ReadonlyArray<string>")).toBe("ReadonlyArray<string>");
+  });
+
+  it("leaves the canonical spelling alone", () => {
+    expect(canonicalTypeString("string | null")).toBe("null | string");
+    expect(canonicalTypeString("string[]")).toBe("string[]");
+  });
+
   it("returns undefined for text that is not a type", () => {
     expect(typeStringForSource("... 8 more ...")).toBeUndefined();
   });
