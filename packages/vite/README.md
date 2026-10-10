@@ -93,6 +93,7 @@ Point it only at a collector you control.
 ```ts
 plugins: [
   tsCapture({
+    enabled: process.env.CI !== "true", // off: nothing instrumented, no dumps written
     exclude: /node_modules|\.spec\.ts$/, // skip files matching this regex
     apply: true, // vite serve only: auto-apply on each browser beacon
     outputFile: ".ts-capture-types.json", // vite serve only: dump beacon payload to JSON
@@ -107,6 +108,14 @@ fields fall back to the `TS_CAPTURE_LITERAL_*` env vars. The matching
 `infer.literal.*` must be on for `apply` too, or the observed literals widen
 back — see the
 [configuration reference](../../docs/reference/configuration.md#literal--preserve-literal-types-instead-of-widening).
+
+With the plugin in the config, every test run instruments and writes dumps.
+`enabled: false` switches it off in place, and so does `TS_CAPTURE_ENABLED=false`
+in the environment of the run, for the times the config should stay as it is:
+
+```sh
+TS_CAPTURE_ENABLED=false npm test
+```
 
 `apply` and `outputFile` are honored only in `vite serve` (dev-server /
 browser) mode. Under Vitest or `vite build`, see the

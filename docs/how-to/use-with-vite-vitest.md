@@ -44,12 +44,17 @@ one file per worker/fork — that's why a `merge` step is needed before `apply`.
 ```ts
 plugins: [
   tsCapture({
+    enabled: process.env.CI !== "true", // off: nothing instrumented, no dumps written
     exclude: /node_modules|\.spec\.ts$/, // skip files matching this regex
     apply: true, // vite serve only: auto-apply on each browser beacon
     outputFile: ".ts-capture-types.json", // vite serve only: dump beacon payload
   }),
 ];
 ```
+
+Once the plugin is in the config, every test run instruments and writes dumps.
+`enabled: false` switches it off in place; `TS_CAPTURE_ENABLED=false` in the
+environment does the same for one run without touching the config.
 
 `apply` and `outputFile` are honored **only** in `vite serve` (dev-server /
 browser) mode. Under Vitest or `vite build`, use the `TS_CAPTURE_TYPES_DIR` +

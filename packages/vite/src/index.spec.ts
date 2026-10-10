@@ -23,6 +23,49 @@ describe("tsCapturePlugin", () => {
     expect(plugin.configureServer).toBeDefined();
   });
 
+  describe("enabled", () => {
+    function withEnv(value: string | undefined, fn: () => void) {
+      const prev = process.env.TS_CAPTURE_ENABLED;
+      if (value === undefined) delete process.env.TS_CAPTURE_ENABLED;
+      else process.env.TS_CAPTURE_ENABLED = value;
+      try {
+        fn();
+      } finally {
+        if (prev === undefined) delete process.env.TS_CAPTURE_ENABLED;
+        else process.env.TS_CAPTURE_ENABLED = prev;
+      }
+    }
+
+    it("enabled: false installs no hooks, so nothing is instrumented or served", () => {
+      const plugin = tsCapturePlugin({ enabled: false }) as Plugin;
+      expect(plugin.name).toBe("ts-capture");
+      expect(plugin.transform).toBeUndefined();
+      expect(plugin.configureServer).toBeUndefined();
+      expect(plugin.configResolved).toBeUndefined();
+    });
+
+    it("TS_CAPTURE_ENABLED=false switches the plugin off from the shell", () => {
+      withEnv("false", () => {
+        const plugin = tsCapturePlugin() as Plugin;
+        expect(plugin.transform).toBeUndefined();
+      });
+    });
+
+    it("an explicit enabled: true wins over the env var", () => {
+      withEnv("false", () => {
+        const plugin = tsCapturePlugin({ enabled: true }) as Plugin;
+        expect(plugin.transform).toBeDefined();
+      });
+    });
+
+    it("any other env value leaves the plugin on", () => {
+      withEnv("0", () => {
+        const plugin = tsCapturePlugin() as Plugin;
+        expect(plugin.transform).toBeDefined();
+      });
+    });
+  });
+
   describe("configResolved (outputFile mode warning)", () => {
     // outputFile is wired into configureServer (the dev-server beacon
     // sink). Setting it under Vitest / vite build is a silent no-op

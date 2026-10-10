@@ -52,6 +52,13 @@ export type ResolvedTransport = ResolvedHttpTransport;
 
 export interface TsCapturePluginOptions {
   /**
+   * Switch the plugin off without removing it from the config: nothing is
+   * instrumented, no dump is written and no dev-server middleware is mounted.
+   * Default `true`, or `false` when `TS_CAPTURE_ENABLED=false` is set in the
+   * environment; the option, when given, wins over the variable.
+   */
+  enabled?: boolean;
+  /**
    * Regex to whitelist files for instrumentation. When set, only files
    * matching the pattern AND the built-in `.ts/.tsx/.mts/.cts` extension
    * filter are instrumented. Combine with `exclude` to subtract from the
@@ -199,6 +206,9 @@ function resolveLiteralOptions(opt?: LiteralOptions): Required<LiteralOptions> {
 }
 
 export function tsCapturePlugin(options: TsCapturePluginOptions = {}): Plugin {
+  const enabled = options.enabled ?? process.env.TS_CAPTURE_ENABLED !== "false";
+  if (!enabled) return { name: "ts-capture" };
+
   const literalOpts = resolveLiteralOptions(options.literalOptions);
   const resolvedTransports = resolveTransports(options, process.env.TS_CAPTURE_TRANSPORT_URL);
 
