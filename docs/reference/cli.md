@@ -104,10 +104,33 @@ Report the type-coverage percentage for a project.
 
 ## `ts-capture verify <types.json> --project <tsconfig.json> [--threshold=N]`
 
-Compare runtime observations against the project's declared types.
+Compare runtime observations with the type TypeScript has at each observed
+position. Only unannotated positions are instrumented, so the type compared
+against is what TypeScript infers there: a parameter's contextual type, a
+variable's initializer type, a function's inferred return type. `verify` does
+not check annotations you wrote, and it rewrites nothing.
 
 - `--project <tsconfig.json>` — the project to verify against (required).
-- `--threshold=N` — fail below an N% agreement threshold.
+- `--threshold=N` — exit 2 when fewer than N of the verifiable positions
+  match, as a ratio (`--threshold=0.9`). Without it the exit code is 0.
+
+Every mismatch is printed with its location, then one line of totals:
+
+```text title="Current"
+src/account.ts:12:17  balance
+  declared  string
+  observed  number
+
+120 observed positions: 10 match, 1 mismatch, 104 unverifiable, 5 without a declaration.
+  unverifiable: 98 declared any, 6 complex declared type
+```
+
+A position is _unverifiable_ when the comparison would be a guess: the
+inferred type is `any`, `unknown` or polymorphic `this`, or a generic the
+heuristic can only compare for equality. An observed `undefined` matches an
+inferred `void`. _Without a declaration_ counts positions whose file is not in
+the project, or that no longer line up with a declaration because the source
+changed after observation.
 
 ## `ts-capture instrument-bundle <bundle.js> [--out <path>]`
 

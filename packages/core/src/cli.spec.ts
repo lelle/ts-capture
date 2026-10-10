@@ -93,6 +93,48 @@ describe("cli", () => {
     });
   });
 
+  describe("verify", () => {
+    it("locates each mismatch as file:line:col and counts the unverifiable by reason", () => {
+      withTmpDir((rawDir) => {
+        const dir = fs.realpathSync(rawDir);
+        const source =
+          "export function add(a: string, b: any, c: Set<string>, d: number) {\n  return a;\n}\n";
+        const file = path.join(dir, "a.ts");
+        fs.writeFileSync(file, source);
+        fs.writeFileSync(
+          path.join(dir, "tsconfig.json"),
+          JSON.stringify({ compilerOptions: { strict: true }, include: ["a.ts"] }),
+        );
+        const posAfter = (name: string) => source.indexOf(name) + name.length;
+        const typeInfo = [
+          [file, posAfter("(a"), [["number", undefined]], {}],
+          [file, posAfter(" b"), [["number", undefined]], {}],
+          [file, posAfter(" c"), [["Map<string, number>", undefined]], {}],
+          [file, posAfter(" d"), [["number", undefined]], {}],
+        ];
+        const typesPath = path.join(dir, "types.json");
+        fs.writeFileSync(typesPath, JSON.stringify(typeInfo));
+
+        const { stdout, exitCode } = runInDir(
+          dir,
+          "verify",
+          "types.json",
+          "--project",
+          "tsconfig.json",
+        );
+
+        expect(exitCode).toBe(0);
+        expect(stdout).not.toContain("pos ");
+        expect(stdout).toContain("a.ts:1:21  a");
+        expect(stdout).toContain("declared  string");
+        expect(stdout).toContain("observed  number");
+        expect(stdout).toContain("1 match, 1 mismatch, 2 unverifiable");
+        expect(stdout).toContain("1 declared any");
+        expect(stdout).toContain("1 complex declared type");
+      });
+    });
+  });
+
   describe("instrument", () => {
     it("instruments a file and writes to stdout", () => {
       withTmpDir((dir) => {

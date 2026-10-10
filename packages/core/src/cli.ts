@@ -31,7 +31,8 @@ Usage:
                                           one dump per spec; merge before apply.
   ts-capture coverage <tsconfig.json>          Report type coverage percentage
   ts-capture verify <types.json> --project <tsconfig.json> [--threshold=N]
-                                          Compare runtime observations to declared types
+                                          Compare runtime observations with the types TypeScript
+                                          has at the observed positions
   ts-capture instrument-bundle <bundle.js> [--out <path>]
                                           Instrument a bundled JS artefact
   ts-capture apply-bundle <observations.json> --map <bundle.js.map> [--bundle <bundle.js>]
