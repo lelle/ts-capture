@@ -3,7 +3,8 @@ import ts from "typescript";
 // The instrumenter only adds: take every `__tscptr__` call out of its output
 // and the input's program is what remains. This is that removal.
 
-export type CallForm = "param" | "ret" | "track" | "regFn" | "registerFn";
+/** `bundle` is the call the bundle instrumenter writes: `globalThis.__tscptr__(name, value, pos, file)`. */
+export type CallForm = "param" | "ret" | "track" | "regFn" | "registerFn" | "bundle";
 
 const RUNTIME = "__tscptr__";
 const MEMBER_FORMS = new Set<string>(["ret", "track", "regFn", "registerFn"]);
@@ -13,14 +14,12 @@ export function callFormOf(node: ts.Node): CallForm | undefined {
   if (!ts.isCallExpression(node)) return undefined;
   const callee = node.expression;
   if (ts.isIdentifier(callee)) return callee.text === RUNTIME ? "param" : undefined;
-  if (
-    ts.isPropertyAccessExpression(callee) &&
-    ts.isIdentifier(callee.expression) &&
-    callee.expression.text === RUNTIME &&
-    MEMBER_FORMS.has(callee.name.text)
-  ) {
-    return callee.name.text as CallForm;
+  if (!ts.isPropertyAccessExpression(callee) || !ts.isIdentifier(callee.expression)) {
+    return undefined;
   }
+  const [object, member] = [callee.expression.text, callee.name.text];
+  if (object === "globalThis" && member === RUNTIME) return "bundle";
+  if (object === RUNTIME && MEMBER_FORMS.has(member)) return member as CallForm;
   return undefined;
 }
 
