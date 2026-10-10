@@ -1322,6 +1322,21 @@ describe("applyTypesToFileCst — TypeChecker verify integration", () => {
       );
     });
 
+    // The first pass moves everything after its insertions, the file's own
+    // errors included. The second pass judged against the errors' old places
+    // and took every moved one for a new one.
+    it("still writes a local when the first pass moved an error the file already had", () => {
+      const src =
+        "export function id(a) {\n  return a;\n}\n" +
+        'export const p = JSON.parse("{}");\n' +
+        'export const bad: number = "x";\n';
+      const out = applyWithVerify(src, (s, t) => [
+        entry(t, s.indexOf("(a)") + 2, [["number"]]),
+        entry(t, s.indexOf("const p") + 7, [["{ x: number, y: number }"]], { varDecl: true }),
+      ]);
+      expect(out).toContain("export const p: { x: number; y: number } = ");
+    });
+
     it("reports the dropped local at its position in the original source", () => {
       const telemetry = newApplyTelemetry();
       applyWithVerify(idSource, idEntries, telemetry);
