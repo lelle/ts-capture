@@ -13,18 +13,38 @@ export interface CollectOptions {
   tsx?: boolean;
 }
 
+export interface SandboxOptions extends CollectOptions {
+  /** Functions the code declares, called after it has run: name to arguments. */
+  calls?: Record<string, unknown[]>;
+}
+
 /**
- * Instrument → transpile → run in a sandbox → collect. The sandbox wires
- * `__tscptr__` to a collection context the way the loader does. There is no
- * DOM, so an arrow in a JSX attribute value is never invoked; only what the
- * component body itself calls is observed.
+ * Instrument → transpile → run in a sandbox → collect. There is no DOM, so an
+ * arrow in a JSX attribute value is never invoked; only what the component
+ * body itself calls is observed.
  */
 export function collect(input: string, options: CollectOptions = {}): CollectedTypeInfo {
   const filename = options.tsx ? "test.tsx" : "test.ts";
   const instrumented = instrumentSource(input, filename, { instrumentCallExpressions: true });
+  return runInSandbox(instrumented, filename, options);
+}
+
+/**
+ * Run instrumented code with `__tscptr__` wired to a collection context the
+ * way the loader does, and return what it recorded for `filename`.
+ */
+export function runInSandbox(
+  instrumented: string,
+  filename: string,
+  options: SandboxOptions = {},
+): CollectedTypeInfo {
   const compilerOptions: ts.CompilerOptions = { target: ts.ScriptTarget.ES2015 };
   if (options.tsx) compilerOptions.jsx = ts.JsxEmit.React;
-  const compiled = ts.transpile(instrumented, compilerOptions);
+  const calls = options.calls ?? {};
+  const invocations = Object.keys(calls)
+    .map((name) => `;${name}(...__calls__[${JSON.stringify(name)}]);`)
+    .join("");
+  const compiled = ts.transpile(instrumented, compilerOptions) + invocations;
 
   const ctx = createCollectionContext({ literalOptions: options.collector });
   const __tscptr__ = function (
@@ -61,7 +81,18 @@ export function collect(input: string, options: CollectOptions = {}): CollectedT
     }),
     Fragment: Symbol.for("test.fragment"),
   };
-  const sandbox = { __tscptr__, console, Array, Object, Promise, RegExp, Map, Set, React };
+  const sandbox = {
+    __tscptr__,
+    __calls__: calls,
+    console,
+    Array,
+    Object,
+    Promise,
+    RegExp,
+    Map,
+    Set,
+    React,
+  };
   vm.runInNewContext(compiled, sandbox);
   return ctx.getCollectedTypes().filter(([f]) => f === filename);
 }
