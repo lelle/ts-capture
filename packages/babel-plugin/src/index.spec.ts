@@ -53,8 +53,6 @@ function transform(
 describe("@ts-capture/babel-plugin", () => {
   it("instruments untyped function parameters", () => {
     const out = transform(`function greet(name) { return "Hello " + name; }`);
-    expect(out.text).toContain("__tscptr__");
-    expect(out.text).toContain("name");
     // Babel resolves the file name, so the call records the absolute path.
     expect(out).toTrack("name", { in: path.resolve("test.ts") });
     expect(out).toWrapReturnOf("greet");
@@ -62,7 +60,6 @@ describe("@ts-capture/babel-plugin", () => {
 
   it("does not touch non-TS files", () => {
     const out = transform("const x = 1;", "test.js");
-    expect(out.text).not.toContain("__tscptr__");
     expect(out).toLeaveUnchanged();
   });
 
@@ -70,7 +67,6 @@ describe("@ts-capture/babel-plugin", () => {
     const out = transform("function f(x) { return x; }", "src/excluded.ts", {
       exclude: /excluded/,
     });
-    expect(out.text).not.toContain("__tscptr__");
     expect(out).toLeaveUnchanged();
   });
 
@@ -78,8 +74,6 @@ describe("@ts-capture/babel-plugin", () => {
     // The plugin sets skipTscptrDeclarations:true so the runtime __tscptr__ is
     // expected to be supplied by @ts-capture/babel-plugin/runtime, not declared inline.
     const out = transform(`function add(a, b) { return a + b; }`);
-    expect(out.text).not.toContain("declare namespace");
-    expect(out.text).not.toContain("declare function __tscptr__");
     expect(out).toTrack("a");
     expect(out).not.toDeclareRuntime();
   });
@@ -92,7 +86,6 @@ describe("@ts-capture/babel-plugin", () => {
     );
     // Comment placement isn't strictly defined post-Babel printing, but the
     // output must remain syntactically valid; transform() rejects one that is not.
-    expect(out.text).toContain("__tscptr__");
     expect(out).toTrack("x");
   });
 
