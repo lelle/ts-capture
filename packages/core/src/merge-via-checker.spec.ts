@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { _prototypeMergeViaChecker } from "./merge-via-checker.js";
+import "./test-utils/matchers.js";
 
 // Aliased locally for test brevity. The exported name carries
 // the `_prototype` prefix to discourage accidental adoption.
@@ -22,9 +23,8 @@ const mergeTypesViaChecker = _prototypeMergeViaChecker;
  *   2. **Operations the checker does NOT handle** — flat unions
  *      where the IR `lub` would do shared-key merge,
  *      nullable-field merge, or subsumption dedup. The assertions
- *      here intentionally accept the flat-union form (`contains both`
- *      rather than `equals merged-shape`), documenting that
- *      `getUnionType` is conservative.
+ *      here state the flat union the checker returns, documenting
+ *      that `getUnionType` is conservative.
  *
  * Together they make the "keep type-ir.ts" decision concrete.
  */
@@ -32,12 +32,6 @@ const mergeTypesViaChecker = _prototypeMergeViaChecker;
 function merge(types: string[]): string | null {
   const result = mergeTypesViaChecker(types);
   return result == null ? null : result.join(" | ");
-}
-
-/** Normalise whitespace so we can compare against intent without
- * chasing TS's specific spacing choices. */
-function ws(s: string): string {
-  return s.replace(/\s+/g, " ").trim();
 }
 
 describe("mergeTypesViaChecker — basic structural lub", () => {
@@ -52,36 +46,25 @@ describe("mergeTypesViaChecker — basic structural lub", () => {
   });
 
   it("nullable-field LUB (the snapshot's dominant pattern)", () => {
-    // The checker merges `{ src: string }` ∪ `{ src: undefined }` into
-    // `{ src: string | undefined }` — same as the IR lub.
+    // The IR lub gives `{ src: string | undefined }`; the checker keeps both.
     const result = merge(["{ src: string }", "{ src: undefined }"]);
-    expect(result).not.toBeNull();
-    expect(ws(result!)).toContain("src: string");
-    expect(ws(result!)).toContain("undefined");
+    expect(result).toBeTheType("{ src: string } | { src: undefined }");
   });
 
   it("T[] and Array<T> normalise to a single shape (no cross-syntax dup)", () => {
     // The checker treats `string[]` and `Array<string>` as the same
     // ts.Type — no string-level normalisation needed.
     const result = merge(["string[]", "Array<string>"]);
-    expect(result).not.toBeNull();
-    // The merged form has just one `string[]` member, not a union.
-    expect(result).toMatch(/^(?:string\[\]|Array<string>)$/);
+    expect(result).toBeTheType("string[]");
   });
 
   it("array-union members are NOT subsumed (negative result — see file docstring)", () => {
     // string[] ⊆ Array<boolean | string> structurally, but the
     // checker's `|` builder does NOT subsume them — both members
     // survive in the output. This is the core motivation for keeping
-    // type-ir.ts's `lub` + `isSubtype` (see decision). The
-    // an earlier version of this test claimed subsumption HAPPENED
-    // (test name + comment said "is dropped") but only asserted
-    // membership, which holds either way.
+    // type-ir.ts's `lub` + `isSubtype` (see decision).
     const result = merge(["string[]", "Array<boolean | string>"]);
-    expect(result).not.toBeNull();
-    // Both members are present — checker did NOT drop the subsumed one.
-    expect(ws(result!)).toContain("string[]");
-    expect(ws(result!)).toContain("boolean");
+    expect(result).toBeTheType("string[] | (string | boolean)[]");
   });
 
   it("literal subsumed by base primitive collapses to base", () => {
@@ -95,28 +78,14 @@ describe("mergeTypesViaChecker — basic structural lub", () => {
     expect(result).toBe("Promise<string>");
   });
 
-  it("Promise<T> with same-name args lubs the args", () => {
-    // Checker may or may not do this depending on union normalisation
-    // for generic refs. Either `Promise<number | string>` or
-    // `Promise<string> | Promise<number>` is acceptable here.
+  it("Promise<T> with different args stays a union of the two (the IR lubs the args)", () => {
     const result = merge(["Promise<string>", "Promise<number>"]);
-    expect(result).not.toBeNull();
-    expect(ws(result!)).toContain("Promise");
-    expect(ws(result!)).toContain("string");
-    expect(ws(result!)).toContain("number");
+    expect(result).toBeTheType("Promise<string> | Promise<number>");
   });
 
-  it("shared-key object lub: keys present in only one side become optional", () => {
+  it("shared-key objects stay a union (the IR makes the one-sided key optional)", () => {
     const result = merge(["{ a: number, b: string }", "{ a: number }"]);
-    expect(result).not.toBeNull();
-    // Either `{ a: number, b?: string }` (checker collapsed) or
-    // `{ a: number; b: string; } | { a: number; }` (kept as flat
-    // union). The checker tends toward the second; both preserve
-    // the type information so either is acceptable for the
-    // acceptance criteria.
-    expect(ws(result!)).toContain("a: number");
-    expect(ws(result!)).toContain("b");
-    expect(ws(result!)).toContain("string");
+    expect(result).toBeTheType("{ a: number; b: string } | { a: number }");
   });
 });
 
@@ -184,26 +153,13 @@ describe("mergeTypesViaChecker — semantics parity with the IR", () => {
   // snapshots. Each input was one of the multi-observation entries
   // that motivated the IR.
 
-  it("matches IR on `{ src: string }` vs `{ src: undefined }`", () => {
+  it("keeps the information of the IR on `{ src: string }` vs `{ src: undefined }`", () => {
     const result = merge(["{ src: string }", "{ src: undefined }"]);
-    expect(result).not.toBeNull();
-    // The checker may format as `{ src: string | undefined }` or
-    // `{ src: string; } | { src: undefined; }` — either preserves
-    // information. Both contain the key type info.
-    const w = ws(result!);
-    expect(w).toContain("src");
-    expect(w).toContain("string");
-    expect(w).toContain("undefined");
+    expect(result).toBeTheType("{ src: string } | { src: undefined }");
   });
 
-  it("matches IR on `string[]` vs `Array<boolean | string>`", () => {
+  it("keeps the subsumed `string[]` the IR drops from `Array<boolean | string>`", () => {
     const result = merge(["string[]", "Array<boolean | string>"]);
-    expect(result).not.toBeNull();
-    const w = ws(result!);
-    // string[] should be subsumed and dropped — result is the broader.
-    expect(w).toContain("string");
-    expect(w).toContain("boolean");
-    // No bare `string[]` followed by `|` (i.e. it's not kept as
-    // a separate union member).
+    expect(result).toBeTheType("string[] | (boolean | string)[]");
   });
 });
