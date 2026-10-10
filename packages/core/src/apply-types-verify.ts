@@ -400,12 +400,14 @@ function findNewDiagnostic(
 export function explainRejection(
   ctx: VerificationContext,
   replacement: SpanReplacement,
+  supportingFor?: SupportingReplacements,
 ): { code: number; message: string; file: string; line: number } | undefined {
   const { service, host, baselineDiagnostics } = ctx.project;
-  host.setFileSnapshot(ctx.filename, applyReplacementsForProbe(ctx.currentSource, [replacement]));
+  const probe = withSupport([replacement], supportingFor);
+  host.setFileSnapshot(ctx.filename, applyReplacementsForProbe(ctx.currentSource, probe));
   try {
     const found =
-      findNewDiagnostic(service, ctx.filename, baselineDiagnostics, [replacement]) ??
+      findNewDiagnostic(service, ctx.filename, baselineDiagnostics, probe) ??
       ctx.importersOfTarget
         .map((file) => findNewDiagnostic(service, file, baselineDiagnostics))
         .find((d) => d !== undefined);
@@ -454,13 +456,16 @@ export function explainRejection(
 export function filterAcceptedReplacements(
   ctx: VerificationContext,
   candidates: ReadonlyArray<SpanReplacement>,
+  supportingFor?: SupportingReplacements,
 ): number[] {
   if (candidates.length === 0) return [];
-  if (!wouldIntroduceErrors(ctx, candidates)) {
+  const introducesErrors = (subset: ReadonlyArray<SpanReplacement>): boolean =>
+    wouldIntroduceErrors(ctx, withSupport(subset, supportingFor));
+  if (!introducesErrors(candidates)) {
     return candidates.map((_, i) => i);
   }
   const bisected = bisectFilter(
-    ctx,
+    introducesErrors,
     candidates,
     candidates.map((_, i) => i),
   );
@@ -469,36 +474,53 @@ export function filterAcceptedReplacements(
   // different offsets). If the bisected accepted set still fails
   // when combined, fall back to greedy.
   const bisectedReplacements = bisected.map((i) => candidates[i]);
-  if (bisected.length === 0 || !wouldIntroduceErrors(ctx, bisectedReplacements)) {
+  if (bisected.length === 0 || !introducesErrors(bisectedReplacements)) {
     return bisected;
   }
-  return greedyFilter(ctx, candidates);
+  return greedyFilter(introducesErrors, candidates);
+}
+
+/**
+ * The replacements a set of candidates needs beside it to be judged: a type
+ * declaration the candidates name, say. Asked per probe, because a declaration
+ * nothing in the probe refers to is an unused local wherever `noUnusedLocals`
+ * is on, and would fail every subset that does not happen to use it.
+ */
+export type SupportingReplacements = (
+  subset: ReadonlyArray<SpanReplacement>,
+) => ReadonlyArray<SpanReplacement>;
+
+function withSupport(
+  subset: ReadonlyArray<SpanReplacement>,
+  supportingFor: SupportingReplacements | undefined,
+): ReadonlyArray<SpanReplacement> {
+  return supportingFor ? [...supportingFor(subset), ...subset] : subset;
 }
 
 function bisectFilter(
-  ctx: VerificationContext,
+  introducesErrors: (subset: ReadonlyArray<SpanReplacement>) => boolean,
   candidates: ReadonlyArray<SpanReplacement>,
   indexes: readonly number[],
 ): number[] {
   if (indexes.length === 0) return [];
   const subset = indexes.map((i) => candidates[i]);
-  if (!wouldIntroduceErrors(ctx, subset)) return [...indexes];
+  if (!introducesErrors(subset)) return [...indexes];
   if (indexes.length === 1) return [];
   const mid = indexes.length >> 1;
-  const left = bisectFilter(ctx, candidates, indexes.slice(0, mid));
-  const right = bisectFilter(ctx, candidates, indexes.slice(mid));
+  const left = bisectFilter(introducesErrors, candidates, indexes.slice(0, mid));
+  const right = bisectFilter(introducesErrors, candidates, indexes.slice(mid));
   return [...left, ...right];
 }
 
 function greedyFilter(
-  ctx: VerificationContext,
+  introducesErrors: (subset: ReadonlyArray<SpanReplacement>) => boolean,
   candidates: ReadonlyArray<SpanReplacement>,
 ): number[] {
   const accepted: number[] = [];
   const acceptedReplacements: Array<SpanReplacement> = [];
   for (let i = 0; i < candidates.length; i++) {
     const trial = [...acceptedReplacements, candidates[i]];
-    if (!wouldIntroduceErrors(ctx, trial)) {
+    if (!introducesErrors(trial)) {
       accepted.push(i);
       acceptedReplacements.push(candidates[i]);
     }

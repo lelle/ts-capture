@@ -10,6 +10,7 @@ import { buildDiagnosticMarkerSuffix } from "./apply-diagnostics.js";
 import {
   explainRejection,
   filterAcceptedReplacements,
+  type SupportingReplacements,
   type VerificationContext,
 } from "./apply-types-verify.js";
 import { checkerGate } from "./checker-gate.js";
@@ -42,8 +43,9 @@ import {
   inferredThisType,
   typeAt,
 } from "./redundant-annotation.js";
-import { type AnnotationCandidate, Replacement } from "./replacement.js";
+import { Replacement } from "./replacement.js";
 import { expandCtorArity, unreachableTypeRefs } from "./scope-reachability.js";
+import { planShapeAliases } from "./shape-aliases.js";
 import { typeStringForSource } from "./type-canonical.js";
 
 // Replacement-building for the AST-aware applier. Turns
@@ -226,9 +228,14 @@ export function buildCstReplacements(
     noteSafetySf ??= parseForNoteSafety(filename, source);
     return !isInsideTextRun(noteSafetySf, lineStart);
   }
-  // When verify is enabled, buffer annotation insertions here and decide
-  // acceptance in a single batch pass at the end of the loop.
-  const annotationCandidates: AnnotationCandidate[] = [];
+  // Every annotation the loop decides to write, settled after it.
+  const buffered: Array<{
+    pos: number;
+    emitted: string;
+    wrap: (type: string) => string;
+    name?: string;
+    priority?: number;
+  }> = [];
 
   // Paren wraps for paren-less arrows (`x => …` needs `(x) => …` before an
   // annotation can attach) are deferred the same way, keyed by the position
@@ -281,19 +288,21 @@ export function buildCstReplacements(
     addNote(previewNotes, source, pos, note);
   }
 
-  function pushOrBufferAnnotation(pos: number, text: string, priority?: number): void {
-    // Comments mode still buffers, so verify still gets to reject: the preview
-    // has to agree with what an ordinary apply would do.
-    if (verify) {
-      annotationCandidates.push({ pos, text, priority });
-      observedByCandidatePos.set(pos, currentObserved);
-      return;
-    }
-    settlePreview(pos);
-    if (infer.outputMode === "comments") return;
-    annotatedPositions.add(pos);
-    cstReplacements.push(Replacement.insert(pos, text, priority ?? 0));
-    if (telemetry) telemetry.emitted++;
+  /**
+   * Hold an annotation until the end of the pass. Every site is decided
+   * together: the shapes they repeat are named across them, and the verify
+   * pass judges them as a batch. Comments mode holds too, so verify still gets
+   * to reject: the preview has to agree with what an ordinary apply would do.
+   */
+  function bufferAnnotation(
+    pos: number,
+    emitted: string,
+    wrap: (type: string) => string,
+    name?: string,
+    priority?: number,
+  ): void {
+    buffered.push({ pos, emitted, wrap, name, priority });
+    observedByCandidatePos.set(pos, currentObserved);
   }
 
   // What the report says about a site that gets nothing. Set per entry, so a
@@ -319,6 +328,12 @@ export function buildCstReplacements(
     );
     return true;
   }
+
+  /** The text written at a site for a type, in source punctuation. */
+  const annotation =
+    (suffix: string, lead = ": ") =>
+    (type: string): string =>
+      lead + prefix + (typeStringForSource(type) ?? type) + suffix;
 
   for (const { entry, kind } of eligible.values()) {
     // Each site answers for itself. This is one variable shared by every
@@ -399,20 +414,14 @@ export function buildCstReplacements(
       // `)` priority 0, param annotation priority 1 — sorts so the
       // annotation lands BEFORE the `)` in the output, yielding
       // `(x: T) => body`. Mirrors the offset-based path.
+      const paramName = ts.isIdentifier(site.node.name) ? site.node.name.text : undefined;
       if (site.parensOpenPos !== undefined) {
         requestParenWrap(site.parensOpenPos, pos);
         recordPreview(pos, nameAt("param", pos), emitted, types.length);
-        pushOrBufferAnnotation(
-          pos,
-          ": " + prefix + (typeStringForSource(emitted) ?? emitted) + markerSuffix,
-          1,
-        );
+        bufferAnnotation(pos, emitted, annotation(markerSuffix), paramName, 1);
       } else {
         recordPreview(pos, nameAt("param", pos), emitted, types.length);
-        pushOrBufferAnnotation(
-          pos,
-          ": " + prefix + (typeStringForSource(emitted) ?? emitted) + markerSuffix,
-        );
+        bufferAnnotation(pos, emitted, annotation(markerSuffix), paramName);
       }
     } else if (kind === "thisType") {
       const site = thisTypeSites.get(pos)!;
@@ -446,10 +455,7 @@ export function buildCstReplacements(
       lastInferredString = describeInferred(checker, inferredThis);
       if (!gateAllows(pos, "thisType", inferredThis, emitted)) continue;
       recordPreview(pos, "this", emitted, types.length);
-      pushOrBufferAnnotation(
-        pos,
-        "this: " + prefix + (typeStringForSource(emitted) ?? emitted) + markerSuffix + suffix,
-      );
+      bufferAnnotation(pos, emitted, annotation(markerSuffix + suffix, "this: "));
     } else if (kind === "returnType") {
       const computed = computeAnnotationTypeString(types, opts, infer, false, program);
       if (computed === null) {
@@ -492,11 +498,7 @@ export function buildCstReplacements(
         continue;
       }
       recordPreview(pos, nameAt("returnType", pos), emitted, types.length);
-      pushOrBufferAnnotation(
-        pos,
-        ": " + prefix + (typeStringForSource(emitted) ?? emitted) + markerSuffix,
-        -1,
-      );
+      bufferAnnotation(pos, emitted, annotation(markerSuffix), undefined, -1);
     } else {
       // varDecl: user-written `as Type` / `<Type>` cast on RHS — defer
       // to the cast unless honorAsCasts is explicitly off.
@@ -554,12 +556,40 @@ export function buildCstReplacements(
         continue;
       }
       recordPreview(pos, nameAt("varDecl", pos), emitted, types.length);
-      pushOrBufferAnnotation(
-        pos,
-        ": " + prefix + (typeStringForSource(emitted) ?? emitted) + markerSuffix,
-      );
+      const bindingName =
+        site.nameNode && ts.isIdentifier(site.nameNode) ? site.nameNode.text : undefined;
+      bufferAnnotation(pos, emitted, annotation(markerSuffix), bindingName);
     }
   }
+
+  // A shape several annotations spell out is declared once and named at each
+  // of them. Decided over the whole pass, before verify: the declaration goes
+  // into every probe that names it, and into the file only if a named
+  // annotation is written.
+  const declarations: Array<{ name: string; text: string; names: RegExp }> = [];
+  let declarationsAt: { pos: number; render: (text: string) => string } | undefined;
+  if (infer.aliasRepeatedShapes && buffered.length > 0 && source !== undefined) {
+    const nameTaken = (name: string): boolean =>
+      (scopedTypeNames?.has(name) ?? false) || new RegExp(`\\b${name}\\b`).test(source);
+    const plan = planShapeAliases(buffered, nameTaken);
+    buffered.forEach((candidate, i) => {
+      candidate.emitted = plan.emitted[i];
+    });
+    noteSafetySf ??= parseForNoteSafety(filename, source);
+    declarationsAt = declarationSite(noteSafetySf);
+    for (const { name, body } of plan.declarations) {
+      declarations.push({
+        name,
+        text: `type ${name} = ${body};`,
+        names: new RegExp(`\\b${name}\\b`),
+      });
+    }
+  }
+  const declarationsNamedIn = (texts: readonly string[]): string[] =>
+    declarations.filter((d) => texts.some((t) => d.names.test(t))).map((d) => d.text);
+
+  const texts = buffered.map((candidate) => candidate.wrap(candidate.emitted));
+  let accepted = buffered.map((_, i) => i);
 
   // Batch verify pass for the CST applier. Buffered
   // annotation candidates are probed in one shot (fast path: all-or-
@@ -568,27 +598,23 @@ export function buildCstReplacements(
   // largest safe subset. Only accepted candidates push their
   // insertion into `cstReplacements`; structural paren wraps already
   // pushed above stay regardless of verify outcome.
-  if (verify && annotationCandidates.length > 0) {
-    const probes = annotationCandidates.map((c) => ({
-      start: c.pos,
-      end: c.pos,
-      text: c.text,
-    }));
-    const acceptedIdx = filterAcceptedReplacements(verify, probes);
-    const acceptedSet = new Set(acceptedIdx);
-    for (const i of acceptedIdx) {
-      const c = annotationCandidates[i];
-      settlePreview(c.pos);
-      if (infer.outputMode === "comments") continue;
-      cstReplacements.push(Replacement.insert(c.pos, c.text, c.priority ?? 0));
-      annotatedPositions.add(c.pos);
-      if (telemetry) telemetry.emitted++;
-    }
+  if (verify && buffered.length > 0) {
+    const probes = buffered.map((c, i) => ({ start: c.pos, end: c.pos, text: texts[i] }));
+    const supporting: SupportingReplacements | undefined = declarationsAt
+      ? (subset) => {
+          const needed = declarationsNamedIn(subset.map((p) => p.text));
+          if (needed.length === 0) return [];
+          const at = declarationsAt!;
+          return [{ start: at.pos, end: at.pos, text: needed.map(at.render).join("") }];
+        }
+      : undefined;
+    accepted = filterAcceptedReplacements(verify, probes, supporting);
+    const acceptedSet = new Set(accepted);
     if (telemetry) {
-      telemetry.verifyReject += annotationCandidates.length - acceptedSet.size;
-      annotationCandidates.forEach((candidate, i) => {
+      telemetry.verifyReject += buffered.length - acceptedSet.size;
+      buffered.forEach((candidate, i) => {
         if (acceptedSet.has(i)) return;
-        const diagnostic = explainRejection(verify, probes[i]);
+        const diagnostic = explainRejection(verify, probes[i], supporting);
         telemetry.skipped.push({
           pos: candidate.pos,
           reason: "type-error",
@@ -598,6 +624,24 @@ export function buildCstReplacements(
             : { detail: "type-checks alone, but not with the other annotations in this file" }),
         });
       });
+    }
+  }
+
+  const written: string[] = [];
+  for (const i of accepted) {
+    const candidate = buffered[i];
+    settlePreview(candidate.pos);
+    if (infer.outputMode === "comments") continue;
+    cstReplacements.push(Replacement.insert(candidate.pos, texts[i], candidate.priority ?? 0));
+    annotatedPositions.add(candidate.pos);
+    written.push(texts[i]);
+    if (telemetry) telemetry.emitted++;
+  }
+  if (declarationsAt) {
+    const needed = declarationsNamedIn(written);
+    if (needed.length > 0) {
+      const at = declarationsAt;
+      cstReplacements.push(Replacement.insert(at.pos, needed.map(at.render).join("")));
     }
   }
 
@@ -638,4 +682,19 @@ export function buildCstReplacements(
   );
 
   return cstReplacements;
+}
+
+/**
+ * Where a file's own type declarations go: after its last import, or at the
+ * top, past a shebang. Each declaration renders with the blank line a reader
+ * expects around it there.
+ */
+function declarationSite(sf: ts.SourceFile): { pos: number; render: (text: string) => string } {
+  let lastImport: ts.Statement | undefined;
+  for (const stmt of sf.statements) {
+    if (ts.isImportDeclaration(stmt) || ts.isImportEqualsDeclaration(stmt)) lastImport = stmt;
+  }
+  if (lastImport) return { pos: lastImport.end, render: (text) => `\n\n${text}` };
+  const pos = sf.text.startsWith("#!") ? sf.text.indexOf("\n") + 1 : 0;
+  return { pos, render: (text) => `${text}\n\n` };
 }

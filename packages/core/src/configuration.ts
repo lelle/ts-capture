@@ -297,6 +297,24 @@ export interface InferOptions {
    * did not have.
    */
   narrowParamShapes: boolean;
+
+  /**
+   * Declare a shape that several annotations in one file spell out, once,
+   * and write its name at each of them.
+   *
+   * A shape the run saw at several positions is one type, and writing it out
+   * at each position says so nowhere. The declaration goes after the file's
+   * imports, named after the first position that holds the shape: `product`
+   * gives `Product`, an array `products` gives `Product` too, and a shape only
+   * ever held by a property is named after the property. A name the file
+   * already uses, or that is in scope as a type, is passed over for the next
+   * position's. Only shapes with at least two properties, seen at least
+   * twice, are declared; a shape that matches an in-scope type is written as
+   * that type as before, and so is one a declaration from the same run
+   * matches. Off by default: the declarations are new lines in the file, and
+   * the names are guesses a reader may want to change.
+   */
+  aliasRepeatedShapes: boolean;
 }
 
 export const INFER_DEFAULTS: InferOptions = {
@@ -331,6 +349,7 @@ export const INFER_DEFAULTS: InferOptions = {
   emitConflictComments: true,
   outputMode: "annotations",
   narrowParamShapes: false,
+  aliasRepeatedShapes: false,
 };
 
 /**
