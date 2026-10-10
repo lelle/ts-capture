@@ -124,35 +124,22 @@ describe("tsCapturePlugin", () => {
     }
 
     it("instruments .ts files", () => {
-      const plugin = tsCapturePlugin() as Plugin;
-      const transform = plugin.transform as Function;
-      const result = transform("function foo(a) { return a; }", "/src/app.ts");
-      expect(result).toBeDefined();
-      expect(result.code).toContain("__tscptr__");
-      expect(transformed(plugin, "/src/app.ts")).toTrack("a", { in: "/src/app.ts" });
+      const out = transformed(tsCapturePlugin() as Plugin, "/src/app.ts");
+      expect(out).toTrack("a", { in: "/src/app.ts" });
     });
 
     it("instruments .tsx files", () => {
-      const plugin = tsCapturePlugin() as Plugin;
-      const transform = plugin.transform as Function;
-      const result = transform("function foo(a) { return a; }", "/src/app.tsx");
-      expect(result).toBeDefined();
-      expect(result.code).toContain("__tscptr__");
-      expect(transformed(plugin, "/src/app.tsx")).toTrack("a", { in: "/src/app.tsx" });
+      const out = transformed(tsCapturePlugin() as Plugin, "/src/app.tsx");
+      expect(out).toTrack("a", { in: "/src/app.tsx" });
     });
 
     it("skips non-ts files", () => {
-      const plugin = tsCapturePlugin() as Plugin;
-      const transform = plugin.transform as Function;
-      const result = transform("const x = 1;", "/src/style.css");
-      expect(result).toBeNull();
+      expect(transformed(tsCapturePlugin() as Plugin, "/src/style.css")).toBeNull();
     });
 
     it("skips files matching exclude pattern", () => {
       const plugin = tsCapturePlugin({ exclude: /\.spec\.ts$/ }) as Plugin;
-      const transform = plugin.transform as Function;
-      const result = transform("function foo(a) { return a; }", "/src/app.spec.ts");
-      expect(result).toBeNull();
+      expect(transformed(plugin, "/src/app.spec.ts")).toBeNull();
     });
 
     // Whitelist mode: exclude alone forces users to write
@@ -161,18 +148,12 @@ describe("tsCapturePlugin", () => {
     // scoping a first-class option.
     it("instruments files matching include pattern", () => {
       const plugin = tsCapturePlugin({ include: /\/lib\// }) as Plugin;
-      const transform = plugin.transform as Function;
-      const result = transform("function foo(a) { return a; }", "/src/lib/foo.ts");
-      expect(result).toBeDefined();
-      expect(result.code).toContain("__tscptr__");
       expect(transformed(plugin, "/src/lib/foo.ts")).toTrack("a");
     });
 
     it("skips files NOT matching include pattern", () => {
       const plugin = tsCapturePlugin({ include: /\/lib\// }) as Plugin;
-      const transform = plugin.transform as Function;
-      const result = transform("function foo(a) { return a; }", "/src/routes/foo.ts");
-      expect(result).toBeNull();
+      expect(transformed(plugin, "/src/routes/foo.ts")).toBeNull();
     });
 
     it("checks include AND exclude together: file must match include and not exclude", () => {
@@ -180,38 +161,26 @@ describe("tsCapturePlugin", () => {
         include: /\/lib\//,
         exclude: /\.spec\.ts$/,
       }) as Plugin;
-      const transform = plugin.transform as Function;
-      // In lib/, not a spec — instrumented
-      expect(transform("function foo(a){return a}", "/src/lib/foo.ts").code).toContain(
-        "__tscptr__",
-      );
       expect(transformed(plugin, "/src/lib/foo.ts")).toTrack("a");
-      // In lib/, but a spec — skipped (exclude wins)
-      expect(transform("function foo(a){return a}", "/src/lib/foo.spec.ts")).toBeNull();
-      // Not in lib/ — skipped (include doesn't match)
-      expect(transform("function foo(a){return a}", "/src/routes/foo.ts")).toBeNull();
+      // In lib/, but a spec: exclude wins.
+      expect(transformed(plugin, "/src/lib/foo.spec.ts")).toBeNull();
+      // Not in lib/: include does not match.
+      expect(transformed(plugin, "/src/routes/foo.ts")).toBeNull();
     });
 
     it("without include or exclude, instruments all .ts files (current behavior preserved)", () => {
       const plugin = tsCapturePlugin() as Plugin;
-      const transform = plugin.transform as Function;
-      expect(transform("function foo(a){return a}", "/src/lib/foo.ts").code).toContain(
-        "__tscptr__",
-      );
-      expect(transform("function foo(a){return a}", "/src/routes/foo.ts").code).toContain(
-        "__tscptr__",
-      );
       expect(transformed(plugin, "/src/lib/foo.ts")).toTrack("a");
       expect(transformed(plugin, "/src/routes/foo.ts")).toTrack("a");
     });
 
-    it("injects collector snippet on entry module", () => {
-      const plugin = tsCapturePlugin() as Plugin;
-      const transform = plugin.transform as Function;
-      // First .ts file transformed gets the collector
-      const result = transform("function foo(a) { return a; }", "/src/main.ts");
-      expect(result.code).toContain("__tscptr__");
-      expect(transformed(tsCapturePlugin() as Plugin, "/src/main.ts")).toTrack("a");
+    it("prepends the collector snippet to an instrumented module", () => {
+      const out = transformed(tsCapturePlugin() as Plugin, "/src/main.ts");
+      expect(out).toTrack("a");
+      // The snippet's init guard, ahead of the module's own code.
+      const guard = out!.text.indexOf('Symbol.for("ts-capture.vite.runtime")');
+      expect(guard).toBeGreaterThan(-1);
+      expect(guard).toBeLessThan(out!.text.indexOf("function foo"));
     });
   });
 
@@ -281,10 +250,7 @@ describe("tsCapturePlugin", () => {
       const lastEntry = collected.find((e: unknown[]) => e[0] === "/test.ts" && e[1] === 0);
       expect(lastEntry).toBeDefined();
       const recordedTypes = (lastEntry as unknown[])[2] as Array<[string, unknown]>;
-      // The structural type contains both keys from raw.
-      const typeName = recordedTypes[0][0];
-      expect(typeName).toContain("a:");
-      expect(typeName).toContain("b:");
+      expect(recordedTypes[0][0]).toBeTheType("{ a: number; b: string }");
     });
 
     it("captureClassHierarchy off (default) emits just the ctor name for class instances", () => {
@@ -486,8 +452,7 @@ describe("tsCapturePlugin", () => {
       const typeName = ((entry as unknown[])[2] as Array<[string, unknown]>)[0][0] as string;
 
       expect(typeName).not.toContain("__tscptr__");
-      expect(typeName).not.toContain("__tscptr__");
-      expect(typeName).toContain("realProperty");
+      expect(typeName).toBeTheType("{ realProperty: string }");
     });
   });
 
