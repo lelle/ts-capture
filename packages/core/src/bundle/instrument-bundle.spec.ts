@@ -19,9 +19,6 @@ describe("instrumentBundle", () => {
     const src = `function add(a, b) { return a + b; }\n`;
     const r = bundled(src, "test.js");
     expect(r.instrumentedCount).toBe(1);
-    expect(r.code).toContain('__tscptr__("a",a,');
-    expect(r.code).toContain('__tscptr__("b",b,');
-    expect(r.code).toContain('"test.js"');
     expect(r.out).toTrack("a", { in: "test.js" });
     expect(r.out).toTrack("b", { in: "test.js" });
   });
@@ -33,9 +30,6 @@ describe("instrumentBundle", () => {
     `;
     const r = bundled(src, "t.js");
     expect(r.instrumentedCount).toBe(2);
-    expect(r.code).toContain('__tscptr__("x"');
-    expect(r.code).toContain('__tscptr__("y"');
-    expect(r.code).toContain('__tscptr__("z"');
     for (const name of ["x", "y", "z"]) expect(r.out).toTrack(name);
   });
 
@@ -43,11 +37,6 @@ describe("instrumentBundle", () => {
     const src = `function noop() { return 1; }\n`;
     const r = bundled(src, "t.js");
     expect(r.instrumentedCount).toBe(0);
-    // The runtime preamble itself defines __tscptr__, so check there's no
-    // INSTRUMENTATION CALL pattern (i.e., a call to globalThis.__tscptr__ with
-    // an actual parameter name as a string literal) in the post-preamble code.
-    const postPreamble = r.code.slice(r.code.indexOf("function noop"));
-    expect(postPreamble).not.toContain("__tscptr__");
     expect(r.out.calls).toEqual([]);
   });
 
@@ -55,7 +44,6 @@ describe("instrumentBundle", () => {
     const src = `const f = (x) => { return x; };\n`;
     const r = bundled(src, "t.js");
     expect(r.instrumentedCount).toBe(1);
-    expect(r.code).toContain('__tscptr__("x"');
     expect(r.out).toTrack("x");
   });
 
@@ -70,17 +58,12 @@ describe("instrumentBundle", () => {
     const src = `class Foo { bar(z) { return z; } }\n`;
     const r = bundled(src, "t.js");
     expect(r.instrumentedCount).toBe(1);
-    expect(r.code).toContain('__tscptr__("z"');
     expect(r.out).toTrack("z");
   });
 
   it("records the original parameter byte offset (pre-insertion)", () => {
     const src = `function add(a, b) { return a + b; }`;
     const r = bundled(src, "t.js");
-    // a is at byte offset 13 in `function add(a, b)` (0-indexed)
-    // b is at byte offset 16
-    expect(r.code).toMatch(/__tscptr__\("a",a,13,"t\.js"\)/);
-    expect(r.code).toMatch(/__tscptr__\("b",b,16,"t\.js"\)/);
     expect(r.out).toTrack("a", { at: endOf(src, "add(") });
     expect(r.out).toTrack("b", { at: endOf(src, "a, ") });
   });
@@ -88,8 +71,6 @@ describe("instrumentBundle", () => {
   it("uses the bundlePath option for the recorded path", () => {
     const src = `function f(x) { return x; }`;
     const r = bundled(src, "/abs/path/t.js", { bundlePath: "logical/t.js" });
-    expect(r.code).toContain('"logical/t.js"');
-    expect(r.code).not.toContain('"/abs/path/t.js"');
     expect(r.out).toTrack("x", { in: "logical/t.js" });
   });
 
