@@ -39,6 +39,8 @@ pipeline — which gives you `--dry-run` and config control:
 ```sh
 # 1. Instrument the files you want observed (rewrites them — commit first)
 npx ts-capture instrument src/app.ts --in-place
+# One file per call. For a directory:
+#   for file in src/*.ts; do npx ts-capture instrument "$file" --in-place; done
 
 # 2. Run with the collector preloaded
 TS_CAPTURE_TYPES_DIR=./.ts-capture \
@@ -50,6 +52,13 @@ npx ts-capture merge ./.ts-capture --out types.json
 npx ts-capture apply types.json --dry-run
 npx ts-capture apply types.json
 ```
+
+Instrument the callers as well as the code you want typed, tests included. A
+function passed in as an argument is typed from what it returns, and that is
+observed where the function is written: with `new Service(() => new Date())`
+in a test file that was left out, the constructor's `clock` parameter is seen
+to be a function and nothing more, and is not annotated. `apply` skips test
+files by default, so instrumenting them costs nothing in the result.
 
 Restore the instrumented files (e.g. `git checkout`) before step 3 so `apply`
 lands at the original source offsets — see
