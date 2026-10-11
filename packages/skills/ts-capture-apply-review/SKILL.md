@@ -238,6 +238,13 @@ If there are no findings to flag, say so explicitly: "Nothing concerning
 in this diff — ts-capture's output looks safe to apply." Don't manufacture
 nitpicks just to fill space.
 
+Say what is left as well. A strict project usually still fails typecheck
+after apply, and that is not a finding against the diff: code the tests never
+ran is not observed, test files are skipped by default, and an observation
+that would add a type error is not written. Run
+`ts-capture apply types.json --dry-run --report` and name the positions it
+lists before attributing a remaining error to anything else.
+
 ### Step 5 — Hand off
 
 Do not edit the user's source files yourself. The point of this skill

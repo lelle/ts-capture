@@ -8,7 +8,7 @@
 
 ts-capture observes how your code is actually called at runtime — in tests, in
 dev, in the browser — and writes inferred TypeScript types back into your
-source. Turns implicit `any` into precise types, automatically.
+source. Turns the implicit `any` your tests exercise into precise types.
 
 > **🚧 Pre-release.** The packages are on npm as 0.x. There is no 1.0, and
 > none is scheduled: the version stays below 1.0 until code, API, test
@@ -101,6 +101,10 @@ npx ts-capture apply types.json
 ```
 
 `--dry-run` is recommended on existing codebases — see [Known limitations](#known-limitations).
+A strict project usually still has type errors after `apply`: only what the
+tests ran is observed, and not every observation can be written. `apply
+--report` lists each position left alone and why — see
+[What is still untyped afterwards](docs/how-to/review-and-apply-safely.md#what-is-still-untyped-afterwards).
 Test files (`*.spec.*`, `*.test.*`) are skipped by default; pass `--include-tests` to opt in.
 To skip more files (or re-include some), add gitignore-style globs under
 `apply.skipFiles` in `ts-capture.config.json` — they stack on top of the
