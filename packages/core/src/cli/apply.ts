@@ -16,9 +16,8 @@ import {
 } from "../apply-types-verify.js";
 import { applyTypesToFile } from "../apply-types.js";
 import { getProgram } from "../compiler-helper.js";
+import { findConfigFile, loadConfig } from "../config-file.js";
 import {
-  findConfigFile,
-  loadConfig,
   parseInferFlagOverrides,
   resolveInferOptions,
   type TsCaptureConfig,
@@ -38,6 +37,8 @@ interface ApplyManifest {
   typeInfoHash: string;
   appliedAt: string;
 }
+
+const relativeToCwd = (file: string): string => path.relative(process.cwd(), file) || file;
 
 /**
  * Auto-discover the nearest tsconfig.json by walking up from a starting
@@ -455,10 +456,11 @@ export async function cmdApply(args: string[], flags: Set<string>) {
     }
     const notWritten = notWrittenLine(located, !reportEnabled);
     if (notWritten) process.stdout.write(`  ${notWritten}\n`);
-    if (reportEnabled) process.stdout.write(`${reportLines(telemetry, located).join("\n")}\n`);
+    if (reportEnabled)
+      process.stdout.write(`${reportLines(telemetry, located, relativeToCwd).join("\n")}\n`);
   } else {
     const lines = summaryLines(telemetry, filesWritten, located, !reportEnabled);
-    if (reportEnabled) lines.push(...reportLines(telemetry, located));
+    if (reportEnabled) lines.push(...reportLines(telemetry, located, relativeToCwd));
     process.stdout.write(`${lines.join("\n")}\n`);
 
     // Real (non-dry-run) apply: write the manifest so subsequent runs

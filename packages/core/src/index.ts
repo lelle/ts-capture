@@ -74,16 +74,16 @@ export { Replacement, applyReplacements } from "./replacement.js";
 /** Build a `ts.Program` (with TypeChecker) for the given files and compiler options. */
 export { getProgram } from "./compiler-helper.js";
 
-/** Config discovery, loading, and resolution of instrument / apply / infer options, plus inference defaults. */
+/** Config discovery, loading, and resolution of instrument / apply options. */
 export {
   findConfigFile,
   loadConfig,
   resolveInstrumentOptions,
   resolveApplyTypesOptions,
-  resolveInferOptions,
-  parseInferFlagOverrides,
-  INFER_DEFAULTS,
-} from "./configuration.js";
+} from "./config-file.js";
+
+/** Resolution of infer options, plus inference defaults. */
+export { resolveInferOptions, parseInferFlagOverrides, INFER_DEFAULTS } from "./configuration.js";
 
 // --- Types ---
 

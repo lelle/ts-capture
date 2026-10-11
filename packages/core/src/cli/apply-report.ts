@@ -1,5 +1,3 @@
-import path from "node:path";
-
 import type { ApplySkip, ApplySkipReason, ApplyTelemetry } from "../contract.js";
 
 /** A skip with the place it happened resolved against the file's source. */
@@ -53,8 +51,6 @@ export function locateSkip(skip: ApplySkip, file: string, source: string): Locat
 
 const plural = (count: number, word: string): string => `${count} ${word}${count === 1 ? "" : "s"}`;
 
-const relative = (file: string): string => path.relative(process.cwd(), file) || file;
-
 /** The lines every run prints: what was written, and whether anything was left. */
 export function summaryLines(
   telemetry: ApplyTelemetry,
@@ -87,8 +83,15 @@ export function notWrittenLine(skips: LocatedSkip[], pointAtReport: boolean): st
   );
 }
 
-/** The `--report` body: every unused observation with its reason, then the counts that cost nothing. */
-export function reportLines(telemetry: ApplyTelemetry, skips: LocatedSkip[]): string[] {
+/**
+ * The `--report` body: every unused observation with its reason, then the
+ * counts that cost nothing. `display` turns a file's path into what is shown.
+ */
+export function reportLines(
+  telemetry: ApplyTelemetry,
+  skips: LocatedSkip[],
+  display: (file: string) => string = (file) => file,
+): string[] {
   const lines: string[] = [];
   const notWritten = NOT_WRITTEN.map((group) => ({
     ...group,
@@ -101,13 +104,13 @@ export function reportLines(telemetry: ApplyTelemetry, skips: LocatedSkip[]): st
     for (const group of notWritten) {
       lines.push("", `  ${group.heading} (${group.skips.length})`);
       for (const skip of group.skips) {
-        lines.push(`    ${relative(skip.file)}:${skip.line}:${skip.column}  ${skip.name}`);
+        lines.push(`    ${display(skip.file)}:${skip.line}:${skip.column}  ${skip.name}`);
         if (skip.observed) lines.push(`      observed  ${skip.observed}`);
         if (skip.diagnostic) {
           const { code, message, file, line } = skip.diagnostic;
           const text =
             message.length > MESSAGE_LIMIT ? `${message.slice(0, MESSAGE_LIMIT)}…` : message;
-          lines.push(`      TS${code} at ${relative(file)}:${line}: ${text}`);
+          lines.push(`      TS${code} at ${display(file)}:${line}: ${text}`);
         }
         if (skip.detail) lines.push(`      ${skip.detail}`);
       }

@@ -13,7 +13,7 @@ import path from "node:path";
 import type { CollectionContext, ExtraOptions } from "./type-collector.js";
 
 import { applyTypesToFile } from "./apply-types.js";
-import { findConfigFile, loadConfig, resolveInstrumentOptions } from "./configuration.js";
+import { findConfigFile, loadConfig, resolveInstrumentOptions } from "./config-file.js";
 import { instrumentSource } from "./instrument.js";
 import { createCollectionContext, getTypeName } from "./type-collector.js";
 

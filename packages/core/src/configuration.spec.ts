@@ -5,12 +5,14 @@ import { describe, expect, it } from "vitest";
 
 import {
   findConfigFile,
-  INFER_DEFAULTS,
   loadConfig,
-  parseInferFlagOverrides,
   resolveApplyTypesOptions,
-  resolveInferOptions,
   resolveInstrumentOptions,
+} from "./config-file.js";
+import {
+  INFER_DEFAULTS,
+  parseInferFlagOverrides,
+  resolveInferOptions,
   type TsCaptureConfig,
 } from "./configuration.js";
 
