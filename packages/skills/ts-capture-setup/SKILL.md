@@ -98,7 +98,7 @@ nothing warns:
 
 ```
 src/vite.config.ts
-+ tsCapturePlugin({ outputFile: "./ts-capture-browser.json" }),
++ tsCapture({ outputFile: "./ts-capture-browser.json" }),
 ```
 
 Merge that file instead of a dump directory — or alongside one, since a
@@ -137,9 +137,9 @@ hunk. Format:
 
 ```
 src/vite.config.ts
-+ import { tsCapturePlugin } from "@ts-capture/vite";
++ import tsCapture from "@ts-capture/vite";
   export default defineConfig({
-+   plugins: [tsCapturePlugin()],
++   plugins: [tsCapture()],
     test: {
 +     fileParallelism: false,
     },
@@ -174,7 +174,7 @@ the escape hatch:
 
 ```
 src/vite.config.ts
-+ tsCapturePlugin({ target: "node" }),
++ tsCapture({ target: "node" }),
 ```
 
 For the Babel-plugin path, the planned edits are TWO files:

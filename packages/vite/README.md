@@ -35,14 +35,14 @@ export default defineConfig({
 Run tests:
 
 ```sh
-TS_CAPTURE_TYPES_DIR=/tmp npm test
+TS_CAPTURE_TYPES_DIR=./.ts-capture npm test
 ```
 
 After tests, observations land in `${TS_CAPTURE_TYPES_DIR}/ts-capture-types-<uuid>.json`
 (one file per worker / fork). Merge them and apply via the ts-capture CLI:
 
 ```sh
-npx ts-capture merge "$TS_CAPTURE_TYPES_DIR" --out types.json
+npx ts-capture merge ./.ts-capture --out types.json
 npx ts-capture apply types.json --dry-run   # preview
 npx ts-capture apply types.json             # edits your source files
 ```
