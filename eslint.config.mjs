@@ -6,7 +6,7 @@ import regexp from "eslint-plugin-regexp";
 
 export default [
   {
-    ignores: ["**/node_modules/**", "**/dist/**", "**/coverage/**"],
+    ignores: ["**/node_modules/**", "**/dist/**", "**/coverage/**", "site/**"],
   },
   regexp.configs["flat/recommended"],
   {

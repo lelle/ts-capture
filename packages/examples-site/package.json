@@ -2,7 +2,7 @@
   "name": "@ts-capture/examples-site",
   "version": "0.0.0",
   "private": true,
-  "description": "Builds the ts-capture examples page from docs/examples/examples.json.",
+  "description": "Builds the ts-capture examples page and the browser playground.",
   "type": "module",
   "scripts": {
     "build": "tsc",
@@ -15,11 +15,14 @@
   },
   "license": "MIT",
   "dependencies": {
+    "@ts-capture/core": "workspace:*",
     "typescript": "6.0.3"
   },
   "devDependencies": {
     "@types/node": "26.2.0",
+    "@typescript/vfs": "1.6.5",
     "@vitest/coverage-v8": "4.1.10",
+    "esbuild": "0.28.2",
     "oxlint": "1.77.0",
     "vitest": "4.1.10"
   }

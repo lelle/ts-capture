@@ -289,6 +289,9 @@ importers:
 
   packages/examples-site:
     dependencies:
+      '@ts-capture/core':
+        specifier: workspace:*
+        version: link:../core
       typescript:
         specifier: 6.0.3
         version: 6.0.3
@@ -296,9 +299,15 @@ importers:
       '@types/node':
         specifier: 26.2.0
         version: 26.2.0
+      '@typescript/vfs':
+        specifier: 1.6.5
+        version: 1.6.5(supports-color@7.2.0)(typescript@6.0.3)
       '@vitest/coverage-v8':
         specifier: 4.1.10
         version: 4.1.10(vitest@4.1.10)
+      esbuild:
+        specifier: 0.28.2
+        version: 0.28.2
       oxlint:
         specifier: 1.77.0
         version: 1.77.0
@@ -1593,6 +1602,11 @@ packages:
     engines: {node: '>=16.20.0'}
     cpu: [x64]
     os: [win32]
+
+  '@typescript/vfs@1.6.5':
+    resolution: {integrity: sha512-gobLHQLmvQGJInFk31NvgMd1uYzRXsd8qgnOssyLD055R2QPnw1ubRbBQ4+T+5qC7IQVuYXdvNDE2G7tMDVHgw==}
+    peerDependencies:
+      typescript: '*'
 
   '@vitest/coverage-v8@4.1.10':
     resolution: {integrity: sha512-IM49HmthevbgAO4anp1hwtoT9wYe59w0LR00gr+eagHE+ZJ5lK4sLPeO0ubgoJcwLk6dehU3R24N+FbEEKDc8g==}
@@ -3596,6 +3610,13 @@ snapshots:
 
   '@typescript/typescript-win32-x64@7.0.2':
     optional: true
+
+  '@typescript/vfs@1.6.5(supports-color@7.2.0)(typescript@6.0.3)':
+    dependencies:
+      debug: 4.4.3(supports-color@7.2.0)
+      typescript: 6.0.3
+    transitivePeerDependencies:
+      - supports-color
 
   '@vitest/coverage-v8@4.1.10(vitest@4.1.10)':
     dependencies:

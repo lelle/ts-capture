@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
-import { type ExamplesData, renderCode, renderPage } from "./page.js";
+import { renderCode } from "./code.js";
+import { type ExamplesData, renderPage } from "./page.js";
 
 const DATA: ExamplesData = {
   sources: {
@@ -103,5 +104,9 @@ describe("renderPage", () => {
   it("names the revision of ts-capture each project was run with", () => {
     expect(html).toContain("1756e50");
     expect(html).toContain("feee61e");
+  });
+
+  it("links to the playground", () => {
+    expect(renderPage(DATA)).toContain('<a href="playground/">Playground</a>');
   });
 });

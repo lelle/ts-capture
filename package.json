@@ -14,7 +14,7 @@
     "lint:types": "eslint --no-config-lookup --config eslint.typed.mjs packages/*/src",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
-    "examples": "pnpm --filter @ts-capture/examples-site run build && pnpm --filter @ts-capture/examples-site run site",
+    "examples": "pnpm --filter @ts-capture/core run build && pnpm --filter @ts-capture/examples-site run build && pnpm --filter @ts-capture/examples-site run site",
     "verify": "bash scripts/ci.sh",
     "clean": "pnpm -r exec rm -rf dist node_modules",
     "changeset": "changeset",

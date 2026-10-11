@@ -36,7 +36,12 @@
       "vitest": false
     },
     "packages/examples-site": {
-      "entry": ["src/build.ts!", "src/**/*.spec.ts!"],
+      "entry": [
+        "src/build.ts!",
+        "src/playground/main.ts!",
+        "src/playground/worker.ts!",
+        "src/**/*.spec.ts!"
+      ],
       "project": ["src/**/*.ts!"],
       "vitest": false
     },
