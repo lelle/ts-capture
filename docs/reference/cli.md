@@ -30,7 +30,8 @@ Apply collected types to source files. Editing those files between collection
 and apply invalidates the recorded offsets, and the output is not formatted —
 see [Review & apply safely](../how-to/review-and-apply-safely.md).
 
-- `--dry-run` — report what would change without writing.
+- `--dry-run` — print what would change as a unified diff, after the list of
+  files, and write nothing.
 - `--comments` — write what would be annotated as notes in the source and
   change no code: a preview in the editor. Shorthand for
   `--infer.outputMode=comments`; see [Notes](configuration.md#notes).

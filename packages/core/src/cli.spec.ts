@@ -1032,6 +1032,28 @@ describe("cli", () => {
         });
       });
 
+      it("prints the lines it would change as a diff", () => {
+        withTmpDir((rawDir) => {
+          const dir = fs.realpathSync(rawDir);
+          const file = path.join(dir, "lib.ts");
+          fs.writeFileSync(file, `${FOO}\n`);
+          const jsonFile = path.join(dir, "types.json");
+          fs.writeFileSync(jsonFile, JSON.stringify([[file, 14, [["string", undefined]], {}]]));
+
+          const { stdout } = runInDir(dir, "apply", jsonFile, "--dry-run");
+
+          expect(stdout).toContain(
+            [
+              "--- a/lib.ts",
+              "+++ b/lib.ts",
+              "@@ -1,1 +1,1 @@",
+              "-function foo(a) { return a; }",
+              "+function foo(a: string) { return a; }",
+            ].join("\n"),
+          );
+        });
+      });
+
       it("reports files that would NOT change separately from changed", () => {
         withTmpDir((dir) => {
           const file = path.join(dir, "lib.ts");

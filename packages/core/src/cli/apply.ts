@@ -24,6 +24,7 @@ import {
   type TsCaptureConfig,
 } from "../configuration.js";
 import { type ApplyTelemetry, newApplyTelemetry } from "../contract.js";
+import { unifiedDiff } from "../unified-diff.js";
 import {
   type LocatedSkip,
   locateSkip,
@@ -321,6 +322,7 @@ export async function cmdApply(args: string[], flags: Set<string>) {
   }
 
   const wouldChange: string[] = [];
+  const diffs: string[] = [];
   const noChange: string[] = [];
   const skippedFiles: string[] = [];
   const located: LocatedSkip[] = [];
@@ -427,6 +429,8 @@ export async function cmdApply(args: string[], flags: Set<string>) {
 
     if (dryRun) {
       wouldChange.push(file);
+      const shown = path.relative(process.cwd(), file).split(path.sep).join("/");
+      diffs.push(unifiedDiff(shown, source, result));
     } else {
       fs.writeFileSync(file, result);
       filesWritten++;
@@ -442,6 +446,7 @@ export async function cmdApply(args: string[], flags: Set<string>) {
       if (noChange.length > 0) {
         process.stdout.write(`  (${noChange.length} file(s) already up-to-date)\n`);
       }
+      process.stdout.write(`\n${diffs.join("")}\n`);
     }
     if (skippedFiles.length > 0) {
       process.stdout.write(

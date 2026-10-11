@@ -14,7 +14,7 @@ Usage:
   ts-capture apply <types.json> [--dry-run] [--comments|--both] [--include-tests] [--force]
                                 [--report] [--telemetry] [--project <tsconfig.json>]
                                           Apply collected types to source files
-                                          --dry-run        report what would change without writing
+                                          --dry-run        print the diff of what would change, write nothing
                                           --include-tests  apply to *.spec.* / *.test.* (default: skip)
                                           --force          bypass <types.json>.applied idempotency manifest
                                           --report         list every observed position that was not
