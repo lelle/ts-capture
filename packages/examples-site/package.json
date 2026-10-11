@@ -1,0 +1,26 @@
+{
+  "name": "@ts-capture/examples-site",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Builds the ts-capture examples page from docs/examples/examples.json.",
+  "type": "module",
+  "scripts": {
+    "build": "tsc",
+    "site": "node dist/build.js",
+    "typecheck": "tsc --noEmit -p tsconfig.test.json",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage",
+    "lint": "oxlint src/ --deny-warnings"
+  },
+  "license": "MIT",
+  "dependencies": {
+    "typescript": "6.0.3"
+  },
+  "devDependencies": {
+    "@types/node": "26.2.0",
+    "@vitest/coverage-v8": "4.1.10",
+    "oxlint": "1.77.0",
+    "vitest": "4.1.10"
+  }
+}

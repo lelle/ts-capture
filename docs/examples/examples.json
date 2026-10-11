@@ -1,0 +1,170 @@
+{
+  "sources": {
+    "mini-app": {
+      "name": "mini-app",
+      "about": "292 lines of untyped TypeScript with 17 tests, written to measure ts-capture against types a person wrote first.",
+      "url": null,
+      "commit": "d99f8ca",
+      "tsCapture": "344f0ff"
+    },
+    "nest": {
+      "name": "nestjs/nest",
+      "about": "The NestJS framework, at a pinned commit, observed through its own test suite.",
+      "url": "https://github.com/nestjs/nest",
+      "commit": "09dba60ce",
+      "tsCapture": "344f0ff"
+    },
+    "hono": {
+      "name": "honojs/hono",
+      "about": "The Hono web framework, at a pinned commit, observed through its own test suite. Already strictly typed: there is little left to add.",
+      "url": "https://github.com/honojs/hono",
+      "commit": "017000d6",
+      "tsCapture": "344f0ff"
+    }
+  },
+  "examples": [
+    {
+      "id": "params-and-return",
+      "title": "Parameters and a return type, from the calls the tests made",
+      "verdict": "good",
+      "caption": "Every test passed a number and got a number back. Some passed a coupon and some passed none, so the parameter is the coupon's shape or undefined.",
+      "source": "mini-app",
+      "file": "src/pricing.ts",
+      "line": 10,
+      "before": "};\n\nexport function applyCoupon(amount, coupon) {\n  if (!coupon) {\n    return amount;",
+      "after": "};\n\nexport function applyCoupon(amount: number, coupon: { kind: string; value: number } | undefined): number {\n  if (!coupon) {\n    return amount;"
+    },
+    {
+      "id": "callback",
+      "title": "A callback, typed from what it returned",
+      "verdict": "good",
+      "caption": "The tests hand the service a function that returns a Date. ts-capture saw it called and saw what came back. gateway stays as it was: what was observed of it carried nothing worth writing.",
+      "source": "mini-app",
+      "file": "src/orders.ts",
+      "line": 10,
+      "before": "  nextId = 1;\n\n  constructor(gateway, clock) {\n    this.gateway = gateway;\n    this.clock = clock;",
+      "after": "  nextId = 1;\n\n  constructor(gateway, clock: () => Date) {\n    this.gateway = gateway;\n    this.clock = clock;"
+    },
+    {
+      "id": "untyped-collection",
+      "title": "An element of a collection TypeScript knows nothing about",
+      "verdict": "good",
+      "caption": "cart is still any, so TypeScript has no type for line. The observed shape is all there is, and it is written on the callback and on the result.",
+      "source": "mini-app",
+      "file": "src/cart.ts",
+      "line": 6,
+      "before": "}\n\nexport function addLine(cart, product, quantity) {\n  const existing = cart.lines.find((line) => line.sku === product.sku);\n  if (existing) {\n    existing.quantity += quantity;",
+      "after": "}\n\nexport function addLine(cart, product: { name: string; price: number; sku: string; tags: string[]; weight: number }, quantity: number) {\n  const existing: { quantity: number; sku: string; unitPrice: number } | undefined = cart.lines.find((line: { quantity: number; sku: string; unitPrice: number }) => line.sku === product.sku);\n  if (existing) {\n    existing.quantity += quantity;"
+    },
+    {
+      "id": "test-data-keys",
+      "title": "Keys that came from the test data",
+      "verdict": "weak",
+      "caption": "The return type lists the two SKUs the tests used. The function accepts any SKU: it indexes by a variable. Nothing flags this, because the type describes the test run exactly.",
+      "better": "Record<string, number>",
+      "source": "mini-app",
+      "file": "src/inventory.ts",
+      "line": 1,
+      "before": "export function reserve(stock, sku, quantity) {\n  const available = stock[sku] ?? 0;\n  if (available < quantity) {",
+      "after": "export function reserve(stock, sku: string, quantity: number): { \"sku-chair\"?: number; \"sku-lamp\": number } {\n  const available = stock[sku] ?? 0;\n  if (available < quantity) {"
+    },
+    {
+      "id": "lookup-can-miss",
+      "title": "A lookup that can miss, typed as if it always hits",
+      "verdict": "weak",
+      "caption": "Map.get returns undefined for an unknown id. Every test asked for an order that existed, so undefined was never observed.",
+      "better": "… | undefined",
+      "source": "mini-app",
+      "file": "src/orders.ts",
+      "line": 36,
+      "before": "  }\n\n  find(id) {\n    return this.orders.get(id);\n  }",
+      "after": "  }\n\n  find(id: string): { customer: { email: string; name: string; phone: string }; id: string; lines: { quantity: number; sku: string; unitPrice: number }[]; placedAt: Date; status: string; total: number; transactionId: string } {\n    return this.orders.get(id);\n  }"
+    },
+    {
+      "id": "left-alone",
+      "title": "A position it observed and did not write",
+      "verdict": "left",
+      "caption": "threshold is written; stock is not. The observed shape would have added a type error on the next line, so apply left the parameter as it was and said so in its report.",
+      "leftAlone": {
+        "position": "src/inventory.ts:9:26",
+        "name": "stock",
+        "group": "Would add a type error",
+        "observed": "{ \"sku-chair\": number, \"sku-lamp\": number }",
+        "reason": "TS7053 at src/inventory.ts:10: Element implicitly has an 'any' type because expression of type 'string' can't be used to index type '{ \"sku-chair\": number; \"sku-lamp\": number; }'.   No index signature with a parameter of type 'stri…"
+      },
+      "source": "mini-app",
+      "file": "src/inventory.ts",
+      "line": 9,
+      "before": "}\n\nexport function lowStock(stock, threshold) {\n  return Object.keys(stock).filter((sku) => stock[sku] < threshold);\n}",
+      "after": "}\n\nexport function lowStock(stock, threshold: number) {\n  return Object.keys(stock).filter((sku) => stock[sku] < threshold);\n}"
+    },
+    {
+      "id": "named-type",
+      "title": "A type that already has a name",
+      "verdict": "good",
+      "caption": "The observed object matches a type that is in scope, so the annotation is that name and not the shape spelled out.",
+      "source": "nest",
+      "file": "packages/microservices/server/server-kafka.ts",
+      "line": 132,
+      "before": "\n  public async start(callback: () => void): Promise<void> {\n    const consumerOptions = {\n      ...(this.options.consumer || {}),\n      groupId: this.groupId,",
+      "after": "\n  public async start(callback: () => void): Promise<void> {\n    const consumerOptions: ConsumerConfig = {\n      ...(this.options.consumer || {}),\n      groupId: this.groupId,"
+    },
+    {
+      "id": "union-of-what-flowed",
+      "title": "A union of what actually flowed through",
+      "verdict": "good",
+      "caption": "Across the tests this held a string, an array of strings, and undefined. The annotation is the three together.",
+      "source": "nest",
+      "file": "packages/core/middleware/routes-mapper.ts",
+      "line": 35,
+      "before": "      return this.getRouteInfoFromPath(controllerOrRoute);\n    }\n    const routePathOrPaths = this.getRoutePath(controllerOrRoute);\n    if (this.isRouteInfo(routePathOrPaths, controllerOrRoute)) {\n      return this.getRouteInfoFromObject(controllerOrRoute);",
+      "after": "      return this.getRouteInfoFromPath(controllerOrRoute);\n    }\n    const routePathOrPaths: string | string[] | undefined = this.getRoutePath(controllerOrRoute);\n    if (this.isRouteInfo(routePathOrPaths, controllerOrRoute)) {\n      return this.getRouteInfoFromObject(controllerOrRoute);"
+    },
+    {
+      "id": "test-data-in-a-real-project",
+      "title": "Test data in a real project",
+      "verdict": "weak",
+      "caption": "The collection holds whatever metadata a caller attached. both and only2 are keys from nest's own tests, now written into the source as if they were the type.",
+      "better": "leave it unannotated, or type the collection where it is built",
+      "source": "nest",
+      "file": "packages/core/services/reflector.service.ts",
+      "line": 213,
+      "before": "      return metadataCollection as TResult;\n    }\n    return metadataCollection.reduce((a, b) => {\n      if (Array.isArray(a)) {\n        return a.concat(b);",
+      "after": "      return metadataCollection as TResult;\n    }\n    return metadataCollection.reduce((a, b: boolean[] | number | string | string[] | { both: string; only2: string }) => {\n      if (Array.isArray(a)) {\n        return a.concat(b);"
+    },
+    {
+      "id": "destructured-callback",
+      "title": "A callback's return type, by name",
+      "verdict": "good",
+      "caption": "The parameter was typed already. What the callback returned matched RouteData, a type the file already uses, so that name is written and not the shape.",
+      "source": "hono",
+      "file": "src/helper/dev/index.ts",
+      "line": 28,
+      "before": "\nexport const inspectRoutes = <E extends Env>(hono: Hono<E>): RouteData[] => {\n  return hono.routes.map(({ path, method, handler }: RouterRoute) => {\n    const targetHandler = findTargetHandler(handler)\n    return {",
+      "after": "\nexport const inspectRoutes = <E extends Env>(hono: Hono<E>): RouteData[] => {\n  return hono.routes.map(({ path, method, handler }: RouterRoute): RouteData => {\n    const targetHandler = findTargetHandler(handler)\n    return {"
+    },
+    {
+      "id": "conflict-note",
+      "title": "A disagreement, reported and not written",
+      "verdict": "left",
+      "caption": "In the tests cache.match gave null, where TypeScript infers Response or undefined. ts-capture does not write a type the checker contradicts. It leaves a note saying what it saw.",
+      "source": "hono",
+      "file": "src/middleware/cache/index.ts",
+      "line": 301,
+      "before": "      typeof options.cacheName === 'function' ? await options.cacheName(c) : options.cacheName\n    const cache = await caches.open(cacheName)\n    const response = await cache.match(key)\n    if (response) {",
+      "after": "      typeof options.cacheName === 'function' ? await options.cacheName(c) : options.cacheName\n    const cache = await caches.open(cacheName)\n    // @ts-capture[conflict]: `response` observed `null`, TypeScript infers `Response | undefined`\n    const response = await cache.match(key)\n    if (response) {"
+    },
+    {
+      "id": "wrapper-type",
+      "title": "The wrapper object, not the primitive",
+      "verdict": "weak",
+      "caption": "Hono's escaped strings are String objects, and that is what was observed. The annotation is accurate about the value and is not the type the code means.",
+      "better": "HtmlEscapedString",
+      "source": "hono",
+      "file": "src/jsx/components.ts",
+      "line": 204,
+      "before": "\n            const callbacks = htmlArray\n              .map((html) => (html as HtmlEscapedString).callbacks || [])\n              .flat()\n",
+      "after": "\n            const callbacks = htmlArray\n              .map((html: String) => (html as HtmlEscapedString).callbacks || [])\n              .flat()\n"
+    }
+  ]
+}

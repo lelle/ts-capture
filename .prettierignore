@@ -23,3 +23,6 @@ ts-capture-test/
 **/ts-capture-test/
 .ts-capture/
 **/.ts-capture/
+
+# Built examples page
+site/

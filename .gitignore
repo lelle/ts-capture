@@ -20,3 +20,6 @@ local-docs/
 
 # Playwright MCP session artefacts
 .playwright-mcp/
+
+# The examples page, built from docs/examples/examples.json (pnpm examples)
+site/
