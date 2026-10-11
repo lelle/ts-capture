@@ -132,6 +132,53 @@ describe("@ts-capture/babel-plugin", () => {
     });
   });
 
+  describe("runtime — a process that is killed", () => {
+    // A Jest worker ends without the exit handlers running, and a short test
+    // file ends before the 500 ms tick and before its tenth observation.
+    it("has written the observations made before it died", () => {
+      const RUNTIME_PATH = path.resolve(
+        path.dirname(fileURLToPath(import.meta.url)),
+        "../runtime.cjs",
+      );
+      const typesDir = fs.mkdtempSync(
+        path.join(os.tmpdir(), "ts-capture-babel-killed-"),
+      );
+      try {
+        const result = spawnSync(
+          process.execPath,
+          [
+            "--require",
+            RUNTIME_PATH,
+            "-e",
+            [
+              "globalThis.__tscptr__('p', 'hello', 0, '/x.ts', '{}');",
+              "globalThis.__tscptr__('q', 1, 10, '/x.ts', '{}');",
+              "setTimeout(() => process.kill(process.pid, 'SIGKILL'), 50);",
+            ].join(" "),
+          ],
+          {
+            env: { ...process.env, TS_CAPTURE_TYPES_DIR: typesDir },
+            encoding: "utf-8",
+          },
+        );
+        expect(result.signal).toBe("SIGKILL");
+        const positions = fs
+          .readdirSync(typesDir)
+          .flatMap(
+            (dump) =>
+              JSON.parse(
+                fs.readFileSync(path.join(typesDir, dump), "utf-8"),
+              ) as [string, number, ...unknown[]][],
+          )
+          .map(([, position]) => position)
+          .sort((a, b) => a - b);
+        expect(positions).toEqual([0, 10]);
+      } finally {
+        fs.rmSync(typesDir, { recursive: true, force: true });
+      }
+    });
+  });
+
   describe("runtime — one collector per test file", () => {
     it("keeps the observations of every collector started in one process", () => {
       const RUNTIME_PATH = path.resolve(

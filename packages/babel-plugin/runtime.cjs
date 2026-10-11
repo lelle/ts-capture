@@ -99,17 +99,22 @@ function flush() {
   }
 }
 
-// Test runners (Jest, Vitest) often pool/recycle workers in ways that don't
-// reliably reach process.on("exit"). Two-pronged flushing strategy:
-//   1. Eagerly write every Nth __tscptr__ call (cheap; survives hard kill)
-//   2. Periodic timer + standard exit handlers (catches the long-tail
-//      observations between the last call and process exit)
+// A Jest worker ends without the exit handlers running, and a short test file
+// ends before the 500 ms tick. So besides every Nth call, a flush is queued
+// behind each burst of calls; one write then covers the whole burst.
 const FLUSH_EVERY_N_CALLS = 10;
 let _callCount = 0;
+let _flushQueued = false;
 
 function bumpAndMaybeFlush() {
   _callCount++;
   if (_callCount % FLUSH_EVERY_N_CALLS === 0) flush();
+  if (_flushQueued) return;
+  _flushQueued = true;
+  setTimeout(() => {
+    _flushQueued = false;
+    flush();
+  }, 0).unref();
 }
 
 const __tscptr__ = function (name, value, pos, filename, optsJson) {
