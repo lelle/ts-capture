@@ -26,20 +26,28 @@ npm install --save-dev @ts-capture/babel-plugin @ts-capture/core
 
 ## Use
 
-`babel.config.js`:
+Two lines, added to the config you have. The plugin, beside your presets:
 
-```js
-module.exports = {
-  presets: ["@babel/preset-typescript"],
-  plugins: ["@ts-capture/babel-plugin"],
-};
+```diff
+ // babel.config.js
+ module.exports = {
+   presets: [["@babel/preset-env", { targets: { node: "current" } }], "@babel/preset-typescript"],
++  plugins: ["@ts-capture/babel-plugin"],
+ };
 ```
 
-Then in your test setup file (Jest `setupFiles`, Vitest `setupFiles`, etc.):
+And the collector, in Jest's `setupFiles`:
 
-```ts
-import "@ts-capture/babel-plugin/runtime";
+```diff
+ // jest.config.js
+ module.exports = {
+   testEnvironment: "node",
++  setupFiles: ["@ts-capture/babel-plugin/runtime"],
+ };
 ```
+
+[Use with Jest (Babel)](../../docs/how-to/use-with-jest-babel.md) has the full
+walk-through.
 
 After running tests, observations land in `${TS_CAPTURE_TYPES_DIR}/ts-capture-types-<id>.json`, one file per test file under Jest.
 Merge those and apply with the ts-capture CLI. `apply` edits your source — run
@@ -51,7 +59,8 @@ ts-capture apply types.json --dry-run   # preview
 ts-capture apply types.json
 ```
 
-See `examples/jest/` for a working end-to-end example. Verified flow:
+[`examples/jest/`](examples/jest) is a small project wired this way. What it
+gives:
 
 ```diff
 - export function add(a, b) { return a + b; }
