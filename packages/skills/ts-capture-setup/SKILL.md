@@ -193,19 +193,27 @@ For the Babel-plugin path, the planned edits are TWO files:
 ```
 babel.config.js
   module.exports = {
-    presets: ["@babel/preset-typescript"],
+    presets: [ ...the user's presets, unchanged... ],
 +   plugins: ["@ts-capture/babel-plugin"],
   };
 ```
 
 ```
-test/setup.ts          (or whatever the user's setupFiles points at)
-+ import "@ts-capture/babel-plugin/runtime";
+jest.config.js
+  module.exports = {
++   setupFiles: ["@ts-capture/babel-plugin/runtime"],
+  };
 ```
 
-If the user has no setup file referenced in their Jest config, propose
-adding one AND adding it to `setupFiles` — but show both edits in the
-same hunk so the change is reviewable as a unit.
+Add the `plugins` line and leave the presets alone. Jest needs the
+ones it has; a config cut down to `@babel/preset-typescript` fails
+every suite with "Must use import to load ES Module", with or without
+ts-capture.
+
+If the Jest config already lists a setup file in `setupFiles`, the
+import can go at the top of that file instead
+(`import "@ts-capture/babel-plugin/runtime";`). One or the other must
+be there: without it the suite passes and no dump is written.
 
 For the runtime path, the planned edit is the test script:
 

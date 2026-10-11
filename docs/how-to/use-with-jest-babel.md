@@ -18,25 +18,33 @@ loader-integration to fight.
 npm install --save-dev @ts-capture/babel-plugin @ts-capture/core
 ```
 
-## Add the plugin to your Babel chain
+## Add two lines to the config you have
 
-```js title="babel.config.js"
-module.exports = {
-  presets: ["@babel/preset-typescript"],
-  plugins: ["@ts-capture/babel-plugin"],
-};
+The plugin goes into your Babel chain, beside the presets already there. Keep
+those as they are: Jest needs what it needed before.
+
+```diff title="babel.config.js"
+ module.exports = {
+   presets: [["@babel/preset-env", { targets: { node: "current" } }], "@babel/preset-typescript"],
++  plugins: ["@ts-capture/babel-plugin"],
+ };
 ```
 
-## Install the runtime collector
+The collector goes into Jest's `setupFiles`:
 
-In your test setup file (Jest `setupFiles`, Vitest `setupFiles`, …):
-
-```ts title="jest.setup.ts"
-import "@ts-capture/babel-plugin/runtime";
+```diff title="jest.config.js"
+ module.exports = {
+   testEnvironment: "node",
++  setupFiles: ["@ts-capture/babel-plugin/runtime"],
+ };
 ```
 
-This sets `globalThis.__tscptr__` and dumps observations to disk on process
-exit / SIGTERM / a 500 ms tick.
+It sets `globalThis.__tscptr__` in each test file and writes what the plugin's
+calls report to disk as the tests run. Without the `setupFiles` line the suite
+still passes and nothing is written: there is no error to tell you.
+
+If your project already loads a setup file through `setupFiles`, you can put
+`import "@ts-capture/babel-plugin/runtime";` at the top of it instead.
 
 ## Collect, merge, apply
 
