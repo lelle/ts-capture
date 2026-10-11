@@ -132,6 +132,55 @@ describe("@ts-capture/babel-plugin", () => {
     });
   });
 
+  describe("runtime — one collector per test file", () => {
+    it("keeps the observations of every collector started in one process", () => {
+      const RUNTIME_PATH = path.resolve(
+        path.dirname(fileURLToPath(import.meta.url)),
+        "../runtime.cjs",
+      );
+      const typesDir = fs.mkdtempSync(
+        path.join(os.tmpdir(), "ts-capture-babel-collectors-"),
+      );
+      // Jest evaluates setupFiles once per test file, each with a global of
+      // its own; loading the runtime against two fresh globals is that.
+      const script = [
+        `const { createRequire } = require("node:module");`,
+        `const source = require("node:fs").readFileSync(${JSON.stringify(RUNTIME_PATH)}, "utf-8");`,
+        `const load = () => {`,
+        `  const sandbox = {};`,
+        `  new Function("require", "globalThis", source)(createRequire(${JSON.stringify(RUNTIME_PATH)}), sandbox);`,
+        `  return sandbox.__tscptr__;`,
+        `};`,
+        `const first = load();`,
+        `const second = load();`,
+        `first("p", "hello", 0, "/first.ts", "{}");`,
+        `second("q", 1, 0, "/second.ts", "{}");`,
+        `process.exit(0);`,
+      ].join("\n");
+      try {
+        const result = spawnSync(process.execPath, ["-e", script], {
+          env: { ...process.env, TS_CAPTURE_TYPES_DIR: typesDir },
+          encoding: "utf-8",
+        });
+        expect(result.stderr).toBe("");
+        expect(result.status).toBe(0);
+        const observedFiles = fs
+          .readdirSync(typesDir)
+          .flatMap(
+            (dump) =>
+              JSON.parse(
+                fs.readFileSync(path.join(typesDir, dump), "utf-8"),
+              ) as [string, ...unknown[]][],
+          )
+          .map(([filename]) => filename)
+          .sort();
+        expect(observedFiles).toEqual(["/first.ts", "/second.ts"]);
+      } finally {
+        fs.rmSync(typesDir, { recursive: true, force: true });
+      }
+    });
+  });
+
   describe("runtime — flush", () => {
     it("rewrites the dump when a known position gains a new type", () => {
       const RUNTIME_PATH = path.resolve(

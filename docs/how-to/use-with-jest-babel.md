@@ -50,7 +50,8 @@ npx ts-capture apply types.json
 `apply` edits your source — run it from a committed working tree
 ([Review & apply safely](review-and-apply-safely.md)).
 
-Observations land in `${TS_CAPTURE_TYPES_DIR}/ts-capture-types-<pid>.json`.
+Observations land in `${TS_CAPTURE_TYPES_DIR}/ts-capture-types-<id>.json`,
+one file per test file under Jest.
 
 ## Options
 
