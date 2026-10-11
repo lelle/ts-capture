@@ -29,8 +29,8 @@ export type ReverseImportGraph = Map<string, Set<string>>;
 export function orderByImports(
   files: readonly string[],
   importersOf: ReverseImportGraph,
+  caseSensitive: boolean = ts.sys.useCaseSensitiveFileNames,
 ): string[] {
-  const caseSensitive = ts.sys.useCaseSensitiveFileNames;
   const norm = (p: string): string => (caseSensitive ? p : p.toLowerCase());
   const indexOf = new Map(files.map((file, i) => [norm(file), i]));
   const waitingOn = files.map(() => 0);

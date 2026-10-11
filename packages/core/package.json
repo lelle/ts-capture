@@ -10,6 +10,11 @@
       "require": "./dist/index.cjs",
       "default": "./dist/index.js"
     },
+    "./browser": {
+      "types": "./dist/browser.d.ts",
+      "import": "./dist/browser.js",
+      "default": "./dist/browser.js"
+    },
     "./register": {
       "types": "./dist/register.d.ts",
       "import": "./dist/register.js",

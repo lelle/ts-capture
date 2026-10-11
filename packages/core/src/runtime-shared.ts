@@ -18,17 +18,10 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 
-import type { ExtraOptions, LiteralOptions } from "./collector-contract.js";
+import type { LiteralOptions } from "./collector-contract.js";
 
 import { createCollectionContext } from "./node-collection-context.js";
-
-interface TscptrFn {
-  (name: string, value: unknown, pos: number, filename: string, optsJson: string): void;
-  track<T>(value: T, filename: string, offset: number): T;
-  ret<T>(value: T, pos: number, filename: string, optsJson: string): T;
-  registerFn(fn: Function, retPos: number, filename: string): void;
-  regFn<F extends Function>(fn: F, retPos: number, filename: string): F;
-}
+import { createTscptrHook, type TscptrFn } from "./tscptr-hook.js";
 
 // Shared across every context that loads either entry point in the same
 // process — a Node preload (one context) plus N jsdom sandboxes (each a
@@ -75,29 +68,7 @@ export function installTsCaptureRuntime(): void {
   // (each loading `./setup`) — UUID always disambiguates.
   const OUT_FILE = path.join(TYPES_DIR, `ts-capture-types-${crypto.randomUUID()}.json`);
 
-  const tscptr = function (
-    name: string,
-    value: unknown,
-    pos: number,
-    filename: string,
-    optsJson: string,
-  ): void {
-    ctx.record(name, value, pos, filename, JSON.parse(optsJson) as ExtraOptions);
-  } as TscptrFn;
-  tscptr.track = (v, f, o) => ctx.track(v, f, o);
-  tscptr.ret = function (value, pos, filename, optsJson) {
-    ctx.record("(return)", value, pos, filename, JSON.parse(optsJson) as ExtraOptions);
-    return value;
-  };
-  tscptr.registerFn = function (fn, retPos, filename) {
-    ctx.registerFn(fn, retPos, filename);
-  };
-  tscptr.regFn = function (fn, retPos, filename) {
-    ctx.registerFn(fn, retPos, filename);
-    return fn;
-  };
-
-  guarded.__tscptr__ = tscptr;
+  guarded.__tscptr__ = createTscptrHook(ctx);
 
   // The context's revision, not the entry count: a known position can gain a
   // type, or have a function type resolved, without adding an entry.

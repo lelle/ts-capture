@@ -23,6 +23,11 @@ integration package matching their stack.
   steps.
 - **`core/preload`** (and the Jest-targeted `core/setup`) install the runtime
   collector without a bundler.
+- **`core/browser`** is the engine without Node, for a page that runs it
+  itself: `instrumentSource`, `createObserver` and `applyInMemory`, which
+  applies against a project read through a `ts.System` you supply, behind the
+  same type-check gate as the CLI. It is experimental and may change in any
+  0.x release.
 
 Each integration package's README has stack-specific detail; the how-to guides
 above are the task-focused entry points.
