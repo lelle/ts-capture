@@ -324,6 +324,23 @@ Don't propose flag-setting that requires runtime cooperation (e.g.,
 `rewriteCommonBase`) without ALSO showing the corresponding
 adapter-side edit (vite plugin opts or env var).
 
+## When you were asked to do it yourself
+
+Steps 3 and 4 assume a user who reads each edit and runs each command.
+When the user has instead asked you to set ts-capture up — "adopt it in
+this project", with nobody to answer "Apply these?" — the confirmations
+are already given. Make the config edits and run the install, with the
+project's own package manager.
+
+What does not change:
+
+- Read the project first (Step 1). Delegation is not a reason to guess.
+- Commit the wiring before any `apply`, so the annotations are a diff
+  of their own.
+- Run the smoke test in Step 5 and read its output yourself.
+- Report what you did: each file edited, each command run, and
+  anything you chose between.
+
 ## Tone
 
 Direct and decision-shaped. "You have Vitest, so you want
@@ -338,8 +355,8 @@ specific clarifying question — don't guess and proceed.
 
 ## Limitations
 
-- Does not run `npm install` for the user.
-- Does not run the user's test suite.
+- Does not run `npm install` for the user, or the user's test suite,
+  unless it was asked to do the work itself.
 - Does not validate the user's `tsconfig.json` is internally consistent
   — that's TypeScript's job and any error will surface on the first
   ts-capture run anyway.
