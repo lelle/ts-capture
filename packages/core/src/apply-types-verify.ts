@@ -94,6 +94,8 @@ export interface ProjectVerificationContext {
    * framework file's would.
    */
   rootDir: string;
+  /** Where the project's files are read from: the disk, unless one was given. */
+  system: ts.System;
 }
 
 export interface VerificationContext {
@@ -133,6 +135,7 @@ export function createProjectVerificationContext(
   fileNames: readonly string[],
   compilerOptions: ts.CompilerOptions,
   rootDir: string,
+  system: ts.System = ts.sys,
 ): ProjectVerificationContext {
   const versions = new Map<string, number>();
   const snapshots = new Map<string, ts.IScriptSnapshot>();
@@ -148,7 +151,7 @@ export function createProjectVerificationContext(
     getScriptSnapshot: (file) => {
       const cached = snapshots.get(file);
       if (cached) return cached;
-      const text = ts.sys.readFile(file);
+      const text = system.readFile(file);
       if (text === undefined) return undefined;
       const snap = ts.ScriptSnapshot.fromString(text);
       snapshots.set(file, snap);
@@ -156,12 +159,12 @@ export function createProjectVerificationContext(
     },
     getCurrentDirectory: () => rootDir,
     getCompilationSettings: () => compilerOptions,
-    getDefaultLibFileName: (opts) => ts.getDefaultLibFilePath(opts),
-    fileExists: ts.sys.fileExists,
-    readFile: ts.sys.readFile,
-    readDirectory: ts.sys.readDirectory,
-    directoryExists: ts.sys.directoryExists,
-    getDirectories: ts.sys.getDirectories,
+    getDefaultLibFileName: (opts) => defaultLibFilePath(system, opts),
+    fileExists: system.fileExists,
+    readFile: system.readFile,
+    readDirectory: system.readDirectory,
+    directoryExists: system.directoryExists,
+    getDirectories: system.getDirectories,
     setFileSnapshot(file, text) {
       snapshots.set(file, ts.ScriptSnapshot.fromString(text));
       versions.set(file, (versions.get(file) ?? 1) + 1);
@@ -173,9 +176,24 @@ export function createProjectVerificationContext(
 
   const service = ts.createLanguageService(host, ts.createDocumentRegistry());
   const baselineDiagnostics = collectCrossFileDiagnostics(service, fileNames);
-  const reverseImportGraph = buildReverseImportGraph(service, fileNames);
+  const reverseImportGraph = buildReverseImportGraph(service, fileNames, system);
 
-  return { service, host, userFiles: fileNames, baselineDiagnostics, reverseImportGraph, rootDir };
+  return {
+    service,
+    host,
+    userFiles: fileNames,
+    baselineDiagnostics,
+    reverseImportGraph,
+    rootDir,
+    system,
+  };
+}
+
+/** `ts.getDefaultLibFilePath` reads the disk's system; this reads the one given. */
+function defaultLibFilePath(system: ts.System, options: ts.CompilerOptions): string {
+  if (system === ts.sys) return ts.getDefaultLibFilePath(options);
+  const directory = system.getExecutingFilePath().replace(/[\\/][^\\/]*$/, "");
+  return `${directory}/${ts.getDefaultLibFileName(options)}`;
 }
 
 /**
@@ -236,7 +254,11 @@ export function createVerificationContext(
 ): VerificationContext {
   // Ensure the host's snapshot reflects the in-memory source.
   project.host.setFileSnapshot(targetFile, targetSource);
-  const importersOfTarget = findTransitiveImporters(project.reverseImportGraph, targetFile);
+  const importersOfTarget = findTransitiveImporters(
+    project.reverseImportGraph,
+    targetFile,
+    project.system.useCaseSensitiveFileNames,
+  );
   return {
     project,
     filename: targetFile,
@@ -256,12 +278,13 @@ export function createVerificationContext(
 function buildReverseImportGraph(
   service: ts.LanguageService,
   fileNames: readonly string[],
+  system: ts.System,
 ): ReverseImportGraph {
   const graph: ReverseImportGraph = new Map();
   const program = service.getProgram();
   if (!program) return graph;
   const compilerOptions = program.getCompilerOptions();
-  const caseSensitive = ts.sys.useCaseSensitiveFileNames;
+  const caseSensitive = system.useCaseSensitiveFileNames;
   const norm = (p: string): string => (caseSensitive ? p : p.toLowerCase());
 
   for (const file of fileNames) {
@@ -277,7 +300,7 @@ function buildReverseImportGraph(
           stmt.moduleSpecifier.text,
           file,
           compilerOptions,
-          ts.sys,
+          system,
         ).resolvedModule;
         if (!resolved) continue;
         const importedNormalized = norm(resolved.resolvedFileName);
@@ -300,8 +323,11 @@ function buildReverseImportGraph(
  * target separately as part of `wouldIntroduceErrors`'s early-exit
  * path.
  */
-function findTransitiveImporters(graph: ReverseImportGraph, targetFile: string): string[] {
-  const caseSensitive = ts.sys.useCaseSensitiveFileNames;
+function findTransitiveImporters(
+  graph: ReverseImportGraph,
+  targetFile: string,
+  caseSensitive: boolean,
+): string[] {
   const norm = (p: string): string => (caseSensitive ? p : p.toLowerCase());
   const targetNormalized = norm(targetFile);
 

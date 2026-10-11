@@ -328,3 +328,57 @@ describe("orderByImports", () => {
     ]);
   });
 });
+
+describe("apply-types-verify with a system that is not the disk", () => {
+  const libDir = path.dirname(ts.getDefaultLibFilePath({}));
+  const memorySystem = (files: Record<string, string>): ts.System => {
+    const read = (file: string): string | undefined =>
+      file.startsWith("/ts/") ? ts.sys.readFile(path.join(libDir, file.slice(4))) : files[file];
+    return {
+      ...ts.sys,
+      useCaseSensitiveFileNames: true,
+      getExecutingFilePath: () => "/ts/typescript.js",
+      getCurrentDirectory: () => "/app",
+      readFile: read,
+      fileExists: (file) => read(file) !== undefined,
+      directoryExists: (dir) => dir === "/app" || dir === "/ts",
+      getDirectories: () => [],
+      readDirectory: () => [],
+    };
+  };
+  const options: ts.CompilerOptions = {
+    strict: true,
+    target: ts.ScriptTarget.ES2022,
+    module: ts.ModuleKind.ESNext,
+    moduleResolution: ts.ModuleResolutionKind.Bundler,
+    noEmit: true,
+  };
+
+  it("checks a file that exists only in the system it was given", () => {
+    const source = "const x = 1;\n";
+    const system = memorySystem({ "/app/demo.ts": source });
+    const project = createProjectVerificationContext(["/app/demo.ts"], options, "/app", system);
+    const ctx = createVerificationContext(project, "/app/demo.ts", source);
+    const at = source.indexOf("x") + 1;
+    expect(wouldIntroduceErrors(ctx, [{ start: at, end: at, text: ": number" }])).toBe(false);
+    expect(wouldIntroduceErrors(ctx, [{ start: at, end: at, text: ": string" }])).toBe(true);
+  });
+
+  it("follows imports through that system", () => {
+    const source = "export function double(n) {\n  return n * 2;\n}\n";
+    const system = memorySystem({
+      "/app/caller.ts": 'import { double } from "./demo";\ndouble(2);\n',
+      "/app/demo.ts": source,
+    });
+    const project = createProjectVerificationContext(
+      ["/app/demo.ts", "/app/caller.ts"],
+      { ...options, strict: false },
+      "/app",
+      system,
+    );
+    const ctx = createVerificationContext(project, "/app/demo.ts", source);
+    expect(ctx.importersOfTarget).toEqual(["/app/caller.ts"]);
+    const at = source.indexOf("n") + 1;
+    expect(wouldIntroduceErrors(ctx, [{ start: at, end: at, text: ": string" }])).toBe(true);
+  });
+});
