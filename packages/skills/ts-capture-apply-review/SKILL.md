@@ -214,6 +214,71 @@ anywhere, that function may have been observed via a test and is dead
 in production. Flag for the user — they may want to delete the
 function rather than annotate it.
 
+#### 3g — Shapes that describe the test data
+
+An object shape is what flowed through the position during the run. Under
+a test run that is often a fixture, and nothing flags it: the annotation
+compiles and the suite stays green, because it describes exactly what the
+suite does. Three marks to look for:
+
+```ts
+// Literal keys on a value the code indexes by a variable. `test` and
+// `test2` are package names from the project's own test data; the code
+// looks up whatever name it is given.
+const grpcPkg: { test: { service: boolean }; test2?: { service: boolean } } | null =
+  this.lookupPackage(grpcContext, packageName);
+// Suggest: Record<string, { service: boolean }> | null
+
+// A required field the function body never reads. The body uses `name`
+// and `id`; `email` and `roles` came with the objects the test passed,
+// and a caller without them is now rejected.
+function labels(users: { email: string; id: number; name: string; roles: string[] }[]) {
+  return users.map((user) => `${user.id}: ${user.name}`);
+}
+// Suggest: users: { email?: string; id: number; name: string; roles?: string[] }[]
+
+// A lookup that can miss, typed as if it always hits. Every test asked
+// for something that existed.
+find(id: string): { id: string; name: string } {
+  return this.users.get(id);
+}
+// Suggest: { id: string; name: string } | undefined
+```
+
+For each object shape in the diff, compare it with what the function
+body does with the value, not with what the tests pass. Flag the site
+when the two differ, and say which of the three it is.
+
+The second mark is the one that gets left, because nothing about the
+annotation looks wrong. Check it site by site: for every parameter typed
+as an object, or as an array of objects, list the properties the body
+reads and compare with the properties the type requires. A required
+property the body never reads is a finding.
+
+Suggest making the property optional (`roles?: string[]`). Do not
+suggest removing it. Optional keeps every caller that passes the
+property and admits the ones that do not; a type without it rejects a
+caller that writes the object in place with the property in it
+(`labels([{ id: 1, name: "Ada", roles: [] }])` is an excess-property
+error), which is a call the code handled before.
+
+Where the function returns the value or its elements, or stores them,
+the body is not the only reader: whoever uses the result reads from the
+same shape. Count those reads too, by looking at how the result is used
+in the project, and make optional only what neither the body nor any
+use of the result reads. When that cannot be settled from the code, flag
+the property and leave it required.
+
+`infer.narrowParamShapes` is a different remedy with a cost, not part
+of this check. On a re-run it writes a plain object parameter with only
+the properties the body reads — it removes the others, so it brings the
+excess-property error above, which is why it is off by default. It does
+nothing for arrays of objects or for values a function returns or
+passes on. Mention it as an option; do not imitate it by hand.
+
+Background: "An object shape describes the values the run saw, not the
+contract" in ts-capture's `docs/explanation/what-it-cannot-infer.md`.
+
 ### Step 4 — Report
 
 Present findings as a per-site list. Each entry:
