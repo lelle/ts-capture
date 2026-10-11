@@ -264,7 +264,19 @@ npx ts-capture merge ./.ts-capture --out types.json
 npx ts-capture apply types.json --dry-run   # preview before writing
 ```
 
-Under Vitest browser mode the first two lines don't apply — check the
+The dumps, `types.json` and the `types.json.applied` manifest that
+`apply` leaves are working files, not source. Before anything is
+committed, add them to `.gitignore`, or `git status` is never clean
+and one of them ends up in a commit:
+
+```
+.gitignore
++ .ts-capture/
++ types.json
++ types.json.applied
+```
+
+Under Vitest browser mode the first two commands above don't apply — check the
 `outputFile` you configured in Step 2 instead:
 
 ```sh
