@@ -20,7 +20,7 @@ import path from "node:path";
 
 import type { ExtraOptions, LiteralOptions } from "./collector-contract.js";
 
-import { createCollectionContext } from "./collection-context.js";
+import { createCollectionContext } from "./node-collection-context.js";
 
 interface TscptrFn {
   (name: string, value: unknown, pos: number, filename: string, optsJson: string): void;

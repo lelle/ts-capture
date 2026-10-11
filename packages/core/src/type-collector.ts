@@ -89,6 +89,7 @@ export function wasDepthExceeded(): boolean {
 // --- CollectionContext ---
 //
 // The stateful collection context + cross-ref signature engine live in
-// `collection-context.ts`. Re-exported here so `index.ts` and other
+// `collection-context.ts`; `node-collection-context.ts` binds it to Node's
+// promise inspection. Re-exported here so `index.ts` and other
 // `./type-collector.js` importers are untouched.
-export { createCollectionContext } from "./collection-context.js";
+export { createCollectionContext } from "./node-collection-context.js";

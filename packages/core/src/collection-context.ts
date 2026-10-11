@@ -1,5 +1,3 @@
-import { inspect } from "node:util";
-
 // The stateful collection context + two-pass cross-ref signature engine. Owns
 // the per-run observation log and the deferred signature reconstruction that
 // turns scattered param / return / value observations into emitted types.
@@ -15,6 +13,7 @@ import type {
   ExtraOptions,
   SourceLocation,
 } from "./collector-contract.js";
+import type { PromiseStateReader } from "./promise-state.js";
 
 import { crossReferenceObservations } from "./cross-reference-observations.js";
 import { createValueWalker } from "./value-walker.js";
@@ -25,7 +24,10 @@ interface LogKey {
   opts: ExtraOptions;
 }
 
-export function createCollectionContext(options?: CollectorOptions): CollectionContext {
+export function createCollectionContextWith(
+  promiseState: PromiseStateReader,
+  options?: CollectorOptions,
+): CollectionContext {
   const maxDepth = options?.maxDepth ?? 5;
   const literalOptions = options?.literalOptions;
   // Bind one walker for the context's lifetime; record() walks one value per
@@ -288,20 +290,4 @@ export function createCollectionContext(options?: CollectorOptions): CollectionC
       return crossReferenceObservations({ logs, paramNames, recordedFnKeys, objectMemberFnKeys });
     },
   };
-}
-
-/**
- * A promise's state without touching it. `util.inspect` reads it off the
- * engine, where `then` would register a reaction and mark a rejection handled.
- */
-function promiseState(promise: Promise<unknown>): "fulfilled" | "pending" | "rejected" {
-  const text = inspect(promise, {
-    depth: 0,
-    maxStringLength: 0,
-    maxArrayLength: 0,
-    breakLength: Infinity,
-    colors: false,
-  });
-  const state = /^[^{]*\{\s*<(pending|rejected)>/.exec(text);
-  return state ? (state[1] as "pending" | "rejected") : "fulfilled";
 }
