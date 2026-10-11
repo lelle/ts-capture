@@ -44,9 +44,9 @@ Less direct:
 Required reads (in this order):
 
 1. `package.json` — `devDependencies`, `dependencies`, `scripts`.
-   Note the **vitest major** if present: the single-worker option was
-   renamed in Vitest 4, and the wrong one is ignored rather than
-   rejected (Step 3).
+   Note the **vitest major** if present: the options for running in
+   one process differ between Vitest 3 and 4, and the wrong form is
+   ignored rather than rejected (Step 3).
 2. `tsconfig.json` (and any `tsconfig.*.json`) — `module`,
    `moduleResolution`, `strict`, `experimentalDecorators`,
    `lib` includes.
@@ -140,22 +140,33 @@ src/vite.config.ts
 + import tsCapture from "@ts-capture/vite";
   export default defineConfig({
 +   plugins: [tsCapture()],
-    test: {
-+     fileParallelism: false,
-    },
   });
 ```
 
-Keep the suite in a single worker on the Vitest path — per ts-capture's
-EVALUATION docs, this is the cheapest large-effect mitigation for
-per-fork init overhead on non-trivial codebases (took the hono suite
-from "hangs" to 246s). **Which option to write depends on the vitest
-major read in Step 1:**
+Leave the worker settings alone. Vitest starts a process per test
+file by default, each writes a dump of its own, and `merge` puts them
+together; on a small or medium suite nothing needs changing.
 
-| Vitest | Option                                                           |
+Only if the instrumented run is much slower than the plain one, or
+hangs — each process sets the plugin pipeline up again, and on a suite
+with hundreds of files that adds up (it took the hono suite from
+"hangs" to 246s) — propose running it in one process for the
+observation run. **Which options do that depends on the vitest major
+read in Step 1:**
+
+| Vitest | Options                                                          |
 | ------ | ---------------------------------------------------------------- |
-| 4+     | `fileParallelism: false` (top-level under `test`)                |
+| 4+     | `fileParallelism: false` and `isolate: false` (under `test`)     |
 | 3      | `pool: "forks"` + `poolOptions: { forks: { singleFork: true } }` |
+
+On Vitest 4+ it takes both. `fileParallelism: false` alone runs the
+files one after another and still starts a process for each: measured
+on Vitest 5 with six test files, six processes and twice the run time
+of the default, against one process and half the time with
+`isolate: false` beside it. Say what `isolate: false` costs before
+proposing it: test files then share module state, and a suite that
+relies on a fresh module per file can fail. It is for the observation
+run; take it out again afterwards.
 
 Vitest 4 removed `poolOptions`; every pool option moved to the top
 level. The Vitest 3 form in a Vitest 4 config prints a deprecation
@@ -264,9 +275,8 @@ choice and Step 3's edits. Common causes:
   re-litigating the adapter choice — the adapter is right, the delivery
   channel is the one that changed.
 - Vitest `pool: "threads"` + short workers: workers exit before the
-  observation flush ticker fires. Fix is the single-worker option for
-  the user's vitest major (Step 3) — verify the user didn't edit it
-  back.
+  observation flush ticker fires. Fix is running the observation in
+  one process, with the options for the user's vitest major (Step 3).
 - Babel-plugin path: the runtime import in the setup file was
   forgotten or the setupFiles entry doesn't reference the right path.
 - Runtime-shim path: `NODE_OPTIONS` was overridden by another script
