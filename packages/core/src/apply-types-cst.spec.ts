@@ -847,6 +847,57 @@ describe("applyTypesToFileCst — TypeChecker verify integration", () => {
     expect(out.text).toBe(src);
   });
 
+  // The skip above is by method name, on the premise that the receiver's
+  // element type reaches the callback. An untyped receiver has none to give.
+  it("types an Array.prototype callback param its receiver leaves as any", () => {
+    const src = "export function skus(cart) {\n  return cart.lines.map((line) => line.sku);\n}\n";
+    const out = applied(
+      src,
+      [entry("target.ts", src.indexOf("(line)") + 5, [["{ sku: string }"]], { arrow: true })],
+      {
+        project: true,
+      },
+    );
+    expect(out).toTypeAs("line", "{ sku: string }");
+    expect(out.text).toContain("(line: { sku: string }) =>");
+  });
+
+  // An accumulator is not an element. Where the checker has it as any —
+  // seeded with `Object.create(null)`, say — what was observed is whatever the
+  // callers built up, as often a test's object as a contract.
+  it("leaves a reduce accumulator the checker has as any alone", () => {
+    const src =
+      "export function index(source) {\n" +
+      "  return Object.keys(source).reduce((found, key) => {\n" +
+      "    found[key] = source[key];\n" +
+      "    return found;\n" +
+      "  }, Object.create(null));\n" +
+      "}\n";
+    const out = applied(
+      src,
+      [entry("target.ts", src.indexOf("(found,") + 6, [["{ foo?: number }"]], { arrow: true })],
+      {
+        project: true,
+      },
+    );
+    expect(out).toLeaveUntyped("found");
+  });
+
+  it("types the element of a reduce on an untyped receiver", () => {
+    const src =
+      "export function total(cart) {\n" +
+      "  return cart.lines.reduce((sum, line) => sum + line.price, 0);\n" +
+      "}\n";
+    const out = applied(
+      src,
+      [entry("target.ts", src.indexOf("line)") + 4, [["{ price: number }"]], { arrow: true })],
+      {
+        project: true,
+      },
+    );
+    expect(out).toTypeAs("line", "{ price: number }");
+  });
+
   it("drops a return-type annotation the body already implies", () => {
     const src = 'export function greet() {\n  return "hi";\n}\n';
     const out = applied(

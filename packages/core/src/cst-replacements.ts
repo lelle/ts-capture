@@ -383,8 +383,19 @@ export function buildCstReplacements(
       // wrap so any sibling returnType annotation on the same position
       // lands inside parens (otherwise we'd produce broken
       // `filter(product: boolean =>` output).
+      //
+      // Only when the receiver has an element type to give. On an untyped one
+      // the checker has `any` here and the observation is all there is. A
+      // reduce accumulator is no element, and is skipped either way.
+      const paramNode = checkerIndex?.paramSites.get(pos)?.node;
+      const inferredParam = typeAt(checker, paramNode?.name);
+      const leftAsAny =
+        inferredParam !== undefined &&
+        (inferredParam.flags & ts.TypeFlags.Any) !== 0 &&
+        !isReduceAccumulator(paramNode);
       if (
         opts?.arrow &&
+        !leftAsAny &&
         suppressArrayCallbackStructural(arrayCallbackArrowParams.has(pos), emitted)
       ) {
         if (site.parensOpenPos !== undefined) {
@@ -404,7 +415,6 @@ export function buildCstReplacements(
       }
       // Nothing to add when the checker already types this parameter — a
       // contextually typed callback param, for instance.
-      const inferredParam = typeAt(checker, checkerIndex?.paramSites.get(pos)?.node.name);
       lastInferredString = describeInferred(checker, inferredParam);
       if (!gateAllows(pos, "param", inferredParam, emitted)) continue;
       // Paren-less single-param arrow: wrap with `()` separately so the
@@ -689,6 +699,19 @@ export function buildCstReplacements(
  * top, past a shebang. Each declaration renders with the blank line a reader
  * expects around it there.
  */
+/** The first parameter of a callback passed to `reduce` or `reduceRight`. */
+function isReduceAccumulator(param: ts.ParameterDeclaration | undefined): boolean {
+  const callback = param?.parent;
+  const call = callback?.parent;
+  if (!param || !callback || !call || !ts.isCallExpression(call)) return false;
+  if (callback.parameters[0] !== param || call.arguments[0] !== callback) return false;
+  const callee = call.expression;
+  return (
+    ts.isPropertyAccessExpression(callee) &&
+    (callee.name.text === "reduce" || callee.name.text === "reduceRight")
+  );
+}
+
 function declarationSite(sf: ts.SourceFile): { pos: number; render: (text: string) => string } {
   let lastImport: ts.Statement | undefined;
   for (const stmt of sf.statements) {
