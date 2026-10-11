@@ -106,6 +106,36 @@ those apart; looking at where the value comes from can.
 - **Is idempotent** — a `<types.json>.applied` manifest records what was
   written; re-running is a no-op. Use `--force` to bypass the manifest.
 
+## What is still untyped afterwards
+
+A strict project that had implicit-`any` errors before `apply` usually still
+has some after it. That is the expected result, not a failed run. Three things
+leave a position alone:
+
+- **Nothing ran it.** Only values that passed through the code during the test
+  run are observed. A function no test calls keeps its `any`.
+- **It is in a test file.** `*.spec.*` and `*.test.*` are skipped unless you
+  pass `--include-tests`, so their errors stay.
+- **It was observed and not written.** The type would add a type error
+  somewhere in the project, or the observation carried nothing to write.
+
+Every run ends by counting the third kind:
+
+```text title="Current"
+apply: 40 annotations written in 6 files.
+       12 observed positions not written (6 would add a type error, 6 with no type information) - see --report.
+```
+
+`--report` lists each of them with its reason, and works with `--dry-run`:
+
+```sh
+npx ts-capture apply types.json --dry-run --report
+```
+
+Read the report before reading compiler errors: an error at a position the
+report names has its cause there. What is left is yours to type by hand — see
+[What it cannot infer](../explanation/what-it-cannot-infer.md).
+
 ## Skip files you don't want touched
 
 Add gitignore-style globs under `apply.skipFiles` in `ts-capture.config.json`.
