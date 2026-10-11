@@ -1,14 +1,16 @@
 name: Examples page
 
-# Builds site/index.html from docs/examples/examples.json and publishes it to
-# GitHub Pages. It does nothing until Pages is switched on for the repository
-# with "GitHub Actions" as its source (Settings → Pages).
+# Builds the examples page from docs/examples/examples.json and the playground
+# from the engine in packages/core, and publishes both to GitHub Pages. It does
+# nothing until Pages is switched on for the repository with "GitHub Actions"
+# as its source (Settings → Pages).
 on:
   push:
     branches: [main]
     paths:
       - docs/examples/**
       - packages/examples-site/**
+      - packages/core/**
       - .github/workflows/pages.yml
   workflow_dispatch:
 
@@ -39,7 +41,7 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      - name: Build the page
+      - name: Build the pages
         run: pnpm examples
 
       - uses: actions/configure-pages@45bfe0192ca1faeb007ade9deae92b16b8254a0d # v6.0.0
