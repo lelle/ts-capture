@@ -1,24 +1,23 @@
 "use strict";
 // CJS runtime for @ts-capture/babel-plugin. Sets globalThis.__tscptr__ so the
 // __tscptr__(...) calls injected by the Babel plugin have a function to call,
-// and writes collected observations to a per-PID JSON file.
+// and writes collected observations to a JSON dump of its own.
 //
 // Usage in Jest: jest.config.js → setupFiles: ["@ts-capture/babel-plugin/runtime"]
 //
 // Configuration via env:
-//   TS_CAPTURE_TYPES_DIR  Directory to write per-PID JSON dumps (defaults "/tmp")
+//   TS_CAPTURE_TYPES_DIR  Directory to write the JSON dumps to (defaults "/tmp")
 //
 // Why CJS: Jest setupFiles runs in a CJS context. Node 22+ supports require()
 // of ESM packages, so we can require ts-capture (ESM-only) directly.
 
+const crypto = require("node:crypto");
 const fs = require("node:fs");
 const path = require("node:path");
 
-// Guard against re-initialization. Jest evaluates setupFiles once per test
-// file (each file gets its own module registry) but globalThis is shared
-// across files in the same worker process. Without this, each test file
-// would replace globalThis.__tscptr__ with a closure over a fresh ctx, leaving
-// observations from earlier files in orphaned ctx instances.
+// Guards a second load against the same global. Jest gives every test file a
+// global of its own, so there each file starts a collector — which is why the
+// dump below is named per collector and not per process.
 const RUNTIME_KEY = Symbol.for("ts-capture.babel.runtime");
 if (globalThis[RUNTIME_KEY]) {
   return;
@@ -65,7 +64,10 @@ try {
 } catch {
   // best-effort
 }
-const OUT_FILE = path.join(TYPES_DIR, `ts-capture-types-${process.pid}.json`);
+const OUT_FILE = path.join(
+  TYPES_DIR,
+  `ts-capture-types-${crypto.randomUUID()}.json`,
+);
 
 // The context's revision, not the entry count: a known position can gain a
 // type, or have a function type resolved, without adding an entry.

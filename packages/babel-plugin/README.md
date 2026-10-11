@@ -41,7 +41,7 @@ Then in your test setup file (Jest `setupFiles`, Vitest `setupFiles`, etc.):
 import "@ts-capture/babel-plugin/runtime";
 ```
 
-After running tests, observations land in `${TS_CAPTURE_TYPES_DIR}/ts-capture-types-<pid>.json`.
+After running tests, observations land in `${TS_CAPTURE_TYPES_DIR}/ts-capture-types-<id>.json`, one file per test file under Jest.
 Merge those and apply with the ts-capture CLI. `apply` edits your source — run
 it from a committed working tree
 ([Review & apply safely](../../docs/how-to/review-and-apply-safely.md)):
