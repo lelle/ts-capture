@@ -21,16 +21,16 @@ npm install @ts-capture/core
 
 ```bash
 # Instrument a file (outputs to stdout)
-ts-capture instrument src/app.ts
+npx ts-capture instrument src/app.ts
 
 # Instrument in-place
-ts-capture instrument --in-place src/app.ts
+npx ts-capture instrument --in-place src/app.ts
 
 # Apply collected types to source files
-ts-capture apply collected-types.json
+npx ts-capture apply collected-types.json
 
 # Report type coverage
-ts-capture coverage tsconfig.json
+npx ts-capture coverage tsconfig.json
 ```
 
 ### Node runner

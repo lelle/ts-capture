@@ -106,8 +106,8 @@ project with both a node and a browser test project (a SvelteKit scaffold
 is exactly this) needs the plugin in both:
 
 ```sh
-ts-capture merge ./ts-capture-browser.json --out types.json
-ts-capture merge ./.ts-capture ./ts-capture-browser.json --out types.json
+npx ts-capture merge ./ts-capture-browser.json --out types.json
+npx ts-capture merge ./.ts-capture ./ts-capture-browser.json --out types.json
 ```
 
 Delivery is scheduled as observations arrive. On builds predating that,
@@ -260,8 +260,8 @@ should produce dump files. Suggest:
 ```sh
 TS_CAPTURE_TYPES_DIR=./.ts-capture npm test
 ls .ts-capture/                    # expect one or more ts-capture-types-*.json
-ts-capture merge ./.ts-capture --out types.json
-ts-capture apply types.json --dry-run   # preview before writing
+npx ts-capture merge ./.ts-capture --out types.json
+npx ts-capture apply types.json --dry-run   # preview before writing
 ```
 
 Under Vitest browser mode the first two lines don't apply — check the
@@ -270,7 +270,7 @@ Under Vitest browser mode the first two lines don't apply — check the
 ```sh
 npm test
 ls -l ./ts-capture-browser.json    # expect a non-empty JSON array
-ts-capture merge ./ts-capture-browser.json --out types.json
+npx ts-capture merge ./ts-capture-browser.json --out types.json
 ```
 
 If `ls .ts-capture/` is empty after the test run, that's the failure

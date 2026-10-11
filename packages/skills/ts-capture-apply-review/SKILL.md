@@ -65,7 +65,7 @@ If the user has not yet run `apply --dry-run` and there's no diff to
 review, suggest:
 
 ```sh
-ts-capture apply types.json --dry-run > apply-preview.txt
+npx ts-capture apply types.json --dry-run > apply-preview.txt
 # then re-run the review with the saved file
 ```
 
@@ -307,7 +307,7 @@ Say what is left as well. A strict project usually still fails typecheck
 after apply, and that is not a finding against the diff: code the tests never
 ran is not observed, test files are skipped by default, and an observation
 that would add a type error is not written. Run
-`ts-capture apply types.json --dry-run --report` and name the positions it
+`npx ts-capture apply types.json --dry-run --report` and name the positions it
 lists before attributing a remaining error to anything else.
 
 ### Step 5 — Hand off

@@ -55,8 +55,8 @@ it from a committed working tree
 ([Review & apply safely](../../docs/how-to/review-and-apply-safely.md)):
 
 ```sh
-ts-capture apply types.json --dry-run   # preview
-ts-capture apply types.json
+npx ts-capture apply types.json --dry-run   # preview
+npx ts-capture apply types.json
 ```
 
 [`examples/jest/`](examples/jest) is a small project wired this way. What it
