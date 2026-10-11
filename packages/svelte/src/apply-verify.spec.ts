@@ -1,13 +1,10 @@
-import type { CollectedTypeInfo } from "@ts-capture/core";
-
 import { createProjectVerificationContext } from "@ts-capture/core";
-import * as fs from "node:fs";
-import * as os from "node:os";
-import * as path from "node:path";
-import ts from "typescript";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { describe, expect, it } from "vitest";
 
+import { type Applied, entry } from "../../core/src/test-utils/applied.js";
+import { endOf } from "../../core/src/test-utils/instrumented.js";
 import "../../core/src/test-utils/matchers.js";
+import { makeProject } from "../../core/src/test-utils/project.js";
 import { sveltePlugin } from "./index.js";
 import { appliedSvelte } from "./test-utils/applied-svelte.js";
 
@@ -22,49 +19,39 @@ import { appliedSvelte } from "./test-utils/applied-svelte.js";
  * drop the unsafe annotations).
  */
 describe("svelte apply typecheck-verify", () => {
-  let tmpRoot: string;
-
-  beforeAll(() => {
-    tmpRoot = fs.mkdtempSync(
-      path.join(os.tmpdir(), "ts-capture-svelte-verify-"),
+  /**
+   * Apply `observed`, a type per declared name, to a component whose script
+   * block is `body`, and hold the block that comes back.
+   */
+  function annotated(
+    body: string,
+    observed: Record<string, string>,
+    files: Record<string, string>,
+    how: "unverified" | "verified",
+  ): Applied {
+    const project = makeProject(files);
+    const filename = project.pathOf("Comp.svelte");
+    const source = `<script lang="ts">${body}</script>`;
+    const entries = Object.entries(observed).map(([name, type]) =>
+      entry(`${filename}__script.ts`, endOf(body, name), [[type]], {
+        varDecl: true,
+      }),
     );
-  });
-
-  afterAll(() => {
-    try {
-      fs.rmSync(tmpRoot, { recursive: true, force: true });
-    } catch {
-      // best-effort cleanup
-    }
-  });
-
-  function makeProject(files: Record<string, string>): {
-    dir: string;
-    fileNames: string[];
-    compilerOptions: ts.CompilerOptions;
-  } {
-    const dir = fs.mkdtempSync(path.join(tmpRoot, "p-"));
-    const tsconfig = {
-      compilerOptions: {
-        strict: true,
-        target: "ES2022",
-        module: "ES2022",
-        moduleResolution: "Bundler",
-        skipLibCheck: true,
-        noEmit: true,
-      },
-      include: ["**/*.ts"],
-    };
-    fs.writeFileSync(path.join(dir, "tsconfig.json"), JSON.stringify(tsconfig));
-    for (const [name, content] of Object.entries(files)) {
-      fs.writeFileSync(path.join(dir, name), content);
-    }
-    const parsed = ts.parseJsonConfigFileContent(tsconfig, ts.sys, dir);
-    return {
-      dir,
-      fileNames: parsed.fileNames,
-      compilerOptions: parsed.options,
-    };
+    const projectVerify =
+      how === "verified"
+        ? createProjectVerificationContext(
+            project.fileNames,
+            project.compilerOptions,
+            project.dir,
+          )
+        : undefined;
+    const text = sveltePlugin().apply(source, entries, {
+      filename,
+      projectVerify,
+    });
+    const { script } = appliedSvelte(source, text, { files });
+    if (!script) throw new Error(`no script block in:\n${text}`);
+    return script;
   }
 
   it("drops observed-concrete annotations that would break types; keeps source clean", () => {
@@ -78,85 +65,37 @@ describe("svelte apply typecheck-verify", () => {
         "",
       ].join("\n"),
     };
-    const proj = makeProject(files);
-
-    const svelteFile = path.join(proj.dir, "Comp.svelte");
-    const scriptBody =
+    const body =
       "\nimport { getCtx } from './ctx'\n" +
       "const matched = 'DP1'.match(/(\\w)(\\d)/)\n" +
       "const ctxVal = getCtx()\n";
-    const svelteSource = `<script lang="ts">${scriptBody}</script>`;
-
-    const prefix = `${svelteFile}__script.ts`;
-    const matchedEnd = scriptBody.indexOf("matched") + "matched".length;
-    const ctxValEnd = scriptBody.indexOf("ctxVal") + "ctxVal".length;
-    const typeInfo: CollectedTypeInfo = [
+    const observed = {
       // String.match observed as string[] this session — really RegExpMatchArray | null.
-      [prefix, matchedEnd, [["string[]", undefined]], { varDecl: true }],
+      matched: "string[]",
       // getCtx() observed concrete — really Partial<UrlCtx> (plate optional).
-      [
-        prefix,
-        ctxValEnd,
-        [["{ plate: string }", undefined]],
-        { varDecl: true },
-      ],
-    ];
+      ctxVal: "{ plate: string }",
+    };
 
     // Sanity: without a verifier the regression is reproduced.
-    const noVerify = sveltePlugin().apply(svelteSource, typeInfo, {
-      filename: svelteFile,
-    });
-    const unverified = appliedSvelte(svelteSource, noVerify, { files }).script;
+    const unverified = annotated(body, observed, files, "unverified");
     expect(unverified).toAnnotate("matched", "string[]");
     expect(unverified).toAnnotate("ctxVal", "{ plate: string }");
     expect(unverified).not.toHaveNoNewDiagnostics();
 
     // With the project verifier the unsafe annotations must be dropped.
-    const projectVerify = createProjectVerificationContext(
-      proj.fileNames,
-      proj.compilerOptions,
-      proj.dir,
-    );
-    const verified = sveltePlugin().apply(svelteSource, typeInfo, {
-      filename: svelteFile,
-      projectVerify,
-    });
-    const out = appliedSvelte(svelteSource, verified, { files }).script;
+    const out = annotated(body, observed, files, "verified");
     expect(out).toLeaveUntyped("matched");
     expect(out).toLeaveUntyped("ctxVal");
     expect(out).toHaveNoNewDiagnostics();
   });
 
   it("annotates a destructured $props() declaration", () => {
-    const proj = makeProject({
-      "noop.ts": "export const noop = 0;\n",
-    });
-
-    const svelteFile = path.join(proj.dir, "Comp.svelte");
-    const scriptBody = "\nlet { host, guest } = $props()\n";
-    const svelteSource = `<script lang="ts">${scriptBody}</script>`;
-
-    const prefix = `${svelteFile}__script.ts`;
-    const patternEnd = scriptBody.indexOf("}") + 1;
-    const typeInfo: CollectedTypeInfo = [
-      [
-        prefix,
-        patternEnd,
-        [["{ host: string, guest: string }", undefined]],
-        { varDecl: true },
-      ],
-    ];
-
-    const projectVerify = createProjectVerificationContext(
-      proj.fileNames,
-      proj.compilerOptions,
-      proj.dir,
+    const out = annotated(
+      "\nlet { host, guest } = $props()\n",
+      { "{ host, guest }": "{ host: string, guest: string }" },
+      { "noop.ts": "export const noop = 0;\n" },
+      "verified",
     );
-    const verified = sveltePlugin().apply(svelteSource, typeInfo, {
-      filename: svelteFile,
-      projectVerify,
-    });
-    const out = appliedSvelte(svelteSource, verified).script;
     expect(out).toAnnotate(
       "{ host, guest }",
       "{ host: string; guest: string }",
@@ -175,41 +114,21 @@ describe("svelte apply typecheck-verify", () => {
         "",
       ].join("\n"),
     };
-    const proj = makeProject(files);
-
-    const svelteFile = path.join(proj.dir, "Comp.svelte");
-    const scriptBody =
+    const body =
       "\nimport { getCtx, getOpaque } from './ctx'\n" +
       "const sound = getOpaque('x')\n" + // TS infers `any`; ours informs
       "const unsound = getCtx()\n"; // also string | undefined
-    const svelteSource = `<script lang="ts">${scriptBody}</script>`;
-
-    const prefix = `${svelteFile}__script.ts`;
-    const soundEnd = scriptBody.indexOf("sound") + "sound".length;
-    const unsoundEnd = scriptBody.indexOf("unsound") + "unsound".length;
-    const typeInfo: CollectedTypeInfo = [
-      // Sound: matches the real type exactly.
-      [
-        prefix,
-        soundEnd,
-        [["string | undefined", undefined]],
-        { varDecl: true },
-      ],
-      // Unsound: drops the undefined branch.
-      [prefix, unsoundEnd, [["string", undefined]], { varDecl: true }],
-    ];
-
-    const projectVerify = createProjectVerificationContext(
-      proj.fileNames,
-      proj.compilerOptions,
-      proj.dir,
+    const out = annotated(
+      body,
+      {
+        // Matches the real type exactly.
+        "const sound": "string | undefined",
+        // Drops the undefined branch and must be rejected by verify.
+        "const unsound": "string",
+      },
+      files,
+      "verified",
     );
-    const verified = sveltePlugin().apply(svelteSource, typeInfo, {
-      filename: svelteFile,
-      projectVerify,
-    });
-    // `unsound` drops the undefined branch and must be rejected by verify.
-    const out = appliedSvelte(svelteSource, verified, { files }).script;
     expect(out).toAnnotate("sound", "string | undefined");
     expect(out).toLeaveUntyped("unsound");
     expect(out).toHaveNoNewDiagnostics();

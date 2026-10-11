@@ -3,7 +3,9 @@ import type { CollectedTypeInfo } from "@ts-capture/core";
 import { getTypeName } from "@ts-capture/core";
 import { describe, expect, it } from "vitest";
 
+import { entry } from "../../core/src/test-utils/applied.js";
 import {
+  endOf,
   inspected,
   type Instrumented,
 } from "../../core/src/test-utils/instrumented.js";
@@ -169,14 +171,15 @@ describe("sveltePreprocessor", () => {
 // applySvelteTypesToFile
 // ---------------------------------------------------------------------------
 
-describe("applySvelteTypesToFile", () => {
-  // "\nfunction foo(a) {}\n" — `a.end` = 15 (verified via instrumentSource())
-  const PARAM_A_END = 15;
+// The content of a script block. An entry's offset is relative to it.
+const FOO = "\nfunction foo(a) {}\n";
+const MOD = "\nfunction mod(a) {}\n";
 
+describe("applySvelteTypesToFile", () => {
   it("applies annotation at the correct position in the .svelte file", () => {
-    const svelteSource = '<script lang="ts">\nfunction foo(a) {}\n</script>';
+    const svelteSource = `<script lang="ts">${FOO}</script>`;
     const typeInfo: CollectedTypeInfo = [
-      ["comp.svelte__script.ts", PARAM_A_END, [["string", undefined]], {}],
+      entry("comp.svelte__script.ts", endOf(FOO, "(a"), [["string"]]),
     ];
     const result = applySvelteTypesToFile(svelteSource, typeInfo, {
       svelteFilename: "comp.svelte",
@@ -188,10 +191,9 @@ describe("applySvelteTypesToFile", () => {
   });
 
   it("handles <script context='module'> blocks", () => {
-    const svelteSource =
-      '<script context="module" lang="ts">\nfunction mod(a) {}\n</script>';
+    const svelteSource = `<script context="module" lang="ts">${MOD}</script>`;
     const typeInfo: CollectedTypeInfo = [
-      ["comp.svelte__module.ts", PARAM_A_END, [["number", undefined]], {}],
+      entry("comp.svelte__module.ts", endOf(MOD, "(a"), [["number"]]),
     ];
     const result = applySvelteTypesToFile(svelteSource, typeInfo, {
       svelteFilename: "comp.svelte",
@@ -214,10 +216,10 @@ describe("applySvelteTypesToFile", () => {
   });
 
   it("returns source unchanged when typeInfo has no matching entries", () => {
-    const svelteSource = '<script lang="ts">\nfunction foo(a) {}\n</script>';
+    const svelteSource = `<script lang="ts">${FOO}</script>`;
     const typeInfo: CollectedTypeInfo = [
       // Wrong svelteFilename prefix — no match
-      ["other.svelte__script.ts", PARAM_A_END, [["string", undefined]], {}],
+      entry("other.svelte__script.ts", endOf(FOO, "(a"), [["string"]]),
     ];
     const result = applySvelteTypesToFile(svelteSource, typeInfo, {
       svelteFilename: "comp.svelte",
@@ -226,21 +228,14 @@ describe("applySvelteTypesToFile", () => {
   });
 
   it("handles both instance and module script blocks in the same file", () => {
+    const inst = "\nfunction inst(b) {}\n";
     const svelteSource = [
-      '<script context="module" lang="ts">',
-      "function mod(a) {}",
-      "</script>",
-      '<script lang="ts">',
-      "function inst(b) {}",
-      "</script>",
+      `<script context="module" lang="ts">${MOD}</script>`,
+      `<script lang="ts">${inst}</script>`,
     ].join("\n");
-
-    // `a.end` in "\nfunction mod(a) {}\n" = 15
-    // `b.end` in "\nfunction inst(b) {}\n" = 16 ("function inst(" is 14 chars + \n)
-    // Verified: "\nfunction inst(b)" — \n=0, f=1..n=8, ` `=9, i=10,n=11,s=12,t=13, `(`=14, `b`=15, b.end=16
     const typeInfo: CollectedTypeInfo = [
-      ["comp.svelte__module.ts", PARAM_A_END, [["string", undefined]], {}],
-      ["comp.svelte__script.ts", 16, [["number", undefined]], {}],
+      entry("comp.svelte__module.ts", endOf(MOD, "(a"), [["string"]]),
+      entry("comp.svelte__script.ts", endOf(inst, "(b"), [["number"]]),
     ];
     const result = applySvelteTypesToFile(svelteSource, typeInfo, {
       svelteFilename: "comp.svelte",
@@ -261,8 +256,6 @@ describe("sveltePlugin", () => {
   // job is to receive (source, entries, opts) from cmdApply and
   // forward to applySvelteTypesToFile with the right svelteFilename
   // wiring.
-  const PARAM_A_END = 15;
-
   it("match() claims synthetic *.svelte__script.ts paths", () => {
     const plugin = sveltePlugin();
     expect(plugin.match("Component.svelte__script.ts")).toBe(true);
@@ -288,9 +281,9 @@ describe("sveltePlugin", () => {
     // has filename set to the resolved .svelte path (as cmdApply
     // sends it). Plugin must wire svelteFilename so the apply finds
     // the entry's prefix match.
-    const svelteSource = '<script lang="ts">\nfunction foo(a) {}\n</script>';
+    const svelteSource = `<script lang="ts">${FOO}</script>`;
     const typeInfo: CollectedTypeInfo = [
-      ["comp.svelte__script.ts", PARAM_A_END, [["string", undefined]], {}],
+      entry("comp.svelte__script.ts", endOf(FOO, "(a"), [["string"]]),
     ];
     const plugin = sveltePlugin();
     const result = plugin.apply(svelteSource, typeInfo, {
