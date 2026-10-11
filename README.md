@@ -74,21 +74,12 @@ npm install --save-dev @ts-capture/vite @ts-capture/core
 ```
 
 ```ts
-// vite.config.ts
+// vitest.config.ts
 import { defineConfig } from "vitest/config";
-import { tsCapturePlugin } from "@ts-capture/vite";
+import tsCapture from "@ts-capture/vite";
 
 export default defineConfig({
-  plugins: [tsCapturePlugin()],
-  test: {
-    // Recommended for non-trivial codebases: vitest's default pool
-    // (`forks`) was chosen for stability, not speed. Each fork
-    // re-initializes ts-capture's plugin pipeline. On suites with many
-    // spec files that overhead compounds. singleFork keeps test
-    // isolation cheap but routes all specs through one process.
-    pool: "forks",
-    poolOptions: { forks: { singleFork: true } },
-  },
+  plugins: [tsCapture()],
 });
 ```
 

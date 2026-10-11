@@ -27,14 +27,16 @@ format-check, or type-check on-disk source before running tests stay green.
 ## Collect, merge, apply
 
 ```sh
-TS_CAPTURE_TYPES_DIR=/tmp/ts-capture npm test
-npx ts-capture merge /tmp/ts-capture --out types.json
+TS_CAPTURE_TYPES_DIR=./.ts-capture npm test
+npx ts-capture merge ./.ts-capture --out types.json
 npx ts-capture apply types.json --dry-run   # preview
 npx ts-capture apply types.json
 ```
 
 `apply` edits your source — run it from a committed working tree
-([Review & apply safely](review-and-apply-safely.md)).
+([Review & apply safely](review-and-apply-safely.md)). The dumps and
+`types.json` are working files; the
+[tutorial](../tutorials/getting-started.md) has the `.gitignore` block.
 
 Observations land in `${TS_CAPTURE_TYPES_DIR}/ts-capture-types-<uuid>.json`,
 one file per worker/fork — that's why a `merge` step is needed before `apply`.
