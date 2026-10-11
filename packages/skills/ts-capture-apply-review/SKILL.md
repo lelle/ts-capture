@@ -321,7 +321,31 @@ options after the report:
 - Skip apply, refine the source manually based on findings
 
 If the user explicitly asks the skill to apply specific suggestions,
-that's a different mode — confirm scope per site before editing.
+that's a different mode — confirm scope per site before editing. If
+they asked for the whole adoption to be carried through, see "When you
+were asked to do it yourself" below.
+
+## When you were asked to do it yourself
+
+The workflow above ends in a report, and leaves apply and every edit to
+the user. When the user has instead asked you to carry the adoption
+through — run apply, review it, and leave annotations worth committing —
+you may run `apply` and edit the annotated source. Then the review has
+to end differently:
+
+- Commit, or check that the tree is clean, before `apply`.
+- Edit only what a pattern in Step 3 identifies, and only the
+  annotation. Do not change what the code does, and do not rename or
+  extract types nobody asked for; suggest those in the report.
+- After your edits, run the project's typecheck and its tests. An edit
+  to an annotation can add a type error as easily as apply can, and
+  the tests alone will not show it.
+- Report in three lists: what you changed and which pattern it was;
+  what you flagged and left as apply wrote it, and why; and what the
+  typecheck still reports, with `--report` beside it.
+
+The second list is the one that gets dropped. A site you looked at and
+decided not to touch is a finding for the user, not a non-event.
 
 ## Tone
 
@@ -344,8 +368,9 @@ This skill operates on STATIC source + the apply diff. It does not:
 
 - Re-run ts-capture or modify `types.json`
 - Read per-PID dump files or correlate observations across calls
-- Run the user's tests or `tsc`
-- Auto-apply suggested fixes
+- Run the user's tests or `tsc`, unless you were asked to do the work
+  yourself
+- Auto-apply suggested fixes, with the same exception
 
 If a finding requires more data than the diff + source provides, ask
 the user to provide it (e.g., the relevant test file, the imports list
