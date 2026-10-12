@@ -30,17 +30,24 @@ const tsCaptureBabelPlugin =
   (tsCaptureBabelPluginModule as unknown as { default: unknown }).default ??
   tsCaptureBabelPluginModule;
 
-/** Run Babel with the plugin and hold what it printed against the source. */
+/**
+ * Run Babel with the plugin and hold what it printed against the source.
+ * With `keepTypes` Babel only parses TypeScript and prints it back, where the
+ * preset would strip every type and `declare` the plugin was handed.
+ */
 function transform(
   source: string,
   filename = "test.ts",
   options?: object,
+  { keepTypes = false } = {},
 ): Instrumented {
   const result = transformSync(source, {
     filename,
     babelrc: false,
     configFile: false,
-    presets: ["@babel/preset-typescript"],
+    ...(keepTypes
+      ? { parserOpts: { plugins: ["typescript"] } }
+      : { presets: ["@babel/preset-typescript"] }),
     plugins: [options ? [tsCaptureBabelPlugin, options] : tsCaptureBabelPlugin],
   });
   return inspected(result?.code ?? "", {
@@ -73,7 +80,12 @@ describe("@ts-capture/babel-plugin", () => {
   it("does not emit the declare-namespace block (skipTscptrDeclarations)", () => {
     // The plugin sets skipTscptrDeclarations:true so the runtime __tscptr__ is
     // expected to be supplied by @ts-capture/babel-plugin/runtime, not declared inline.
-    const out = transform(`function add(a, b) { return a + b; }`);
+    const out = transform(
+      `function add(a, b) { return a + b; }`,
+      "test.ts",
+      undefined,
+      { keepTypes: true },
+    );
     expect(out).toTrack("a");
     expect(out).not.toDeclareRuntime();
   });
