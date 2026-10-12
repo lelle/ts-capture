@@ -1,8 +1,7 @@
 import * as fs from "node:fs";
-import * as os from "node:os";
 import * as path from "node:path";
 import ts from "typescript";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { describe, expect, it } from "vitest";
 
 import {
   advanceCurrentSource,
@@ -13,75 +12,28 @@ import {
   orderByImports,
   wouldIntroduceErrors,
 } from "./apply-types-verify.js";
+import { makeProject } from "./test-utils/project.js";
 
 /**
  * Tests for the verification helper. Each test sets up a
  * tiny in-temp-dir project (one or two .ts files) and asks the
  * helper whether a candidate annotation would type-check.
  *
- * Self-contained: temp dirs are created per test and cleaned up
- * after. No shared state between tests.
+ * Self-contained: each test gets its own project directory. No shared
+ * state between tests.
  */
 describe("apply-types-verify", () => {
-  // tmpdir created in beforeAll, cleaned up in afterAll — kept
-  // session-scoped so the LanguageService's document registry can
-  // reuse parsed lib.d.ts across tests.
-  let tmpRoot: string;
-
-  beforeAll(() => {
-    tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), "ts-capture-verify-"));
-  });
-
-  afterAll(() => {
-    try {
-      fs.rmSync(tmpRoot, { recursive: true, force: true });
-    } catch {
-      // best-effort cleanup
-    }
-  });
-
-  function makeProject(files: Record<string, string>): {
-    dir: string;
-    target: string;
-    fileNames: string[];
-    compilerOptions: ts.CompilerOptions;
-  } {
-    const dir = fs.mkdtempSync(path.join(tmpRoot, "p-"));
-    const tsconfig = {
-      compilerOptions: {
-        strict: true,
-        target: "ES2022",
-        module: "ES2022",
-        moduleResolution: "Bundler",
-        skipLibCheck: true,
-        noEmit: true,
-      },
-      include: ["**/*.ts"],
-    };
-    fs.writeFileSync(path.join(dir, "tsconfig.json"), JSON.stringify(tsconfig));
-    for (const [name, content] of Object.entries(files)) {
-      fs.writeFileSync(path.join(dir, name), content);
-    }
-    const parsed = ts.parseJsonConfigFileContent(tsconfig, ts.sys, dir);
-    const fileNames = parsed.fileNames;
-    const targetFile = fileNames.find((f) => f.endsWith("target.ts"));
-    if (!targetFile) {
-      throw new Error("test must include a `target.ts` file");
-    }
-    return { dir, target: targetFile, fileNames, compilerOptions: parsed.options };
-  }
-
   it("accepts a syntactically correct annotation that doesn't conflict", () => {
     const proj = makeProject({
       "target.ts": "const x = 1;\n",
     });
-    const sourceText = fs.readFileSync(proj.target, "utf-8");
+    const sourceText = proj.read("target.ts");
     const projectCtx = createProjectVerificationContext(
       proj.fileNames,
       proj.compilerOptions,
       proj.dir,
     );
-    const ctx = createVerificationContext(projectCtx, proj.target, sourceText);
+    const ctx = createVerificationContext(projectCtx, proj.pathOf("target.ts"), sourceText);
     // Insert `: number` at the end of `x`.
     const declEnd = sourceText.indexOf("x") + 1;
     const probe = [{ start: declEnd, end: declEnd, text: ": number" }];
@@ -93,13 +45,13 @@ describe("apply-types-verify", () => {
     const proj = makeProject({
       "target.ts": "const x = 1;\n",
     });
-    const sourceText = fs.readFileSync(proj.target, "utf-8");
+    const sourceText = proj.read("target.ts");
     const projectCtx = createProjectVerificationContext(
       proj.fileNames,
       proj.compilerOptions,
       proj.dir,
     );
-    const ctx = createVerificationContext(projectCtx, proj.target, sourceText);
+    const ctx = createVerificationContext(projectCtx, proj.pathOf("target.ts"), sourceText);
     const declEnd = sourceText.indexOf("x") + 1;
     const probe = [{ start: declEnd, end: declEnd, text: ": string" }];
     expect(wouldIntroduceErrors(ctx, probe)).toBe(true);
@@ -118,13 +70,13 @@ describe("apply-types-verify", () => {
         "",
       ].join("\n"),
     });
-    const sourceText = fs.readFileSync(proj.target, "utf-8");
+    const sourceText = proj.read("target.ts");
     const projectCtx = createProjectVerificationContext(
       proj.fileNames,
       proj.compilerOptions,
       proj.dir,
     );
-    const ctx = createVerificationContext(projectCtx, proj.target, sourceText);
+    const ctx = createVerificationContext(projectCtx, proj.pathOf("target.ts"), sourceText);
     // Insert `: { value: number }` after the `)` of `(x: number)`.
     const paramsClose = sourceText.indexOf(")") + 1;
     const probe = [{ start: paramsClose, end: paramsClose, text: ": { value: number }" }];
@@ -135,13 +87,13 @@ describe("apply-types-verify", () => {
     const proj = makeProject({
       "target.ts": "const x = 1;\n",
     });
-    const sourceText = fs.readFileSync(proj.target, "utf-8");
+    const sourceText = proj.read("target.ts");
     const projectCtx = createProjectVerificationContext(
       proj.fileNames,
       proj.compilerOptions,
       proj.dir,
     );
-    const ctx = createVerificationContext(projectCtx, proj.target, sourceText);
+    const ctx = createVerificationContext(projectCtx, proj.pathOf("target.ts"), sourceText);
     const declEnd = sourceText.indexOf("x") + 1;
     // First probe: bad annotation → rejected.
     wouldIntroduceErrors(ctx, [{ start: declEnd, end: declEnd, text: ": string" }]);
@@ -161,13 +113,13 @@ describe("apply-types-verify", () => {
     const proj = makeProject({
       "target.ts": "const a = 1;\n",
     });
-    const sourceText = fs.readFileSync(proj.target, "utf-8");
+    const sourceText = proj.read("target.ts");
     const projectCtx = createProjectVerificationContext(
       proj.fileNames,
       proj.compilerOptions,
       proj.dir,
     );
-    const ctx = createVerificationContext(projectCtx, proj.target, sourceText);
+    const ctx = createVerificationContext(projectCtx, proj.pathOf("target.ts"), sourceText);
     const aEnd = sourceText.indexOf("a") + 1;
     commitReplacements(ctx, [{ start: aEnd, end: aEnd, text: ": number" }]);
     expect(ctx.currentSource).toContain("const a: number = 1");
@@ -191,14 +143,14 @@ describe("apply-types-verify", () => {
       "index.ts": "export * from './target';\n",
       "consumer.ts": "import { greet } from './index';\nconst out: string = greet();\n",
     });
-    const sourceText = fs.readFileSync(proj.target, "utf-8");
+    const sourceText = proj.read("target.ts");
     const projectCtx = createProjectVerificationContext(
       proj.fileNames,
       proj.compilerOptions,
       proj.dir,
     );
     // Transitive importer set must include consumer.ts (2 hops away).
-    const ctx = createVerificationContext(projectCtx, proj.target, sourceText);
+    const ctx = createVerificationContext(projectCtx, proj.pathOf("target.ts"), sourceText);
     const consumer = proj.fileNames.find((f) => f.endsWith("consumer.ts"));
     expect(ctx.importersOfTarget).toContain(consumer);
 
@@ -224,13 +176,13 @@ describe("apply-types-verify", () => {
         "",
       ].join("\n"),
     });
-    const sourceText = fs.readFileSync(proj.target, "utf-8");
+    const sourceText = proj.read("target.ts");
     const projectCtx = createProjectVerificationContext(
       proj.fileNames,
       proj.compilerOptions,
       proj.dir,
     );
-    const ctx = createVerificationContext(projectCtx, proj.target, sourceText);
+    const ctx = createVerificationContext(projectCtx, proj.pathOf("target.ts"), sourceText);
     const paramEnd = sourceText.indexOf("one(a)") + "one(a".length;
     const probe = [{ start: paramEnd, end: paramEnd, text: ": number" }];
     expect(wouldIntroduceErrors(ctx, probe)).toBe(false);
@@ -258,8 +210,8 @@ describe("apply-types-verify", () => {
     const otherSource = fs.readFileSync(other, "utf-8");
     const ctx1 = createVerificationContext(
       projectCtx,
-      proj.target,
-      fs.readFileSync(proj.target, "utf-8"),
+      proj.pathOf("target.ts"),
+      proj.read("target.ts"),
     );
     const ctx2 = createVerificationContext(projectCtx, other, otherSource);
     // Both contexts share the same graph (identity comparison) — no
@@ -277,7 +229,7 @@ describe("apply-types-verify", () => {
       proj.compilerOptions,
       proj.dir,
     );
-    const ctx = createVerificationContext(project, proj.target, src);
+    const ctx = createVerificationContext(project, proj.pathOf("target.ts"), src);
     advanceCurrentSource(ctx, "type T = { a: number };\n\n" + src);
     expect(wouldIntroduceErrors(ctx, [{ start: 0, end: 0, text: "export const m = 1;\n" }])).toBe(
       false,
@@ -296,7 +248,7 @@ describe("apply-types-verify", () => {
       { ...proj.compilerOptions, noUnusedLocals: true },
       proj.dir,
     );
-    const ctx = createVerificationContext(project, proj.target, src);
+    const ctx = createVerificationContext(project, proj.pathOf("target.ts"), src);
     const declaration = { start: 0, end: 0, text: "type P = { x: number };\n" };
     const supporting = (subset: ReadonlyArray<{ text: string }>) =>
       subset.some((c) => /\bP\b/.test(c.text)) ? [declaration] : [];
