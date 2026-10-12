@@ -12,8 +12,9 @@ import {
 } from "../apply-types-verify.js";
 import { applyTypesToFile } from "../apply-types.js";
 import { INFER_DEFAULTS, type InferOptions } from "../configuration.js";
-import { describeDiagnostic } from "./matchers.js";
 import { makeProject, programOf, type TestProject } from "./project.js";
+// Whoever holds an applied file can ask about it: the matchers come with it.
+import "./applied-matchers.js";
 
 // Run an applier and hold its output as a parsed, type-checked file, so a
 // spec can ask what was written (the AST) and what it means (the checker)
@@ -234,4 +235,8 @@ export function entry(
 ): CollectedTypeEntry {
   const normalized = types.map((t): DiscoveredType => [t[0], t[1] ?? undefined, t[2]]);
   return [filename, offset, normalized, opts];
+}
+
+export function describeDiagnostic(d: ts.Diagnostic): string {
+  return `TS${d.code}: ${ts.flattenDiagnosticMessageText(d.messageText, " ")}`;
 }

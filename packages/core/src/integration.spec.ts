@@ -4,9 +4,15 @@ import { describe, expect, it } from "vitest";
 import type { InferOptions } from "./configuration.js";
 
 import { INFER_DEFAULTS } from "./configuration.js";
-import { type Applied, applied, nodesOf, parseErrors, printedAst } from "./test-utils/applied.js";
+import {
+  type Applied,
+  applied,
+  describeDiagnostic,
+  nodesOf,
+  parseErrors,
+  printedAst,
+} from "./test-utils/applied.js";
 import { collect, type CollectOptions } from "./test-utils/collected.js";
-import { describeDiagnostic } from "./test-utils/matchers.js";
 
 interface PipelineOptions extends CollectOptions {
   infer?: InferOptions;
