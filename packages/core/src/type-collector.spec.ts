@@ -212,28 +212,18 @@ describe("getTypeName", () => {
     it("falls back to argN when toString yields non-identifier param names", () => {
       const fn = function () {} as unknown as { toString: () => string };
       fn.toString = () => 'something(1, 1014, "/path/x.ts", "{}")';
-      const result = getTypeName(fn as unknown as () => unknown);
-      expect(result).not.toBeNull();
-
-      const match = result!.match(/^\((.*)\) => /);
-      expect(match).not.toBeNull();
-      const params = match![1]
-        .split(",")
-        .map((s) => s.trim())
-        .filter(Boolean);
-      for (const p of params) {
-        const [name] = p.split(":").map((s) => s.trim());
-        // Allowed forms: regular identifier, ...rest, [a]Array, {a}Object
-        expect(name).toMatch(/^(\.\.\.[a-zA-Z_$][\w$]*|[a-zA-Z_$][\w$]*)$/);
-      }
+      expect(getTypeName(fn as unknown as () => unknown)).toBe(
+        "(arg0: unknown, arg1: unknown, arg2: unknown, arg3: unknown) => unknown",
+      );
     });
 
     it("skips numeric-only literal param names from mangled toString", () => {
       const fn = function () {} as unknown as { toString: () => string };
       fn.toString = () => "(42, 99) => result";
-      const result = getTypeName(fn as unknown as () => unknown);
       // Must not emit `(42: unknown, 99: unknown) => unknown` — invalid TS.
-      expect(result).not.toMatch(/\(\s*\d/);
+      expect(getTypeName(fn as unknown as () => unknown)).toBe(
+        "(arg0: unknown, arg1: unknown) => unknown",
+      );
     });
   });
 
@@ -248,7 +238,6 @@ describe("getTypeName", () => {
         realProperty: "hello",
       };
       const result = getTypeName(obj);
-      expect(result).not.toContain("__tscptr__");
       expect(result).toBeTheType("{ realProperty: string }");
     });
 
@@ -260,7 +249,6 @@ describe("getTypeName", () => {
         keep: 1,
       };
       const result = getTypeName(obj);
-      expect(result).not.toContain("__tscptr__");
       expect(result).toBeTheType("{ keep: number }");
     });
   });
@@ -1006,11 +994,10 @@ describe("additional edge cases", () => {
           dealCategories: string[];
         }) => [children, companySectors, dealCategories]) as Function;
         const result = getTypeName(fn);
-        expect(result).not.toMatch(/childrencompanySectors/);
-        expect(result).toContain("arg0Object: {");
-        expect(result).toContain("children: unknown");
-        expect(result).toContain("companySectors: unknown");
-        expect(result).toContain("dealCategories: unknown");
+        // The parameter's name is the claim, so the text is compared as written.
+        expect(result).toBe(
+          "(arg0Object: {children: unknown, companySectors: unknown, dealCategories: unknown}) => unknown",
+        );
       });
 
       it("handles destructure-rename ({prop: local}) without leaking colons (Bug 4b)", () => {
@@ -1022,12 +1009,9 @@ describe("additional edge cases", () => {
         // not parseable TypeScript.
         const fn = (({ request: e }: { request: number }) => e) as Function;
         const result = getTypeName(fn);
-        // Must not include the literal "request: e" sequence, which
-        // would produce a colon inside both the name and the body.
-        expect(result).not.toMatch(/request: e[A-Za-z]/);
-        // The local name `e` is what's bound; the body should refer
-        // to it (or to `arg0`), not to the source-side `request`.
-        expect(result).toMatch(/^\((?:e|arg0)Object: \{e: unknown\}\) => unknown$/);
+        // The local name `e` is what's bound; the name and the body refer
+        // to it, not to the source-side `request`.
+        expect(result).toBe("(eObject: {e: unknown}) => unknown");
       });
 
       it("emits syntactically valid TypeScript for all destructured shapes", () => {

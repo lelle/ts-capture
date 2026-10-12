@@ -5,6 +5,7 @@ import path from "node:path";
 import { describe, expect, it } from "vitest";
 
 import { buildTscptrScaffoldLines } from "./test-tscptr-scaffold.js";
+import { checked } from "./test-utils/applied.js";
 
 const PROJECT_ROOT = path.resolve(".");
 
@@ -21,10 +22,8 @@ describe("register (node runner)", () => {
   it("instruments and collects types via the full pipeline", () => {
     withTmpDir((dir) => {
       const srcFile = path.join(dir, "app.ts");
-      fs.writeFileSync(
-        srcFile,
-        'function greet(name) { return "Hello " + name; }\ngreet("World");\n',
-      );
+      const source = 'function greet(name) { return "Hello " + name; }\ngreet("World");\n';
+      fs.writeFileSync(srcFile, source);
 
       const distDir = path.join(PROJECT_ROOT, "dist");
       const tsLib = path.join(PROJECT_ROOT, "node_modules/typescript/lib/typescript.js");
@@ -50,8 +49,9 @@ describe("register (node runner)", () => {
       fs.writeFileSync(runnerFile, lines.join("\n"));
 
       execFileSync("node", [runnerFile], { encoding: "utf-8", timeout: 15000 });
-      const result = fs.readFileSync(srcFile, "utf-8");
-      expect(result).toContain("name: string");
+      const out = checked(source, fs.readFileSync(srcFile, "utf-8"));
+      expect(out).toAnnotate("name", "string");
+      expect(out).toAnnotate({ returnOf: "greet" }, "string");
     });
   });
 
