@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Order</title>
+    <link rel="stylesheet" href="/src/style.css" />
+  </head>
+  <body>
+    <main>
+      <h1>Place an order</h1>
+      <form id="order">
+        <label>Name <input name="name" required /></label>
+        <label>Email <input name="email" type="email" required /></label>
+        <div class="row">
+          <label
+            >Item
+            <select name="sku">
+              <option value="TEE-BLACK-M">T-shirt, black, M · 199 kr</option>
+              <option value="CAP-NAVY-OS">Cap, navy · 149 kr</option>
+            </select>
+          </label>
+          <label class="narrow"
+            >Qty <input name="qty" type="number" min="1" value="1"
+          /></label>
+        </div>
+        <fieldset>
+          <legend>Payment</legend>
+          <label
+            ><input name="payment" type="radio" value="card" checked />
+            Card</label
+          >
+          <label
+            ><input name="payment" type="radio" value="invoice" />
+            Invoice</label
+          >
+        </fieldset>
+        <label
+          >Discount code <input name="discountCode" placeholder="optional"
+        /></label>
+        <button type="submit">Place order</button>
+      </form>
+      <p id="receipt" hidden></p>
+    </main>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>

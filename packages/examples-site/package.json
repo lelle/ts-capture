@@ -4,6 +4,12 @@
   "private": true,
   "description": "Builds the ts-capture examples page and the browser playground.",
   "type": "module",
+  "exports": {
+    "./code": {
+      "types": "./dist/code.d.ts",
+      "default": "./dist/code.js"
+    }
+  },
   "scripts": {
     "build": "tsc",
     "site": "node dist/build.js",

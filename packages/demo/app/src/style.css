@@ -1,0 +1,80 @@
+:root {
+  font-family: system-ui, sans-serif;
+  color: #1c2330;
+  background: #f4f5f7;
+}
+body {
+  margin: 0;
+}
+main {
+  max-width: 440px;
+  margin: 20px auto;
+  padding: 24px 28px 28px;
+  background: #fff;
+  border: 1px solid #dfe2e8;
+  border-radius: 12px;
+}
+h1 {
+  margin: 0 0 16px;
+  font-size: 22px;
+}
+form {
+  display: grid;
+  gap: 12px;
+}
+label {
+  display: grid;
+  gap: 4px;
+  font-size: 13px;
+  font-weight: 600;
+}
+input:not([type="radio"]),
+select {
+  box-sizing: border-box;
+  width: 100%;
+  padding: 8px 10px;
+  font: inherit;
+  font-weight: 400;
+  border: 1px solid #c5cad3;
+  border-radius: 6px;
+}
+.row {
+  display: grid;
+  grid-template-columns: 1fr 84px;
+  gap: 12px;
+}
+fieldset {
+  display: flex;
+  gap: 20px;
+  margin: 0;
+  padding: 8px 12px;
+  border: 1px solid #dfe2e8;
+  border-radius: 6px;
+}
+legend {
+  padding: 0 4px;
+  font-size: 13px;
+  font-weight: 600;
+}
+fieldset label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-weight: 400;
+}
+button {
+  padding: 10px;
+  font: inherit;
+  font-weight: 600;
+  color: #fff;
+  background: #2f6feb;
+  border: 0;
+  border-radius: 6px;
+}
+#receipt {
+  margin: 16px 0 0;
+  padding: 10px 12px;
+  font-size: 14px;
+  background: #e6f4ea;
+  border-radius: 6px;
+}

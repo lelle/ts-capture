@@ -23,3 +23,6 @@ local-docs/
 
 # The examples page, built from docs/examples/examples.json (pnpm examples)
 site/
+
+# The README recording: its scratch copy of the app (pnpm demo)
+packages/demo/.work/

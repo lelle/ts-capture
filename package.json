@@ -15,6 +15,7 @@
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "examples": "pnpm --filter @ts-capture/core run build && pnpm --filter @ts-capture/examples-site run build && pnpm --filter @ts-capture/examples-site run site",
+    "demo": "pnpm --filter @ts-capture/core --filter @ts-capture/vite --filter @ts-capture/examples-site --filter @ts-capture/demo run build && pnpm --filter @ts-capture/demo run record",
     "verify": "bash scripts/ci.sh",
     "clean": "pnpm -r exec rm -rf dist node_modules",
     "changeset": "changeset",

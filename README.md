@@ -10,6 +10,11 @@ ts-capture observes how your code is actually called at runtime — in tests, in
 dev, in the browser — and writes inferred TypeScript types back into your
 source. Turns the implicit `any` your tests exercise into precise types.
 
+![An order form whose code has no types. The ts-capture plugin is added to the Vite config, two orders are placed in the browser, and `ts-capture apply` writes four named types and six annotations into the source, taking type coverage from 77% to 100%.](docs/assets/demo.gif)
+
+The recording is made by [`pnpm demo`](packages/demo), which runs every step
+for real; nothing in it is written by hand.
+
 > **🚧 Pre-release.** The packages are on npm as 0.x. There is no 1.0, and
 > none is scheduled: the version stays below 1.0 until code, API, test
 > coverage and documentation meet a quality bar that respects the first
