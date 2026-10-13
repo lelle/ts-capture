@@ -822,3 +822,21 @@ use(obj);`,
     expect(out).toAnnotate("obj", "{ id: number }");
   });
 });
+
+describe("integration: aliasRepeatedShapes", () => {
+  it("declares a shape that only another declared shape names", () => {
+    const input = `function send(order) { return order.customer.name; }
+function save(basket) { return basket.customer.email; }
+send({ customer: { name: "a", email: "b" }, total: 1 });
+save({ customer: { name: "c", email: "d" }, total: 2 });`;
+    const out = applied(input, collect(input), {
+      infer: { ...INFER_DEFAULTS, aliasRepeatedShapes: true },
+      verify: true,
+    });
+    expect(out).toAnnotate("order", { ref: "Order" });
+    expect(out).toAnnotate("basket", { ref: "Order" });
+    expect(out).toDeclareAlias("Order", "{ customer: Customer; total: number }");
+    expect(out).toDeclareAlias("Customer", "{ email: string; name: string }");
+    expect(out).toHaveNoNewDiagnostics();
+  });
+});

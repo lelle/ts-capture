@@ -595,8 +595,20 @@ export function buildCstReplacements(
       });
     }
   }
-  const declarationsNamedIn = (texts: readonly string[]): string[] =>
-    declarations.filter((d) => texts.some((t) => d.names.test(t))).map((d) => d.text);
+  // A declaration names the shapes it holds, so one that is needed brings
+  // those with it, however far in they sit.
+  const declarationsNamedIn = (texts: readonly string[]): string[] => {
+    const needed = new Set<(typeof declarations)[number]>();
+    let naming = texts;
+    while (naming.length > 0) {
+      const found = declarations.filter(
+        (d) => !needed.has(d) && naming.some((text) => d.names.test(text)),
+      );
+      for (const declaration of found) needed.add(declaration);
+      naming = found.map((d) => d.text.slice(d.text.indexOf("=")));
+    }
+    return declarations.filter((d) => needed.has(d)).map((d) => d.text);
+  };
 
   const texts = buffered.map((candidate) => candidate.wrap(candidate.emitted));
   let accepted = buffered.map((_, i) => i);
