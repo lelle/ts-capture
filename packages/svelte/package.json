@@ -1,6 +1,6 @@
 {
   "name": "@ts-capture/svelte",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "ts-capture Svelte preprocessor — instrument <script> blocks in .svelte files for runtime type observation. (0.x — API may change between minor versions.)",
   "type": "module",
   "exports": {
