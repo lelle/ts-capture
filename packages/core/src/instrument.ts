@@ -14,6 +14,7 @@ export function instrumentSource(
     instrumentCallExpressions: false,
     instrumentImplicitThis: false,
     skipTscptrDeclarations: false,
+    observeAnnotated: observeAnnotatedFromEnv(),
     ...options,
   };
 
@@ -31,4 +32,12 @@ export function instrumentSource(
 
   const transformed = transformSourceFile(sourceFile, opts, program);
   return ts.createPrinter().printFile(transformed);
+}
+
+// An env var, not a config key: the adapters hard-code their options, and
+// this reaches every one of them without a build-config edit.
+function observeAnnotatedFromEnv(): boolean {
+  if (typeof process === "undefined") return false;
+  const value = process.env.TS_CAPTURE_OBSERVE_ANNOTATED;
+  return value === "1" || value === "true";
 }

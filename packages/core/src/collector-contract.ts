@@ -37,6 +37,11 @@ export interface ExtraOptions {
    */
   paramReturn?: boolean;
   paramReturnMember?: string;
+  /**
+   * Set on observations of a parameter or return that already has a written
+   * type (`observeAnnotated`). Only `verify` reads them; apply drops them.
+   */
+  annotated?: boolean;
 }
 
 /**

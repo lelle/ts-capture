@@ -52,10 +52,10 @@ function runInDir(
   };
 }
 
-function withTmpDir(fn: (dir: string) => void) {
+function withTmpDir<T>(fn: (dir: string) => T): T {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "ts-capture-cli-"));
   try {
-    fn(dir);
+    return fn(dir);
   } finally {
     fs.rmSync(dir, { recursive: true });
   }
@@ -151,6 +151,73 @@ describe("cli", () => {
         expect(stdout).toContain("1 match, 1 mismatch, 2 unverifiable");
         expect(stdout).toContain("1 declared any");
         expect(stdout).toContain("1 complex declared type");
+      });
+    });
+
+    describe("observations of written types", () => {
+      const source =
+        "export function add(a: string) {\n  return a;\n}\nexport let n = 1;\nexport let s = 'x';\n";
+      const posAfter = (needle: string) => source.indexOf(needle) + needle.length;
+      // `a` has a written type; `n` and `s` are inferred.
+      const observe = (aOpts: object) => (file: string) => [
+        [file, posAfter("(a"), [["number", undefined]], aOpts],
+        [file, posAfter("let n"), [["number", undefined]], { varDecl: true }],
+        [file, posAfter("let s"), [["number", undefined]], { varDecl: true }],
+      ];
+      const verifyWith = (typeInfo: (file: string) => unknown[], ...flags: string[]) =>
+        withTmpDir((rawDir) => {
+          const dir = fs.realpathSync(rawDir);
+          const file = path.join(dir, "a.ts");
+          fs.writeFileSync(file, source);
+          fs.writeFileSync(
+            path.join(dir, "tsconfig.json"),
+            JSON.stringify({ compilerOptions: { strict: true }, include: ["a.ts"] }),
+          );
+          fs.writeFileSync(path.join(dir, "types.json"), JSON.stringify(typeInfo(file)));
+          return runInDir(dir, "verify", "types.json", "--project", "tsconfig.json", ...flags);
+        });
+
+      it("warns when there are none, so a missing flag does not read as all types right", () => {
+        const { stderr, exitCode } = verifyWith(observe({}));
+        expect(exitCode).toBe(0);
+        expect(stderr).toContain("TS_CAPTURE_OBSERVE_ANNOTATED=1");
+      });
+
+      it("does not warn when there are", () => {
+        const { stderr } = verifyWith(observe({ annotated: true }));
+        expect(stderr).not.toContain("TS_CAPTURE_OBSERVE_ANNOTATED");
+      });
+
+      it("reports written types first, each section with its own mismatches and count", () => {
+        const { stdout } = verifyWith(observe({ annotated: true }));
+        const order = [
+          "Written types (1 checked)",
+          "a.ts:1:21  a",
+          "0 match, 1 mismatch, 0 unverifiable",
+          "Inferred types (2 checked)",
+          "a.ts:5:12  s",
+          "1 match, 1 mismatch, 0 unverifiable",
+        ].map((text) => stdout.indexOf(text));
+        expect(order).not.toContain(-1);
+        expect(order).toEqual([...order].sort((x, y) => x - y));
+      });
+
+      it("keeps one report when no written types were observed", () => {
+        const { stdout } = verifyWith(observe({}));
+        expect(stdout).not.toContain("Written types");
+        expect(stdout).toContain("3 observed positions: 1 match, 2 mismatch");
+      });
+
+      it("holds --threshold to the written types when there are any", () => {
+        // 1 of 3 match overall, which passes 0.3; 0 of 1 written types do not.
+        const { stderr, exitCode } = verifyWith(observe({ annotated: true }), "--threshold=0.3");
+        expect(exitCode).toBe(2);
+        expect(stderr).toContain("written types");
+      });
+
+      it("holds --threshold to every position when there are no written types", () => {
+        const { exitCode } = verifyWith(observe({}), "--threshold=0.3");
+        expect(exitCode).toBe(0);
       });
     });
   });

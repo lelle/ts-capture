@@ -427,6 +427,53 @@ describe("transformer", () => {
     });
   });
 
+  describe("observeAnnotated", () => {
+    const observing = (source: string): InstrumentedSource =>
+      transform(source, { observeAnnotated: true });
+
+    it("tracks a typed parameter, marked annotated", () => {
+      const out = observing("function foo(a: string) { return a; }");
+      expect(out).toTrack("a", { annotated: true, at: endOf(out.input, "foo(a") });
+    });
+
+    it("does not mark an untyped parameter beside it", () => {
+      const out = observing("function foo(a: string, b) { return a + b; }");
+      const b = out.calls.find((call) => call.name === "b");
+      expect(b?.options.annotated).toBeUndefined();
+    });
+
+    it("wraps the return of a function with a return type, marked annotated", () => {
+      const out = observing("function foo(a): string { return a; }");
+      expect(out).toWrapReturnOf("foo", { annotated: true, at: endOf(out.input, "foo(a)") });
+    });
+
+    it("wraps the return of an arrow with a return type, marked annotated", () => {
+      const out = observing("const foo = (a: number): string => String(a);");
+      expect(out).toWrapReturnOf("foo", { annotated: true });
+      expect(out).toTrack("a", { annotated: true });
+    });
+
+    it("records what a typed parameter was passed", () => {
+      const out = observing("function total(qty: string) { return qty; }");
+      expect(out.run({ total: [2] })).toObserve("qty", "number");
+    });
+
+    it("still skips a typed parameter with a default value", () => {
+      const out = observing("function foo(a: number = 1) { return a; }");
+      expect(out).toLeaveUntracked("a");
+    });
+
+    it("does not wrap calls of a typed callback parameter", () => {
+      const out = observing("function foo(cb: () => string) { return cb(); }");
+      expect(callbackReturns(out)).toEqual([]);
+    });
+
+    it("leaves typed variables and class fields alone", () => {
+      const out = observing('let x: number = 5; class C { name: string = "a"; }');
+      expect(out).toLeaveUnchanged();
+    });
+  });
+
   describe("position tracking", () => {
     it("records correct offset for type insertion", () => {
       const source = "function foo(a) {}";

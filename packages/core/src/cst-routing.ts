@@ -52,6 +52,8 @@ export function routeEntries(
     // See the same guard in `apply-types.ts`: a `paramReturn` record says what
     // calling the parameter returned, not what the parameter is.
     if (opts?.paramReturn) continue;
+    // Observed at a written type for `verify`; apply never writes over one.
+    if (opts?.annotated) continue;
     if (opts?.thisType) {
       const site = thisTypeSites.get(pos);
       if (site) {

@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { instrumented } from "./test-utils/instrumented.js";
 import "./test-utils/matchers.js";
@@ -6,6 +6,24 @@ import "./test-utils/matchers.js";
 const BARE = { skipTscptrDeclarations: true };
 
 describe("instrument", () => {
+  describe("TS_CAPTURE_OBSERVE_ANNOTATED", () => {
+    afterEach(() => {
+      vi.unstubAllEnvs();
+    });
+
+    it.each(["1", "true"])("observes typed parameters when set to %s", (value) => {
+      vi.stubEnv("TS_CAPTURE_OBSERVE_ANNOTATED", value);
+      const out = instrumented("function foo(a: string) { return a; }", { options: BARE });
+      expect(out).toTrack("a", { annotated: true });
+    });
+
+    it("leaves typed parameters untracked when unset", () => {
+      vi.stubEnv("TS_CAPTURE_OBSERVE_ANNOTATED", "");
+      const out = instrumented("function foo(a: string) { return a; }", { options: BARE });
+      expect(out).toLeaveUntracked("a");
+    });
+  });
+
   it("instruments a function with unannotated parameter", () => {
     const out = instrumented("function foo(a) { return a; }");
     expect(out).toTrack("a", { in: "test.ts" });

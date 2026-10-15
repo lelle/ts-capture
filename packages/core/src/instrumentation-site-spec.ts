@@ -24,6 +24,8 @@ export interface SiteContext {
   /** `paramReturn`: the matched callback-param observation pos + member. */
   paramReturnPos?: number;
   paramReturnMember?: string;
+  /** `return`: also a function with a written return type, marked `annotated`. */
+  observeAnnotated?: boolean;
 }
 
 /**
@@ -41,7 +43,7 @@ export function findInstrumentationSite(
     case "param":
       return paramSite(node as ts.ParameterDeclaration, sourceFile, context);
     case "return":
-      return returnSite(node as ts.FunctionLikeDeclaration, sourceFile);
+      return returnSite(node as ts.FunctionLikeDeclaration, sourceFile, context);
     case "varDecl":
       return varDeclSite(node as ts.VariableDeclaration);
     case "propertyDecl":
@@ -67,20 +69,23 @@ function paramSite(
     opts.parens = [fn.parameters[0].getStart(sourceFile), fn.parameters[0].getEnd()];
   }
   if (context.fnRetPos !== undefined) opts.fnRetPos = context.fnRetPos;
+  if (param.type) opts.annotated = true;
   return { kind: "param", pos, opts };
 }
 
 function returnSite(
   node: ts.FunctionLikeDeclaration,
   sourceFile: ts.SourceFile,
+  context: SiteContext,
 ): InstrumentationSite | null {
   const shouldInstrument =
     !ts.isConstructorDeclaration(node) &&
     !(node as ts.FunctionDeclaration).asteriskToken &&
-    !node.type;
+    (!node.type || context.observeAnnotated);
   if (!shouldInstrument) return null;
   const opts: ExtraOptions = { returnType: true };
   if (isAsync(node)) opts.async = true;
+  if (node.type) opts.annotated = true;
   return { kind: "return", pos: findCloseParenPos(node, sourceFile), opts };
 }
 
@@ -115,7 +120,10 @@ function paramReturnSite(context: SiteContext): InstrumentationSite | null {
 
 // --- Offset / opts helpers, ported verbatim from transformer.ts ---
 
-function findCloseParenPos(node: ts.FunctionLikeDeclaration, sourceFile: ts.SourceFile): number {
+export function findCloseParenPos(
+  node: ts.FunctionLikeDeclaration,
+  sourceFile: ts.SourceFile,
+): number {
   // Paren-less arrow (`x => body`): no `)` exists. Falling through to the
   // forward-scan would walk past the function's own bounds and land on
   // some downstream `)`, so apply would splice a return annotation

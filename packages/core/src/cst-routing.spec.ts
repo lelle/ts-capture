@@ -156,6 +156,20 @@ describe("routeEntries", () => {
     expect(passThrough).toHaveLength(0);
   });
 
+  it("drops an observation of a typed position, even with ignoreExistingTypes", () => {
+    const idx = emptyIndex();
+    idx.paramSites.set(10, { node: {} as any });
+    idx.returnTypeSites.set(20, { hasReturnType: true });
+    const on = { ...INFER_DEFAULTS, ignoreExistingTypes: true };
+    const { eligible, passThrough } = route(
+      [entry(10, { annotated: true }), entry(20, { returnType: true, annotated: true })],
+      idx,
+      on,
+    );
+    expect(eligible.size).toBe(0);
+    expect(passThrough).toHaveLength(0);
+  });
+
   it("dedups entries with the same (file, pos, opts), merging their types", () => {
     const idx = emptyIndex();
     idx.paramSites.set(10, { node: {} as any });

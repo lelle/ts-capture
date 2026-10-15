@@ -2,6 +2,8 @@ import ts from "typescript";
 
 import type { CollectedTypeInfo, ExtraOptions } from "./type-collector.js";
 
+import { findCloseParenPos } from "./instrumentation-site-spec.js";
+import { unwrapOneLevelPromise } from "./named-type-rewrite.js";
 import { parseObjectType } from "./type-merge.js";
 
 export type VerifyVerdict = "match" | "mismatch" | "unverifiable" | "no-declaration";
@@ -35,8 +37,8 @@ export interface VerifyReport {
 
 /**
  * Compare runtime-observed types with the type TypeScript has at each observed
- * position. Instrumentation skips annotated positions, so in practice that is
- * what TypeScript infers there; an annotation is used when one is present.
+ * position: the written type where there is one, which is observed only with
+ * `observeAnnotated`, and otherwise what TypeScript infers there.
  *
  * Reuses the same `CollectedTypeInfo` produced by the regular instrument →
  * collect pipeline; only the comparison step is new. Honest-by-design: returns
@@ -98,13 +100,16 @@ export function verifyTypes(typeInfo: CollectedTypeInfo, program: ts.Program): V
 
     const declared = resolveDeclaredType(declNode, checker);
     const observed = observedTuples.map(([t]) => t).filter((t): t is string => Boolean(t));
-    const { verdict, reason } = isCompatible(observed, declared);
+    const { verdict, reason } =
+      opts?.async && isFunctionLike(declNode)
+        ? compareAwaited(observed, declNode, checker)
+        : isCompatible(observed, declared);
 
     entries.push({
       file,
       pos,
       ...locate(sourceFile, isFunctionLike(declNode) ? pos : declNode.name.getStart(sourceFile)),
-      name: isFunctionLike(declNode) ? "return type" : declNode.name.getText(sourceFile),
+      name: isFunctionLike(declNode) ? "return type" : normalize(declNode.name.getText(sourceFile)),
       declared,
       observed,
       verdict,
@@ -129,17 +134,38 @@ function locate(sourceFile: ts.SourceFile, pos: number): { line: number; column:
  */
 function resolveDeclaredType(node: ts.Node, checker: ts.TypeChecker): string {
   if (isFunctionLike(node)) {
-    if (node.type) {
-      return checker.typeToString(checker.getTypeFromTypeNode(node.type));
-    }
-    const sig = checker.getSignatureFromDeclaration(node);
-    return sig ? checker.typeToString(sig.getReturnType()) : "unknown";
+    const type = returnTypeOf(node, checker);
+    return type ? checker.typeToString(type) : "unknown";
   }
   const explicitType = (node as ts.HasType).type;
   if (explicitType) {
-    return checker.typeToString(checker.getTypeFromTypeNode(explicitType));
+    const written = checker.typeToString(checker.getTypeFromTypeNode(explicitType));
+    // `x?: T` may be left out, which a call observes as `undefined`.
+    const optional = ts.isParameter(node) && node.questionToken !== undefined;
+    if (!optional || splitTopLevelUnion(written).includes("undefined")) return written;
+    return isFunctionType(written) ? `(${written}) | undefined` : `${written} | undefined`;
   }
   return checker.typeToString(checker.getTypeAtLocation(node));
+}
+
+function returnTypeOf(node: FunctionLike, checker: ts.TypeChecker): ts.Type | undefined {
+  if (node.type) return checker.getTypeFromTypeNode(node.type);
+  return checker.getSignatureFromDeclaration(node)?.getReturnType();
+}
+
+// An async return is observed as what its promise resolved to, so it is
+// compared with the awaited type; the report still shows the `Promise<T>`.
+function compareAwaited(
+  observed: string[],
+  node: FunctionLike,
+  checker: ts.TypeChecker,
+): VerifyOutcome {
+  if (observed.includes("Promise"))
+    return { verdict: "unverifiable", reason: "promise not settled" };
+  const type = returnTypeOf(node, checker);
+  const awaited = type && checker.getAwaitedType(type);
+  if (!awaited) return { verdict: "unverifiable", reason: "no awaited type" };
+  return isCompatible(observed.map(unwrapOneLevelPromise), checker.typeToString(awaited));
 }
 
 /**
@@ -151,7 +177,7 @@ function resolveDeclaredType(node: ts.Node, checker: ts.TypeChecker): string {
 type NamedDeclaration = (
   ts.ParameterDeclaration | ts.VariableDeclaration | ts.PropertyDeclaration
 ) & {
-  name: ts.Identifier;
+  name: ts.Identifier | ts.BindingPattern;
 };
 
 function findDeclarationByPos(sourceFile: ts.SourceFile, pos: number): NamedDeclaration | null {
@@ -160,7 +186,8 @@ function findDeclarationByPos(sourceFile: ts.SourceFile, pos: number): NamedDecl
     if (found) return;
     if (
       (ts.isParameter(node) || ts.isVariableDeclaration(node) || ts.isPropertyDeclaration(node)) &&
-      ts.isIdentifier(node.name) &&
+      // A destructured parameter is observed whole, at the end of its pattern.
+      (ts.isIdentifier(node.name) || ts.isParameter(node)) &&
       (node.name.getEnd() === pos || node.name.getEnd() + 1 === pos) /* optional `?` */
     ) {
       found = node as NamedDeclaration;
@@ -194,25 +221,17 @@ function isFunctionLike(node: ts.Node): node is FunctionLike {
 }
 
 /**
- * Find the function-like node whose return-type annotation position matches
- * `pos`. ts-capture's transformer computes return positions as the offset right
- * after the closing `)` of the parameter list — see transformer.ts line ~120
- * (the `parameters.end` + scan-to-')'+1 pattern). We mirror that calculation
- * so we recognise the same positions.
+ * Find the function-like node whose return position is `pos`, computed the
+ * way the instrumenter computes it (`findCloseParenPos`), paren-less arrows
+ * included.
  */
 function findFunctionByReturnPos(sourceFile: ts.SourceFile, pos: number): FunctionLike | null {
-  const text = sourceFile.text;
   let found: FunctionLike | null = null;
   function visit(node: ts.Node) {
     if (found) return;
-    if (isFunctionLike(node)) {
-      let p = node.parameters.end;
-      while (p < text.length && text[p] !== ")") p++;
-      const returnPos = p + 1;
-      if (returnPos === pos) {
-        found = node;
-        return;
-      }
+    if (isFunctionLike(node) && findCloseParenPos(node, sourceFile) === pos) {
+      found = node;
+      return;
     }
     ts.forEachChild(node, visit);
   }
@@ -243,6 +262,11 @@ export function isCompatible(observed: string[], declared: string): VerifyOutcom
   // but the declaration does not.
   if (declaredNorm === "this") return { verdict: "unverifiable", reason: "declared this" };
 
+  // A union with a function, object or generic arm, `((e: Error) => void) |
+  // undefined`: each observation is held against each arm on its own.
+  const arms = splitTopLevelUnion(declaredNorm);
+  if (arms.length > 1 && arms.some(isComplex)) return compareArms(observed, arms);
+
   // Function types: declared `(args) => ret` (possibly with generics prefix).
   // Observed values from getTypeName for functions look like
   // `(arg0: unknown, ...) => unknown`. We can't compare param/return types
@@ -250,7 +274,7 @@ export function isCompatible(observed: string[], declared: string): VerifyOutcom
   // observed is a function at all — a non-function observation against a
   // function-typed declaration is a real mismatch.
   if (isFunctionType(declaredNorm)) {
-    const allFns = observed.every((o) => isFunctionType(normalize(o)));
+    const allFns = observed.every((o) => isFunctionObservation(normalize(o)));
     if (allFns) return { verdict: "match" };
     return { verdict: "mismatch" };
   }
@@ -275,15 +299,99 @@ export function isCompatible(observed: string[], declared: string): VerifyOutcom
     return { verdict: "unverifiable", reason: "complex declared type" };
   }
 
-  const declaredVariants = parseUnion(declaredNorm).map(normalize);
+  const declaredVariants = parseUnion(declaredNorm)
+    .map(normalize)
+    .map((v) => v.replace(/^readonly /, ""));
 
+  let unverifiable: VerifyOutcome | undefined;
   for (const obs of observed) {
     if (obs == null) continue;
-    if (!observedFits(normalize(obs), declaredVariants)) {
-      return { verdict: "mismatch" };
+    const observedNorm = normalize(obs);
+    if (observedFits(observedNorm, declaredVariants)) continue;
+    const reason = whyNoContradiction(observedNorm, declaredVariants);
+    if (!reason) return { verdict: "mismatch" };
+    unverifiable ??= { verdict: "unverifiable", reason };
+  }
+  return unverifiable ?? { verdict: "match" };
+}
+
+const PRIMITIVES = new Set([
+  "string",
+  "number",
+  "boolean",
+  "bigint",
+  "symbol",
+  "null",
+  "undefined",
+  "void",
+  "never",
+  "object",
+]);
+
+const LITERAL_FAMILY: Array<[RegExp, string]> = [
+  [/^(?:"[^"]*"|'[^']*')$/, "string"],
+  [/^-?\d+n$/, "bigint"],
+  [/^-?\d+(?:\.\d+)?$/, "number"],
+  [/^(?:true|false)$/, "boolean"],
+];
+
+const literalFamily = (t: string): string | undefined =>
+  LITERAL_FAMILY.find(([re]) => re.test(t))?.[1];
+
+const isPrimitiveOrLiteral = (t: string): boolean =>
+  PRIMITIVES.has(t) || literalFamily(t) !== undefined;
+
+/** A primitive or a literal, or an array of one. */
+const isPlain = (t: string): boolean => isPrimitiveOrLiteral(t.replace(/(?:\[\])+$/, ""));
+
+// An observation outside every arm contradicts the written type only when the
+// text says what every arm holds. A name may stand for any shape the run saw,
+// and a literal arm is widened by the run (`"ws"` is observed as `string`).
+function whyNoContradiction(observed: string, declaredVariants: string[]): string | undefined {
+  if (declaredVariants.some((v) => !isPlain(v))) return "named declared type";
+  if (declaredVariants.some((v) => literalFamily(v) === observed)) return "literal declared type";
+  return undefined;
+}
+
+function compareArms(observed: string[], arms: string[]): VerifyOutcome {
+  let unverifiable: VerifyOutcome | undefined;
+  for (const obs of observed) {
+    const outcomes = arms.map((arm) => isCompatible([obs], unparenthesize(arm)));
+    if (outcomes.some((o) => o.verdict === "match")) continue;
+    const unsure = outcomes.find((o) => o.verdict === "unverifiable");
+    if (!unsure) return { verdict: "mismatch" };
+    unverifiable ??= unsure;
+  }
+  return unverifiable ?? { verdict: "match" };
+}
+
+/** Split on the `|` that are not inside brackets, parentheses or a generic. */
+function splitTopLevelUnion(t: string): string[] {
+  const arms: string[] = [];
+  let depth = 0;
+  let start = 0;
+  for (let i = 0; i < t.length; i++) {
+    const c = t[i];
+    if (c === "(" || c === "{" || c === "[" || c === "<") depth++;
+    else if (c === ")" || c === "}" || c === "]" || (c === ">" && t[i - 1] !== "=")) depth--;
+    else if (c === "|" && depth === 0) {
+      arms.push(t.slice(start, i).trim());
+      start = i + 1;
     }
   }
-  return { verdict: "match" };
+  arms.push(t.slice(start).trim());
+  return arms.filter((arm) => arm.length > 0);
+}
+
+function unparenthesize(t: string): string {
+  if (!t.startsWith("(") || !t.endsWith(")")) return t;
+  let depth = 0;
+  for (let i = 0; i < t.length - 1; i++) {
+    if (t[i] === "(") depth++;
+    else if (t[i] === ")") depth--;
+    if (depth === 0) return t;
+  }
+  return t.slice(1, -1).trim();
 }
 
 function normalize(t: string): string {
@@ -326,14 +434,19 @@ function structuralCompat(declared: string, observed: string[]): VerifyOutcome {
     return { verdict: "unverifiable", reason: "index signature in declared type" };
   }
 
+  let unverifiable: VerifyOutcome | undefined;
   for (const obs of observed) {
     const observedNorm = normalize(obs);
     if (!observedNorm.startsWith("{") || !observedNorm.endsWith("}")) {
-      return { verdict: "mismatch" };
+      if (isPrimitiveOrLiteral(observedNorm)) return { verdict: "mismatch" };
+      // A class or an instance by name may well have the keys.
+      unverifiable ??= { verdict: "unverifiable", reason: "named observed type" };
+      continue;
     }
-    const observedMap = parseObjectType(observedNorm);
-    if (!observedMap)
+    const parsed = parseObjectType(observedNorm);
+    if (!parsed)
       return { verdict: "unverifiable", reason: "could not parse structural observed type" };
+    const observedMap = methodsAsProperties(parsed);
 
     for (const [rawKey, declaredValueType] of declaredMap) {
       const { key, optional } = parseKey(rawKey);
@@ -349,7 +462,29 @@ function structuralCompat(declared: string, observed: string[]): VerifyOutcome {
     }
   }
 
-  return { verdict: "match" };
+  return unverifiable ?? { verdict: "match" };
+}
+
+// An observed method, `f(x: T): U`, is a property holding `(x: T) => U`.
+function methodsAsProperties(observed: Map<string, string>): Map<string, string> {
+  const properties = new Map<string, string>();
+  for (const [key, value] of observed) {
+    const method = /^([\w$]+)\??\((.*)\)$/s.exec(key);
+    if (method) properties.set(method[1], `(${method[2]}) => ${value}`);
+    else properties.set(key, value);
+  }
+  return properties;
+}
+
+// A mock or a bound function is walked as an object with `apply` and `bind`;
+// a class is observed as `typeof Name`.
+function isFunctionObservation(observed: string): boolean {
+  return (
+    observed === "Function" ||
+    observed.startsWith("typeof ") ||
+    isFunctionType(observed) ||
+    (observed.startsWith("{") && /\bapply\(/.test(observed) && /\bbind\(/.test(observed))
+  );
 }
 
 function parseKey(rawKey: string): { key: string; optional: boolean } {
@@ -387,6 +522,10 @@ function parseUnion(t: string): string[] {
 }
 
 function observedFits(observed: string, declaredVariants: string[]): boolean {
+  // An empty array is observed as `unknown[]`.
+  if (observed === "unknown[]" && declaredVariants.some((v) => v.endsWith("[]"))) return true;
+  if (declaredVariants.includes("object") && !isPrimitiveOrLiteral(observed)) return true;
+
   // Bail on observed types that are themselves complex — they came from
   // getTypeName which can produce structural strings.
   if (isComplex(observed)) {

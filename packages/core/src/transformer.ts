@@ -34,6 +34,12 @@ export interface InstrumentOptions {
    * Core stays framework-neutral; adapters provide the predicate.
    */
   skipInitializerCalleeWhen?: (rootCalleeName: string) => boolean;
+  /**
+   * Also observe parameters and returns that have a written type, marked
+   * `annotated`, so `verify` can compare the run with them. Defaults to
+   * `TS_CAPTURE_OBSERVE_ANNOTATED` in `instrumentSource`.
+   */
+  observeAnnotated?: boolean;
 }
 
 // --- AST query + rewrite helpers ---
@@ -387,12 +393,16 @@ function visitorFactory(
         originalNode as ts.FunctionLikeDeclaration,
         "return",
         source,
+        { observeAnnotated: options.observeAnnotated },
       );
       const retPos = returnSite?.pos;
+      // A written return type is observed only for verify; registering it
+      // or naming it in param opts would feed it to apply.
+      const applyRetPos = returnSite?.opts.annotated ? undefined : retPos;
 
       // Register named functions for cross-referencing
-      if (retPos !== undefined && ts.isFunctionDeclaration(node) && node.name) {
-        instrumentStmts.push(createRegisterFnCall(node.name.text, retPos, source.fileName));
+      if (applyRetPos !== undefined && ts.isFunctionDeclaration(node) && node.name) {
+        instrumentStmts.push(createRegisterFnCall(node.name.text, applyRetPos, source.fileName));
       }
 
       // Implicit this instrumentation
@@ -414,10 +424,10 @@ function visitorFactory(
 
       // Parameter instrumentation
       for (const param of node.parameters) {
-        if (!param.type && !param.initializer && node.body) {
+        if ((!param.type || options.observeAnnotated) && !param.initializer && node.body) {
           const site = findInstrumentationSite(param, "param", source, {
             fn: node as ts.FunctionLikeDeclarationBase,
-            fnRetPos: retPos,
+            fnRetPos: applyRetPos,
           })!;
           instrumentStmts.push(
             createTscptrCall(getParameterName(param), site.pos, source.fileName, site.opts),
@@ -499,8 +509,8 @@ function visitorFactory(
         // only works for named function decls; inline arrows in JSX
         // attrs / call args / variable initializers need value-based
         // registration.
-        if (retPos !== undefined) {
-          return createRegFnWrap(updated, retPos, source.fileName);
+        if (applyRetPos !== undefined) {
+          return createRegFnWrap(updated, applyRetPos, source.fileName);
         }
         return updated;
       }

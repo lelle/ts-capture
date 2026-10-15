@@ -58,6 +58,21 @@ describe("applyTypesToFile", () => {
     expect(out).toAnnotate("resolve", "Function");
   });
 
+  it("writes nothing for an observation of a typed position, even with ignoreExistingTypes", () => {
+    // function foo(a: string): string { return a; }
+    //               ^14      ^23
+    const source = "function foo(a: string): string { return a; }";
+    const out = applied(
+      source,
+      [
+        entry("test.ts", 14, [["number"]], { annotated: true }),
+        entry("test.ts", 23, [["number"]], { returnType: true, annotated: true }),
+      ],
+      withInfer({ ignoreExistingTypes: true, requireTypeRefInScope: false }),
+    );
+    expect(out.text).toBe(source);
+  });
+
   it("inserts annotations for multiple parameters", () => {
     // function foo(a, b) {}
     //               ^14  ^17

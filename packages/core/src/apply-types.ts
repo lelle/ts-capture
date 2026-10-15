@@ -191,6 +191,8 @@ export function applyTypesToFile(
     // `crossReferenceObservations` already drops these one step earlier — the
     // guard is here so a caller reaching the applier directly cannot bypass it.
     if (opts?.paramReturn) continue;
+    // Observed at a written type for `verify`; apply never writes over one.
+    if (opts?.annotated) continue;
     const siteKind = opts?.returnType
       ? "ret"
       : opts?.varDecl
