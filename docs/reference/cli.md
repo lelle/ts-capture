@@ -105,15 +105,21 @@ Report the type-coverage percentage for a project.
 
 ## `ts-capture verify <types.json> --project <tsconfig.json> [--threshold=N]`
 
-Compare runtime observations with the type TypeScript has at each observed
-position. Only unannotated positions are instrumented, so the type compared
-against is what TypeScript infers there: a parameter's contextual type, a
-variable's initializer type, a function's inferred return type. `verify` does
-not check annotations you wrote, and it rewrites nothing.
+Compare runtime observations with the type at each observed position, and
+rewrite nothing. By default only positions without a type are instrumented, so
+the type compared against is what TypeScript infers there: a parameter's
+contextual type, a variable's initializer type, a function's inferred return
+type.
+
+Run the tests with `TS_CAPTURE_OBSERVE_ANNOTATED=1` and parameters and return
+types you wrote are observed too, and compared with what you wrote. A written
+type wider than what ran is a match: `string | null` that only ever saw a
+`string` is not reported. See [Check the types you wrote](../how-to/check-your-types.md).
 
 - `--project <tsconfig.json>` — the project to verify against (required).
 - `--threshold=N` — exit 2 when fewer than N of the verifiable positions
-  match, as a ratio (`--threshold=0.9`). Without it the exit code is 0.
+  match, as a ratio (`--threshold=0.9`). When any written type was observed,
+  only written types count. Without it the exit code is 0.
 
 Every mismatch is printed with its location, then one line of totals:
 
@@ -126,12 +132,31 @@ src/account.ts:12:17  balance
   unverifiable: 98 declared any, 6 complex declared type
 ```
 
-A position is _unverifiable_ when the comparison would be a guess: the
-inferred type is `any`, `unknown` or polymorphic `this`, or a generic the
-heuristic can only compare for equality. An observed `undefined` matches an
-inferred `void`. _Without a declaration_ counts positions whose file is not in
-the project, or that no longer line up with a declaration because the source
-changed after observation.
+When written types were observed, they get a section of their own, ahead of
+the inferred ones:
+
+```text title="Current"
+Written types (42 checked)
+src/cart.ts:12:21  qty
+  declared  string
+  observed  number
+  40 match, 1 mismatch, 1 unverifiable, 0 without a declaration.
+
+Inferred types (310 checked)
+  305 match, 0 mismatch, 5 unverifiable, 0 without a declaration.
+  unverifiable: 5 declared any
+```
+
+When none were, `verify` says so on stderr, so a run without the variable does
+not read as "every type you wrote is right".
+
+A position is _unverifiable_ when the comparison would be a guess: the type is
+`any`, `unknown` or polymorphic `this`, or a generic the heuristic can only
+compare for equality. An observed `undefined` matches a `void` return. An async
+return is compared with what its promise resolved to; one whose promise never
+settled is unverifiable. _Without a declaration_ counts positions whose file is
+not in the project, or that no longer line up with a declaration because the
+source changed after observation.
 
 ## `ts-capture instrument-bundle <bundle.js> [--out <path>]`
 

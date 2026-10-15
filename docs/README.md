@@ -37,6 +37,7 @@ looking something up.
 - [Use with Jest (Babel)](how-to/use-with-jest-babel.md)
 - [Use without a bundler](how-to/use-without-a-bundler.md)
 - [Review & apply safely](how-to/review-and-apply-safely.md)
+- [Check the types you wrote](how-to/check-your-types.md)
 - [Pair with TypeStat](how-to/pair-with-typestat.md)
 
 ### Reference — facts

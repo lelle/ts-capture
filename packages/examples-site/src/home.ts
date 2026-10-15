@@ -81,6 +81,7 @@ export function renderHomePage(): string {
     ${INTEGRATIONS.map(renderIntegration).join("\n    ")}
   </ul>
   <p class="how">Then run your tests, and <code>npx ts-capture apply types.json --dry-run</code> to see what it would write. The <a href="${DOCS}/tutorials/getting-started.md">getting started tutorial</a> takes a first run from install to <code>apply</code>.</p>
+  <p class="how">Already typed? Run the tests with <code>TS_CAPTURE_OBSERVE_ANNOTATED=1</code> and <code>npx ts-capture verify</code> lists the types you wrote that the run contradicts. See <a href="${DOCS}/how-to/check-your-types.md">check the types you wrote</a>.</p>
   <p class="note">ts-capture rewrites your source files, runs your getters while observing, and writes what it observed to disk. Commit your work first, and read <a href="${DOCS}/how-to/review-and-apply-safely.md">review and apply safely</a> before pointing it at a real codebase. The packages are 0.x: the API may change between minor versions.</p>
 </main>
 <footer>

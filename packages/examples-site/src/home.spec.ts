@@ -40,6 +40,13 @@ describe("renderHomePage", () => {
     }
   });
 
+  it("points an already typed codebase to checking its types with verify", () => {
+    expect(html).toContain("TS_CAPTURE_OBSERVE_ANNOTATED=1");
+    expect(html).toContain(
+      'href="https://github.com/lelle/ts-capture/blob/main/docs/how-to/check-your-types.md"',
+    );
+  });
+
   it("names the integration in each guide link, so the links differ when read out of context", () => {
     const labels = [...html.matchAll(/aria-label="([^"]+ guide)"/g)].map(
       (m) => m[1],
