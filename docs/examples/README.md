@@ -6,7 +6,7 @@ a reviewer should change and the places it left alone.
 The page is built from [`examples.json`](examples.json):
 
 ```sh
-pnpm examples        # writes site/index.html and site/playground/
+pnpm examples        # writes site/, with examples/ and playground/ under it
 ```
 
 Nothing in `examples.json` is written by hand. Each entry is cut from the

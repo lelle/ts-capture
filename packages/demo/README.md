@@ -27,4 +27,4 @@ The script runs the demo twice, in scratch copies under `.work/`:
    follow, and the form is filled in again, live, for the browser scene.
 
 So a change to what ts-capture writes changes the recording: run `pnpm demo`
-and commit the new `docs/assets/demo.gif` and `demo.mp4`.
+and commit the new `docs/assets/demo.gif` and `demo.mp4`. The project site plays the mp4.

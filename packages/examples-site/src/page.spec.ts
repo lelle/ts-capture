@@ -106,7 +106,8 @@ describe("renderPage", () => {
     expect(html).toContain("feee61e");
   });
 
-  it("links to the playground", () => {
-    expect(renderPage(DATA)).toContain('<a href="playground/">Playground</a>');
+  it("links to the front page and the playground, from its own folder", () => {
+    expect(html).toContain('<a href="../">ts-capture</a>');
+    expect(html).toContain('<a href="../playground/">Playground</a>');
   });
 });

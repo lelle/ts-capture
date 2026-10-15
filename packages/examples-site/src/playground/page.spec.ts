@@ -26,8 +26,9 @@ describe("renderPlaygroundPage", () => {
     expect(JSON.parse(data![1])).toEqual(starters);
   });
 
-  it("links back to the examples and loads the page script", () => {
-    expect(html).toContain('<a href="../">Examples</a>');
+  it("links to the front page and the examples, and loads the page script", () => {
+    expect(html).toContain('<a href="../">ts-capture</a>');
+    expect(html).toContain('<a href="../examples/">Examples</a>');
     expect(html).toContain('<script type="module" src="main.js"></script>');
   });
 });

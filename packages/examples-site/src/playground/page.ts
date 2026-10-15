@@ -26,13 +26,13 @@ export function renderPlaygroundPage(starters: Starter[]): string {
 </head>
 <body>
 <div class="top">
-  <p class="links"><a href="../">Examples</a><a href="https://github.com/lelle/ts-capture">ts-capture on GitHub</a><a href="https://github.com/lelle/ts-capture/tree/main/docs">Documentation</a></p>
+  <p class="links"><a href="../">ts-capture</a><a href="../examples/">Examples</a><a href="https://github.com/lelle/ts-capture">ts-capture on GitHub</a><a href="https://github.com/lelle/ts-capture/tree/main/docs">Documentation</a></p>
   <h1>Try ts-capture</h1>
   <p class="lede">Write untyped TypeScript, call it at the end of the file, and run. ts-capture watches the calls and writes the types it saw back into the code.</p>
   <p class="how">Everything happens in this tab: the code runs in your browser and is sent nowhere. The calls play the part your test suite plays in a real project.</p>
 </div>
 <main>
-  <noscript><p class="empty">The playground needs JavaScript. The <a href="../">examples</a> do not.</p></noscript>
+  <noscript><p class="empty">The playground needs JavaScript. The <a href="../examples/">examples</a> do not.</p></noscript>
   <div class="controls">
     <label for="starter">Start from</label>
     <select id="starter">${options}</select>

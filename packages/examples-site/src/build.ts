@@ -1,10 +1,11 @@
 import { createDefaultMapFromNodeModules } from "@typescript/vfs";
 import { build } from "esbuild";
-import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { copyFileSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import ts from "typescript";
 
+import { renderHomePage } from "./home.js";
 import { type ExamplesData, renderPage } from "./page.js";
 import { reachableLibs } from "./playground/libs.js";
 import { renderPlaygroundPage } from "./playground/page.js";
@@ -15,13 +16,20 @@ const packageDir = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const root = resolve(packageDir, "../..");
 const dataPath = resolve(root, "docs/examples/examples.json");
 const outDir = resolve(root, "site");
+const examplesDir = resolve(outDir, "examples");
 const playgroundDir = resolve(outDir, "playground");
 
 const data = JSON.parse(readFileSync(dataPath, "utf-8")) as ExamplesData;
 mkdirSync(playgroundDir, { recursive: true });
-writeFileSync(resolve(outDir, "index.html"), renderPage(data));
+mkdirSync(examplesDir, { recursive: true });
+writeFileSync(resolve(outDir, "index.html"), renderHomePage());
+copyFileSync(
+  resolve(root, "docs/assets/demo.mp4"),
+  resolve(outDir, "demo.mp4"),
+);
+writeFileSync(resolve(examplesDir, "index.html"), renderPage(data));
 process.stdout.write(
-  `${data.examples.length} examples -> ${outDir}/index.html\n`,
+  `${data.examples.length} examples -> ${examplesDir}/index.html\n`,
 );
 
 const libs = reachableLibs(
