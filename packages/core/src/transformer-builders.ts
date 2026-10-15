@@ -143,6 +143,24 @@ export function createRegFnWrap(
   );
 }
 
+/**
+ * `({ "name": fn })["name"]`: an anonymous function or class gets its name
+ * from where it stands, and a call argument gives it none. Standing as a
+ * property value, it is named as it would have been without the call
+ * around it. `__proto__` as a plain key would set the prototype instead.
+ */
+export function createNamingWrap(fn: ts.Expression, name: string): ts.ElementAccessExpression {
+  const key = ts.factory.createStringLiteral(name);
+  const property = ts.factory.createPropertyAssignment(
+    name === "__proto__" ? ts.factory.createComputedPropertyName(key) : key,
+    fn,
+  );
+  return ts.factory.createElementAccessExpression(
+    ts.factory.createParenthesizedExpression(ts.factory.createObjectLiteralExpression([property])),
+    ts.factory.createStringLiteral(name),
+  );
+}
+
 export function createRetCall(
   expr: ts.Expression,
   retPos: number,

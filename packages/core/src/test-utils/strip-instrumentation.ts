@@ -39,6 +39,25 @@ const isPassThrough = (form: CallForm | undefined): boolean =>
 const isAddedOperand = (form: CallForm | undefined): boolean =>
   form === "param" || form === "registerFn";
 
+// `({ "f": fn })["f"]`, which the instrumenter puts around a function it
+// hands to a call so that the function keeps the name `f`.
+export function namedValue(node: ts.Node): ts.Expression | undefined {
+  if (!ts.isElementAccessExpression(node) || !ts.isStringLiteral(node.argumentExpression)) {
+    return undefined;
+  }
+  // esbuild prints it without the parentheses.
+  const object = ts.isParenthesizedExpression(node.expression)
+    ? node.expression.expression
+    : node.expression;
+  if (!ts.isObjectLiteralExpression(object)) return undefined;
+  const [property, ...rest] = object.properties;
+  if (rest.length > 0 || !property || !ts.isPropertyAssignment(property)) return undefined;
+  const key = ts.isComputedPropertyName(property.name) ? property.name.expression : property.name;
+  return ts.isStringLiteral(key) && key.text === node.argumentExpression.text
+    ? property.initializer
+    : undefined;
+}
+
 // An arrow's expression body is replaced by a comma list of the calls and the
 // wrapped body, which the printer parenthesises.
 function isAddedParens(node: ts.Node): boolean {
@@ -88,7 +107,9 @@ export function stripInstrumentation(text: string, filename = "stripped.ts"): st
       if (ts.isExpressionStatement(node) && isAddedOperand(callFormOf(node.expression))) {
         return undefined;
       }
-      if (ts.isCallExpression(node) && isPassThrough(callFormOf(node))) return node.arguments[0];
+      if (ts.isCallExpression(node) && isPassThrough(callFormOf(node))) {
+        return namedValue(node.arguments[0]!) ?? node.arguments[0];
+      }
       if (ts.isBinaryExpression(node) && isComma(node) && isAddedOperand(callFormOf(node.left))) {
         return node.right;
       }

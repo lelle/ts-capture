@@ -4,6 +4,7 @@ import type { ExtraOptions } from "./type-collector.js";
 
 import { findInstrumentationSite } from "./instrumentation-site-spec.js";
 import {
+  createNamingWrap,
   createRegFnWrap,
   createRegisterFnCall,
   createRetCall,
@@ -342,6 +343,80 @@ function destructuringObservations(
   return observations;
 }
 
+type OuterExpression =
+  | ts.ParenthesizedExpression
+  | ts.AsExpression
+  | ts.SatisfiesExpression
+  | ts.NonNullExpression
+  | ts.TypeAssertion;
+
+const isOuterExpression = (node: ts.Node): node is OuterExpression =>
+  ts.isParenthesizedExpression(node) ||
+  ts.isAsExpression(node) ||
+  ts.isSatisfiesExpression(node) ||
+  ts.isNonNullExpression(node) ||
+  ts.isTypeAssertionExpression(node);
+
+const NAMING_ASSIGNMENTS = new Set([
+  ts.SyntaxKind.EqualsToken,
+  ts.SyntaxKind.BarBarEqualsToken,
+  ts.SyntaxKind.AmpersandAmpersandEqualsToken,
+  ts.SyntaxKind.QuestionQuestionEqualsToken,
+]);
+
+function propertyNameText(name: ts.PropertyName): string | undefined {
+  if (ts.isIdentifier(name) || ts.isStringLiteral(name) || ts.isPrivateIdentifier(name)) {
+    return name.text;
+  }
+  if (ts.isNumericLiteral(name)) return String(Number(name.text));
+  // A computed key is known only when it runs.
+  return undefined;
+}
+
+/** The name JavaScript gives an anonymous function or class from where it stands. */
+function contextualName(expression: ts.Expression): string | undefined {
+  let node: ts.Node = expression;
+  while (isOuterExpression(node.parent)) node = node.parent;
+  const parent = node.parent;
+  if (
+    (ts.isVariableDeclaration(parent) || ts.isParameter(parent) || ts.isBindingElement(parent)) &&
+    parent.initializer === node
+  ) {
+    return ts.isIdentifier(parent.name) ? parent.name.text : undefined;
+  }
+  if (
+    (ts.isPropertyAssignment(parent) || ts.isPropertyDeclaration(parent)) &&
+    parent.initializer === node
+  ) {
+    return propertyNameText(parent.name);
+  }
+  if (ts.isShorthandPropertyAssignment(parent) && parent.objectAssignmentInitializer === node) {
+    return parent.name.text;
+  }
+  if (
+    ts.isBinaryExpression(parent) &&
+    parent.right === node &&
+    ts.isIdentifier(parent.left) &&
+    NAMING_ASSIGNMENTS.has(parent.operatorToken.kind)
+  ) {
+    return parent.left.text;
+  }
+  return undefined;
+}
+
+/** An initializer about to be wrapped, given its name back if it was an anonymous function or class. */
+function keepingName(wrapped: ts.Expression, original: ts.Expression): ts.Expression {
+  let inner = original;
+  while (isOuterExpression(inner)) {
+    inner = inner.expression;
+  }
+  if (!(ts.isFunctionExpression(inner) || ts.isClassExpression(inner)) || inner.name) {
+    return wrapped;
+  }
+  const name = contextualName(original);
+  return name === undefined ? wrapped : createNamingWrap(wrapped, name);
+}
+
 function visitorFactory(
   ctx: ts.TransformationContext,
   source: ts.SourceFile,
@@ -510,7 +585,9 @@ function visitorFactory(
         // attrs / call args / variable initializers need value-based
         // registration.
         if (applyRetPos !== undefined) {
-          return createRegFnWrap(updated, applyRetPos, source.fileName);
+          const name = contextualName(originalNode as ts.ArrowFunction);
+          const named = name === undefined ? updated : createNamingWrap(updated, name);
+          return createRegFnWrap(named, applyRetPos, source.fileName);
         }
         return updated;
       }
@@ -575,12 +652,16 @@ function visitorFactory(
       const skip = calleeName !== null && options.skipInitializerCalleeWhen?.(calleeName) === true;
       if (!skip) {
         const site = findInstrumentationSite(node, "varDecl", source)!;
+        const initializer = keepingName(
+          node.initializer,
+          (originalNode as ts.VariableDeclaration).initializer!,
+        );
         return ts.factory.updateVariableDeclaration(
           node,
           node.name,
           node.exclamationToken,
           node.type,
-          createRetCall(node.initializer, site.pos, source.fileName, site.opts),
+          createRetCall(initializer, site.pos, source.fileName, site.opts),
         );
       }
     }
@@ -602,13 +683,17 @@ function visitorFactory(
       const skip = calleeName !== null && options.skipInitializerCalleeWhen?.(calleeName) === true;
       if (!skip) {
         const site = findInstrumentationSite(node, "propertyDecl", source)!;
+        const initializer = keepingName(
+          node.initializer,
+          (originalNode as ts.PropertyDeclaration).initializer!,
+        );
         return ts.factory.updatePropertyDeclaration(
           node,
           node.modifiers,
           node.name,
           node.questionToken ?? node.exclamationToken,
           node.type,
-          createRetCall(node.initializer, site.pos, source.fileName, site.opts),
+          createRetCall(initializer, site.pos, source.fileName, site.opts),
         );
       }
     }

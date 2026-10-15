@@ -1,7 +1,9 @@
+import ts from "typescript";
 import { describe, expect, it } from "vitest";
 
 import type { InstrumentOptions } from "./transformer.js";
 
+import { runInSandbox } from "./test-utils/collected.js";
 import {
   endOf,
   type Instrumented,
@@ -14,6 +16,16 @@ import "./test-utils/matchers.js";
 /** Instrument without the runtime declarations; only their own tests are about them. */
 function transform(source: string, options: InstrumentOptions = {}): InstrumentedSource {
   return instrumented(source, { options: { skipTscptrDeclarations: true, ...options } });
+}
+
+/** The names the code puts in `report.names` when it runs, instrumented or as written. */
+function reportedNames(source: string, { instrument }: { instrument: boolean }): string[] {
+  const report: { names?: string[] } = {};
+  runInSandbox(instrument ? transform(source).text : source, "test.ts", {
+    globals: { report },
+    target: ts.ScriptTarget.ES2022,
+  });
+  return report.names!;
 }
 
 const formsOf = (out: Instrumented): string[] => out.calls.map((call) => call.form);
@@ -471,6 +483,54 @@ describe("transformer", () => {
     it("leaves typed variables and class fields alone", () => {
       const out = observing('let x: number = 5; class C { name: string = "a"; }');
       expect(out).toLeaveUnchanged();
+    });
+  });
+
+  // A function takes its name from where it is defined: `const f = () => …`
+  // names it `f`. Moved into a call argument, it has none, so the
+  // instrumenter must keep it where it gets its name.
+  describe("function names", () => {
+    it.each([
+      ["an arrow in a variable", "const f = () => 1;", "f", "f"],
+      ["an async arrow in a variable", "const f = async (c, next) => { await next(); };", "f", "f"],
+      ["a function expression in a variable", "const f = function (a) { return a; };", "f", "f"],
+      ["a class expression in a variable", "const C = class { m(x) { return x; } };", "C", "C"],
+      ["a parenthesised arrow", "const f = (() => 1);", "f", "f"],
+      ["an arrow behind `as`", "const f = ((a) => a) as (a: number) => number;", "f", "f"],
+      ["an arrow assigned to a variable", "let f; f = (a) => a;", "f", "f"],
+      ["an arrow assigned with `??=`", "let f; f ??= (a) => a;", "f", "f"],
+      ["an arrow in a property", "const o = { prop: (x) => x };", "o.prop", "prop"],
+      ["an arrow under a quoted key", 'const o = { "a-b": (x) => x };', 'o["a-b"]', "a-b"],
+      ["an arrow under a numeric key", "const o = { 0x10: (x) => x };", "o[16]", "16"],
+      ["an arrow in a class field", "class K { field = (x) => x; }", "new K().field", "field"],
+      [
+        "a class expression in a static field",
+        "class K { static Inner = class {}; }",
+        "K.Inner",
+        "Inner",
+      ],
+      ["an arrow as a parameter default", "function g(cb = (x) => x) { return cb; }", "g()", "cb"],
+      ["an arrow as a destructuring default", "const { cb = (x) => x } = {};", "cb", "cb"],
+      [
+        "an arrow as an assignment-pattern default",
+        "let cb; ({ cb = (x) => x } = {});",
+        "cb",
+        "cb",
+      ],
+      ["a named function expression", "const f = function inner(a) { return a; };", "f", "inner"],
+      ["an arrow in an array", "const list = [(x) => x];", "list[0]", ""],
+      ["an arrow passed to a call", "const id = (v) => v; const g = id((x) => x);", "g", ""],
+    ])("keeps the name of %s", (_, code, expression, name) => {
+      const source = `${code} report.names = [${expression}.name];`;
+      expect(reportedNames(source, { instrument: false })).toEqual([name]);
+      expect(reportedNames(source, { instrument: true })).toEqual([name]);
+    });
+
+    it("leaves a class its own static `name`", () => {
+      const source =
+        'const C = class { static name() { return "own"; } }; report.names = [C.name()];';
+      expect(reportedNames(source, { instrument: false })).toEqual(["own"]);
+      expect(reportedNames(source, { instrument: true })).toEqual(["own"]);
     });
   });
 

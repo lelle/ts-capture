@@ -16,6 +16,10 @@ export interface CollectOptions {
 export interface SandboxOptions extends CollectOptions {
   /** Functions the code declares, called after it has run: name to arguments. */
   calls?: Record<string, unknown[]>;
+  /** ES2015 unless given; class fields keep their semantics only from ES2022. */
+  target?: ts.ScriptTarget;
+  /** More names the code can reach, such as an object it reports into. */
+  globals?: Record<string, unknown>;
 }
 
 /**
@@ -38,7 +42,9 @@ export function runInSandbox(
   filename: string,
   options: SandboxOptions = {},
 ): CollectedTypeInfo {
-  const compilerOptions: ts.CompilerOptions = { target: ts.ScriptTarget.ES2015 };
+  const compilerOptions: ts.CompilerOptions = {
+    target: options.target ?? ts.ScriptTarget.ES2015,
+  };
   if (options.tsx) compilerOptions.jsx = ts.JsxEmit.React;
   const calls = options.calls ?? {};
   const invocations = Object.keys(calls)
@@ -92,6 +98,7 @@ export function runInSandbox(
     Map,
     Set,
     React,
+    ...options.globals,
   };
   vm.runInNewContext(compiled, sandbox);
   return ctx.getCollectedTypes().filter(([f]) => f === filename);

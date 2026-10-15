@@ -7,7 +7,7 @@ import { findInstrumentationSite } from "../instrumentation-site-spec.js";
 import { canonicalTypeString, sameTypeString } from "../type-canonical.js";
 import { type Applied, nodesOf } from "./applied.js";
 import { callText, type Instrumented, type Observed, type TrackedCall } from "./instrumented.js";
-import { callFormOf, isRuntimeDeclaration, tokensOf } from "./strip-instrumentation.js";
+import { callFormOf, isRuntimeDeclaration, namedValue, tokensOf } from "./strip-instrumentation.js";
 
 // Two questions a spec asks of an applied file, kept apart on purpose. What
 // was written is a question about the AST: the annotation's node, its name
@@ -334,13 +334,28 @@ function foundAmong(
 const isRuntimeCall = (node: ts.Node): boolean => callFormOf(node) !== undefined;
 
 /** The name of the function a node is directly in, through the calls that wrap an arrow. */
+/** The `({ "f": fn })["f"]` a property assignment is the inside of, if it is one. */
+function namingWrapAround(node: ts.Node): ts.ElementAccessExpression | undefined {
+  if (!ts.isPropertyAssignment(node)) return undefined;
+  const object = node.parent;
+  const wrap = ts.isParenthesizedExpression(object.parent) ? object.parent.parent : object.parent;
+  return wrap && namedValue(wrap) === node.initializer
+    ? (wrap as ts.ElementAccessExpression)
+    : undefined;
+}
+
 function enclosingFunctionName(node: ts.Node): string | undefined {
   let fn: ts.Node | undefined = node.parent;
   while (fn && !ts.isFunctionLike(fn)) fn = fn.parent;
   if (!fn) return undefined;
   if (fn.name) return fn.name.getText();
   let holder: ts.Node = fn.parent;
-  while (ts.isParenthesizedExpression(holder) || isRuntimeCall(holder)) holder = holder.parent;
+  for (;;) {
+    const wrap = namingWrapAround(holder);
+    if (wrap) holder = wrap.parent;
+    else if (ts.isParenthesizedExpression(holder) || isRuntimeCall(holder)) holder = holder.parent;
+    else break;
+  }
   if (
     ts.isVariableDeclaration(holder) ||
     ts.isPropertyDeclaration(holder) ||
