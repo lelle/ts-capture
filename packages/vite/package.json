@@ -55,7 +55,7 @@
     "url": "git+https://github.com/lelle/ts-capture.git",
     "directory": "packages/vite"
   },
-  "homepage": "https://github.com/lelle/ts-capture#readme",
+  "homepage": "https://lelle.github.io/ts-capture/",
   "bugs": {
     "url": "https://github.com/lelle/ts-capture/issues"
   },
