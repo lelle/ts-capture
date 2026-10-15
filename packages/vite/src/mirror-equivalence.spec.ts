@@ -1,6 +1,6 @@
 import type { LiteralOptions } from "@ts-capture/core";
 
-import { getTypeName } from "@ts-capture/core";
+import { createCollectionContext, getTypeName } from "@ts-capture/core";
 import vm from "node:vm";
 import { describe, expect, it } from "vitest";
 
@@ -69,6 +69,7 @@ function makeSandbox(opts: LiteralOptions) {
 type CollectedEntry = [string, number, Array<[string, ...unknown[]]>];
 interface TsCaptureGlobal {
   (name: string, value: unknown, offset: number, file: string, declJson: string): void;
+  ret<T>(value: T, offset: number, file: string, declJson: string): T;
   get(): CollectedEntry[];
 }
 
@@ -285,6 +286,50 @@ describe("vite runtime mirror ≡ core walker", () => {
       const vite = viteType(sandbox, cyclic, 0);
       expect(core).toBe("{ self: unknown, x: number }");
       expect(vite).toBe(core);
+    });
+  });
+
+  describe("returned promises (settlePromises mirror)", () => {
+    const RETURN_OPTS = { returnType: true, async: true };
+    const tick = () => new Promise((resolve) => setTimeout(resolve, 0));
+    const typesOf = (entries: ReadonlyArray<{ 2: ReadonlyArray<{ 0: unknown }> }>): unknown[] =>
+      entries.flatMap((entry) => entry[2].map((observed) => observed[0]));
+
+    async function coreReturned(make: string): Promise<unknown[]> {
+      const ctx = createCollectionContext({ literalOptions: OPTS_OFF });
+      const promise = new Function(`return ${make}`)() as Promise<unknown>;
+      // Node's collector reads a promise's state without following it, so
+      // the test handles the rejection the code under test would.
+      promise.catch(() => {});
+      ctx.record("(return)", promise, 0, "/test.ts", RETURN_OPTS);
+      for (let i = 0; i < 3; i++) {
+        ctx.settlePromises();
+        await tick();
+      }
+      return typesOf(ctx.getCollectedTypes());
+    }
+
+    // Made inside the sandbox, as a browser page makes its own promises.
+    async function viteReturned(make: string): Promise<unknown[]> {
+      const sandbox = makeSandbox(OPTS_OFF);
+      const promise = vm.runInContext(make, sandbox as unknown as vm.Context) as unknown;
+      sandbox.__tscptr__.ret(promise, 0, "/test.ts", JSON.stringify(RETURN_OPTS));
+      await tick();
+      return typesOf(sandbox.__tscptr__.get());
+    }
+
+    it("records what the promise resolved to", async () => {
+      const make = "Promise.resolve({ a: 1 })";
+      const core = await coreReturned(make);
+      expect(core).toEqual(["Promise<{ a: number }>"]);
+      expect(await viteReturned(make)).toEqual(core);
+    });
+
+    it("records nothing for a promise that rejects", async () => {
+      const make = "Promise.reject(new Error('no'))";
+      const core = await coreReturned(make);
+      expect(core).toEqual([]);
+      expect(await viteReturned(make)).toEqual(core);
     });
   });
 });

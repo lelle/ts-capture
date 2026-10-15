@@ -617,6 +617,19 @@ export function getCollectorSnippet(
   }
 
   function __tscptr__record(name, value, pos, filename, optsJson) {
+    // Mirror of core's settlePromises: a returned promise is observed once it
+    // has fulfilled, as Promise<T>; one that rejects records nothing.
+    if (value instanceof Promise && JSON.parse(optsJson).returnType) {
+      value.then(function(settled) {
+        __tscptr__store(settled, pos, filename, optsJson, function(t) { return "Promise<" + t + ">"; });
+        __tscptr__bump();
+      }, function() {});
+      return;
+    }
+    __tscptr__store(value, pos, filename, optsJson);
+  }
+
+  function __tscptr__store(value, pos, filename, optsJson, wrap) {
     if (__tscptr__in_record) return; // re-entry guard, see __tscptr__in_record decl
     __tscptr__in_record = true;
     try {
@@ -625,6 +638,7 @@ export function getCollectorSnippet(
       var typeName;
       try { typeName = __tscptr__getTypeName(value); }
       catch (e) { typeName = "unknown"; } // belt-and-suspenders for any other walk failures
+      if (wrap) typeName = wrap(typeName);
       var seen = __tscptr__logs[key];
       var sizeBefore = seen.size;
       seen.add(JSON.stringify([typeName, undefined]));

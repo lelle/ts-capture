@@ -174,6 +174,20 @@ describe("tsCapturePlugin", () => {
       expect(transformed(plugin, "/src/routes/foo.ts")).toTrack("a");
     });
 
+    it("observes written types when TS_CAPTURE_OBSERVE_ANNOTATED is set in the server", () => {
+      vi.stubEnv("TS_CAPTURE_OBSERVE_ANNOTATED", "1");
+      try {
+        const source = "function foo(a: string) { return a; }";
+        const transform = (tsCapturePlugin() as Plugin).transform as Function;
+        const { code } = transform(source, "/src/app.ts") as { code: string };
+        expect(inspected(code, { input: source, filename: "/src/app.ts" })).toTrack("a", {
+          annotated: true,
+        });
+      } finally {
+        vi.unstubAllEnvs();
+      }
+    });
+
     it("prepends the collector snippet to an instrumented module", () => {
       const out = transformed(tsCapturePlugin() as Plugin, "/src/main.ts");
       expect(out).toTrack("a");
