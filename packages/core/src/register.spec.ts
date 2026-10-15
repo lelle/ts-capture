@@ -55,6 +55,30 @@ describe("register (node runner)", () => {
     });
   });
 
+  // As the docs run it: Node loads the file, the loader instruments it, and
+  // the types are written back when the process exits. Needs a Node that
+  // runs `.ts` itself.
+  it.skipIf(!process.features.typescript)(
+    "types a file run with node --import @ts-capture/core/register",
+    () => {
+      withTmpDir((dir) => {
+        const srcFile = path.join(dir, "app.ts");
+        fs.writeFileSync(
+          srcFile,
+          'function greet(name) { return "Hello " + name; }\ngreet("World");\n',
+        );
+
+        execFileSync(
+          process.execPath,
+          ["--import", path.join(PROJECT_ROOT, "dist/register.js"), srcFile],
+          { cwd: dir, encoding: "utf-8", stdio: "pipe", timeout: 15000 },
+        );
+
+        expect(fs.readFileSync(srcFile, "utf-8")).toContain("greet(name: string)");
+      });
+    },
+  );
+
   it("register.js exists and is a valid ES module", () => {
     const registerPath = path.join(PROJECT_ROOT, "dist/register.js");
     expect(fs.existsSync(registerPath)).toBe(true);

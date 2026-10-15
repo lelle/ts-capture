@@ -29,6 +29,15 @@ and shadow it, so `register` does not work end-to-end under them — use the
 matching integration package instead ([Vite/Vitest](use-with-vite-vitest.md),
 [Jest/Babel](use-with-jest-babel.md)), or Path B below.
 
+**Needs a Node that runs `.ts` itself.** `register` instruments TypeScript and
+hands it back to Node; it does not compile it. That takes Node 22.18 or 23.6
+and later, where type stripping is on by default. On Node 20 the run stops at
+`Unknown file extension ".ts"`, as it would without ts-capture. Type stripping
+leaves out what needs compiling — `enum`, `namespace` with code in it,
+constructor parameter properties — so a file using them stops at
+`ERR_UNSUPPORTED_TYPESCRIPT_SYNTAX`. For either case, use Path B with your own
+build step, or one of the integration packages.
+
 ## Path B — `preload` + manual instrument (reviewable pipeline)
 
 `@ts-capture/core/preload` only installs the runtime collector (it writes
