@@ -87,6 +87,9 @@ updates each package's `CHANGELOG.md`. Merging it starts a publish to npm
 with provenance via trusted publishing (OIDC), which waits for a maintainer
 to approve the `Release` environment.
 
+Core and the four integration packages share one version number, so a change
+to any of them releases all five; `@ts-capture/skills` is versioned on its own.
+
 ## Reporting bugs and proposing features
 
 Use the issue templates — they prompt for the `Input` / `Expected` /

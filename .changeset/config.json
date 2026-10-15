@@ -2,7 +2,15 @@
   "$schema": "https://unpkg.com/@changesets/config@4.0.0/schema.json",
   "changelog": ["@changesets/changelog-github", { "repo": "lelle/ts-capture" }],
   "commit": false,
-  "fixed": [],
+  "fixed": [
+    [
+      "@ts-capture/core",
+      "@ts-capture/vite",
+      "@ts-capture/babel-plugin",
+      "@ts-capture/esbuild",
+      "@ts-capture/svelte"
+    ]
+  ],
   "linked": [],
   "access": "public",
   "baseBranch": "main",
