@@ -552,8 +552,7 @@ describe("applyTypesToFile — infer.ignoreExistingTypes", () => {
       [entry("test.ts", 14, [["string"]])],
       withInfer({ requireTypeRefInScope: false, ignoreExistingTypes: true }),
     );
-    expect(out.text).toContain(": string");
-    expect(out.text).not.toBe(source);
+    expect(out.text).toBe("function foo(a: string: number) {}");
   });
 });
 

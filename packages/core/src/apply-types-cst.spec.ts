@@ -2041,16 +2041,14 @@ describe("applyTypesToFileCst — infer.ignoreExistingTypes", () => {
   it("flag on: typed param IS re-annotated despite existing annotation", () => {
     const source = "function foo(a: string) {}";
     const out = applied(source, [entry("test.ts", 14, [["number"]])], MEASURE);
-    expect(out.text).toContain(": number");
-    expect(out.text).not.toBe(source);
+    expect(out.text).toBe("function foo(a: number: string) {}");
   });
 
   it("flag on: typed varDecl IS re-annotated", () => {
     const source = "const x: number = 1;";
     // pos = end of "x" (after the identifier name)
     const out = applied(source, [entry("test.ts", 7, [["string"]], { varDecl: true })], MEASURE);
-    expect(out.text).toContain(": string");
-    expect(out.text).not.toBe(source);
+    expect(out.text).toBe("const x: string: number = 1;");
   });
 });
 

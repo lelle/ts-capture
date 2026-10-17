@@ -9,6 +9,8 @@ import { checked } from "./test-utils/applied.js";
 
 const PROJECT_ROOT = path.resolve(".");
 
+const GREET = 'function greet(name) { return "Hello " + name; }\ngreet("World");\n';
+
 function withTmpDir(fn: (dir: string) => void) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "ts-capture-reg-"));
   try {
@@ -22,8 +24,7 @@ describe("register (node runner)", () => {
   it("instruments and collects types via the full pipeline", () => {
     withTmpDir((dir) => {
       const srcFile = path.join(dir, "app.ts");
-      const source = 'function greet(name) { return "Hello " + name; }\ngreet("World");\n';
-      fs.writeFileSync(srcFile, source);
+      fs.writeFileSync(srcFile, GREET);
 
       const distDir = path.join(PROJECT_ROOT, "dist");
       const tsLib = path.join(PROJECT_ROOT, "node_modules/typescript/lib/typescript.js");
@@ -49,9 +50,10 @@ describe("register (node runner)", () => {
       fs.writeFileSync(runnerFile, lines.join("\n"));
 
       execFileSync("node", [runnerFile], { encoding: "utf-8", timeout: 15000 });
-      const out = checked(source, fs.readFileSync(srcFile, "utf-8"));
+      const out = checked(GREET, fs.readFileSync(srcFile, "utf-8"));
       expect(out).toAnnotate("name", "string");
       expect(out).toAnnotate({ returnOf: "greet" }, "string");
+      expect(out).toHaveNoNewDiagnostics();
     });
   });
 
@@ -63,10 +65,7 @@ describe("register (node runner)", () => {
     () => {
       withTmpDir((dir) => {
         const srcFile = path.join(dir, "app.ts");
-        fs.writeFileSync(
-          srcFile,
-          'function greet(name) { return "Hello " + name; }\ngreet("World");\n',
-        );
+        fs.writeFileSync(srcFile, GREET);
 
         execFileSync(
           process.execPath,
@@ -74,7 +73,10 @@ describe("register (node runner)", () => {
           { cwd: dir, encoding: "utf-8", stdio: "pipe", timeout: 15000 },
         );
 
-        expect(fs.readFileSync(srcFile, "utf-8")).toContain("greet(name: string)");
+        const out = checked(GREET, fs.readFileSync(srcFile, "utf-8"));
+        expect(out).toAnnotate("name", "string");
+        expect(out).toAnnotate({ returnOf: "greet" }, "string");
+        expect(out).toHaveNoNewDiagnostics();
       });
     },
   );

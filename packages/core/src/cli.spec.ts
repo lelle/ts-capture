@@ -264,8 +264,9 @@ describe("cli", () => {
         const { exitCode } = run("apply", jsonFile);
         expect(exitCode).toBe(0);
 
-        const result = fs.readFileSync(srcFile, "utf-8");
-        expect(result).toContain("a: string");
+        const out = fileAfter(srcFile, FOO);
+        expect(out).toAnnotate("a", "string");
+        expect(out).toHaveNoNewDiagnostics();
       });
     });
 
