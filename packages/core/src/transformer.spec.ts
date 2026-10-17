@@ -503,6 +503,13 @@ describe("transformer", () => {
       ["an arrow under a quoted key", 'const o = { "a-b": (x) => x };', 'o["a-b"]', "a-b"],
       ["an arrow under a numeric key", "const o = { 0x10: (x) => x };", "o[16]", "16"],
       ["an arrow in a class field", "class K { field = (x) => x; }", "new K().field", "field"],
+      ["an arrow with a written return type", "const f = (): number => 1;", "f", "f"],
+      [
+        "an arrow with a written return type in a class field",
+        "class K { field = (): void => {}; }",
+        "new K().field",
+        "field",
+      ],
       [
         "a class expression in a static field",
         "class K { static Inner = class {}; }",

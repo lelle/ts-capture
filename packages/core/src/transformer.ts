@@ -252,7 +252,9 @@ function updateArrow(
 ): ts.ArrowFunction {
   const newBody = ts.isBlock(node.body)
     ? ts.factory.createBlock([...stmts, ...node.body.statements])
-    : ts.factory.createCommaListExpression([...stmts.map((s) => s.expression), node.body]);
+    : stmts.length === 0
+      ? node.body
+      : ts.factory.createCommaListExpression([...stmts.map((s) => s.expression), node.body]);
 
   return ts.factory.updateArrowFunction(
     node,
@@ -410,7 +412,17 @@ function keepingName(wrapped: ts.Expression, original: ts.Expression): ts.Expres
   while (isOuterExpression(inner)) {
     inner = inner.expression;
   }
-  if (!(ts.isFunctionExpression(inner) || ts.isClassExpression(inner)) || inner.name) {
+  let visited = wrapped;
+  while (isOuterExpression(visited)) {
+    visited = visited.expression;
+  }
+  // An arrow the visitor wrapped in `regFn` was named inside the wrap; one
+  // with a written return type gets no `regFn` and is named here.
+  const bareArrow = ts.isArrowFunction(inner) && ts.isArrowFunction(visited);
+  if (!(ts.isFunctionExpression(inner) || ts.isClassExpression(inner) || bareArrow)) {
+    return wrapped;
+  }
+  if (!bareArrow && (inner as ts.FunctionExpression | ts.ClassExpression).name) {
     return wrapped;
   }
   const name = contextualName(original);
