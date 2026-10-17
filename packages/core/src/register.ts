@@ -53,6 +53,10 @@ __tscptr__.get = () => ctx.getCollectedTypes();
 
 (globalThis as Record<string, unknown>).__tscptr__ = __tscptr__;
 
+// Returned promises wait in the context until they settle, and their value is
+// read in a `.then`, which no longer runs once the process is exiting.
+process.on("beforeExit", () => ctx.settlePromises());
+
 // Apply types on exit
 process.on("exit", () => {
   const collected = ctx.getCollectedTypes();

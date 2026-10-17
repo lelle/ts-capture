@@ -81,6 +81,27 @@ describe("register (node runner)", () => {
     },
   );
 
+  it.skipIf(!process.features.typescript)(
+    "types what a returned promise resolved to under node --import",
+    () => {
+      withTmpDir((dir) => {
+        const srcFile = path.join(dir, "app.ts");
+        const source = "function load() { return Promise.resolve(1); }\nload();\n";
+        fs.writeFileSync(srcFile, source);
+
+        execFileSync(
+          process.execPath,
+          ["--import", path.join(PROJECT_ROOT, "dist/register.js"), srcFile],
+          { cwd: dir, encoding: "utf-8", stdio: "pipe", timeout: 15000 },
+        );
+
+        const out = checked(source, fs.readFileSync(srcFile, "utf-8"));
+        expect(out).toAnnotate({ returnOf: "load" }, "Promise<number>");
+        expect(out).toHaveNoNewDiagnostics();
+      });
+    },
+  );
+
   it("register.js exists and is a valid ES module", () => {
     const registerPath = path.join(PROJECT_ROOT, "dist/register.js");
     expect(fs.existsSync(registerPath)).toBe(true);
