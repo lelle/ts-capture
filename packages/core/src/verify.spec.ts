@@ -215,10 +215,11 @@ describe("isCompatible", () => {
       ).toBe("match");
     });
 
-    it("takes a class for a function", () => {
-      expect(isCompatible(["typeof Test"], "(...args: unknown[]) => unknown").verdict).toBe(
-        "match",
-      );
+    it("cannot tell whether a class fits a call signature", () => {
+      expect(isCompatible(["typeof Test"], "(...args: unknown[]) => unknown")).toEqual({
+        verdict: "unverifiable",
+        reason: "class for a call signature",
+      });
     });
 
     it("cannot tell whether a class or a named instance has an object type's keys", () => {
@@ -228,8 +229,18 @@ describe("isCompatible", () => {
       });
     });
 
-    it("still flags a primitive against an object type", () => {
+    it("still flags null or undefined against an object type", () => {
       expect(isCompatible(["null"], "{ name: string; }").verdict).toBe("mismatch");
+      expect(isCompatible(["undefined"], "{ name: string; }").verdict).toBe("mismatch");
+    });
+
+    it("cannot tell whether a primitive has an object type's keys", () => {
+      // TypeScript accepts "abc" for { length: number }.
+      expect(isCompatible(["string"], "{ length: number }")).toEqual({
+        verdict: "unverifiable",
+        reason: "primitive for an object type",
+      });
+      expect(isCompatible(['"abc"'], "{ length: number }").verdict).toBe("unverifiable");
     });
   });
 

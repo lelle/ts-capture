@@ -274,9 +274,12 @@ export function isCompatible(observed: string[], declared: string): VerifyOutcom
   // observed is a function at all — a non-function observation against a
   // function-typed declaration is a real mismatch.
   if (isFunctionType(declaredNorm)) {
-    const allFns = observed.every((o) => isFunctionObservation(normalize(o)));
-    if (allFns) return { verdict: "match" };
-    return { verdict: "mismatch" };
+    const normalized = observed.map(normalize);
+    if (!normalized.every(isFunctionObservation)) return { verdict: "mismatch" };
+    // A class is called with `new`; whether it is also callable the text cannot say.
+    if (normalized.some((o) => o.startsWith("typeof ")))
+      return { verdict: "unverifiable", reason: "class for a call signature" };
+    return { verdict: "match" };
   }
 
   // Structural object types: `{ a: T, b?: U }`.
@@ -438,9 +441,12 @@ function structuralCompat(declared: string, observed: string[]): VerifyOutcome {
   for (const obs of observed) {
     const observedNorm = normalize(obs);
     if (!observedNorm.startsWith("{") || !observedNorm.endsWith("}")) {
-      if (isPrimitiveOrLiteral(observedNorm)) return { verdict: "mismatch" };
-      // A class or an instance by name may well have the keys.
-      unverifiable ??= { verdict: "unverifiable", reason: "named observed type" };
+      if (observedNorm === "null" || observedNorm === "undefined") return { verdict: "mismatch" };
+      // A primitive has its wrapper's members (`"abc"` fits `{ length: number }`),
+      // and a class or an instance by name may well have the keys.
+      unverifiable ??= isPrimitiveOrLiteral(observedNorm)
+        ? { verdict: "unverifiable", reason: "primitive for an object type" }
+        : { verdict: "unverifiable", reason: "named observed type" };
       continue;
     }
     const parsed = parseObjectType(observedNorm);
