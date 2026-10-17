@@ -223,6 +223,23 @@ process(double);`);
     expect(out).toTypeAs("cb", "(x: number) => number");
   });
 
+  describe("a callback with a written parameter type", () => {
+    const source = `
+function process(cb) {
+    cb("x", 2);
+}
+function k(a: string, b) { return a + b; }
+process(k);`;
+
+    it("keeps the written type in its place in the signature", () => {
+      expect(pipeline(source)).toTypeAs("cb", "(a: string, b: number) => string");
+    });
+
+    it("writes the same whether or not written types are observed for verify", () => {
+      expect(pipeline(source, { observeAnnotated: true }).text).toBe(pipeline(source).text);
+    });
+  });
+
   it("infers full signature for anonymous inline arrows passed as call args", () => {
     // Inline arrows have no name to register by, so the transformer wraps
     // each one in `__tscptr__.regFn(arrow, …)` at creation; the cross-ref

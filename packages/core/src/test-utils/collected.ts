@@ -11,6 +11,8 @@ export interface CollectOptions {
   collector?: LiteralOptions;
   /** Parse and run the input as TSX, with a React stub that builds plain objects. */
   tsx?: boolean;
+  /** Also observe positions that have a written type, as `verify` does. */
+  observeAnnotated?: boolean;
 }
 
 export interface SandboxOptions extends CollectOptions {
@@ -29,7 +31,10 @@ export interface SandboxOptions extends CollectOptions {
  */
 export function collect(input: string, options: CollectOptions = {}): CollectedTypeInfo {
   const filename = options.tsx ? "test.tsx" : "test.ts";
-  const instrumented = instrumentSource(input, filename, { instrumentCallExpressions: true });
+  const instrumented = instrumentSource(input, filename, {
+    instrumentCallExpressions: true,
+    observeAnnotated: options.observeAnnotated ?? false,
+  });
   return runInSandbox(instrumented, filename, options);
 }
 

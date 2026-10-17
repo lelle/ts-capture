@@ -42,6 +42,12 @@ export interface ExtraOptions {
    * type (`observeAnnotated`). Only `verify` reads them; apply drops them.
    */
   annotated?: boolean;
+  /**
+   * On a return: the function's parameters that have a written type, as
+   * `[pos, name, type]`. Those are not observed for apply, and the signature
+   * built from the observed ones needs them in their places.
+   */
+  writtenParams?: Array<[number, string, string]>;
 }
 
 /**

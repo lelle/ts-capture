@@ -44,7 +44,10 @@ export function crossReferenceObservations(input: CrossRefInput): CollectedTypeI
 
   // First pass: collect all entries and group by fnRetPos
   const paramsByFn = new Map<string, Array<{ name: string; pos: number; types: string[] }>>();
-  const returnsByFn = new Map<string, { types: string[]; async: boolean }>();
+  const returnsByFn = new Map<
+    string,
+    { types: string[]; async: boolean; writtenParams: Array<[number, string, string]> }
+  >();
   // Observed return types from param invocations, keyed by the param's
   // observation pos and the member name. The second pass uses this to substitute
   // `=> unknown` in the param's emitted function type.
@@ -81,7 +84,11 @@ export function crossReferenceObservations(input: CrossRefInput): CollectedTypeI
       if (existing) {
         existing.types.push(...typeNames);
       } else {
-        returnsByFn.set(fnKey, { types: [...typeNames], async: opts.async ?? false });
+        returnsByFn.set(fnKey, {
+          types: [...typeNames],
+          async: opts.async ?? false,
+          writtenParams: opts.writtenParams ?? [],
+        });
       }
     } else if (opts.fnRetPos !== undefined) {
       const fnKey = `${filename}:${opts.fnRetPos}`;
@@ -108,12 +115,18 @@ export function crossReferenceObservations(input: CrossRefInput): CollectedTypeI
     params.sort((a, b) => a.pos - b.pos);
 
     // Look up actual parameter names
-    const paramInfos = params.map((p) => {
+    const observed = params.map((p) => {
       const logKey = JSON.parse(p.name) as LogKey;
       const realName =
         paramNames.get(`${logKey.filename}:${logKey.pos}`) ?? `arg${params.indexOf(p)}`;
-      return { name: realName, types: p.types };
+      return { pos: p.pos, name: realName, types: p.types };
     });
+    const written = returnInfo.writtenParams.map(([pos, name, type]) => ({
+      pos,
+      name,
+      types: [type],
+    }));
+    const paramInfos = [...observed, ...written].sort((a, b) => a.pos - b.pos);
 
     const sig = buildFunctionSignature(paramInfos, returnInfo.types, returnInfo.async);
     fnSignatures.set(fnKey, sig);

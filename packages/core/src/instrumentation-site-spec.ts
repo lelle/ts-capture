@@ -86,7 +86,25 @@ function returnSite(
   const opts: ExtraOptions = { returnType: true };
   if (isAsync(node)) opts.async = true;
   if (node.type) opts.annotated = true;
+  else {
+    const written = writtenParams(node, sourceFile);
+    if (written.length > 0) opts.writtenParams = written;
+  }
   return { kind: "return", pos: findCloseParenPos(node, sourceFile), opts };
+}
+
+function writtenParams(
+  node: ts.FunctionLikeDeclaration,
+  sourceFile: ts.SourceFile,
+): Array<[number, string, string]> {
+  return node.parameters.flatMap((param, index): Array<[number, string, string]> => {
+    if (!param.type) return [];
+    const pos = param.name.getEnd() + (param.questionToken ? 1 : 0);
+    const base = ts.isIdentifier(param.name) ? param.name.text : `arg${index}`;
+    const optional = param.questionToken || param.initializer ? "?" : "";
+    const name = `${param.dotDotDotToken ? "..." : ""}${base}${optional}`;
+    return [[pos, name, param.type.getText(sourceFile)]];
+  });
 }
 
 function varDeclSite(node: ts.VariableDeclaration): InstrumentationSite {

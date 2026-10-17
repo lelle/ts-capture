@@ -512,9 +512,11 @@ function visitorFactory(
       // Parameter instrumentation
       for (const param of node.parameters) {
         if ((!param.type || options.observeAnnotated) && !param.initializer && node.body) {
+          // A written type reaches the signature from the return's
+          // `writtenParams`, not from what verify observes here.
           const site = findInstrumentationSite(param, "param", source, {
             fn: node as ts.FunctionLikeDeclarationBase,
-            fnRetPos: applyRetPos,
+            fnRetPos: param.type ? undefined : applyRetPos,
           })!;
           instrumentStmts.push(
             createTscptrCall(getParameterName(param), site.pos, source.fileName, site.opts),
