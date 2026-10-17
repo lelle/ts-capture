@@ -248,6 +248,24 @@ describe("the CST and offset appliers agree", () => {
   });
 });
 
+describe("applyTypesToFileCst — what the telemetry counts", () => {
+  it("counts neither observations of written types nor callback returns as entries", () => {
+    const source = "function foo(a: string, b) {}";
+    const telemetry = newApplyTelemetry();
+    applied(
+      source,
+      [
+        entry("test.ts", source.indexOf("a:") + 1, [["string"]], { annotated: true }),
+        entry("test.ts", source.indexOf("b)") + 1, [["number"]]),
+        entry("test.ts", source.indexOf("b)") + 1, [["void"]], { paramReturn: true }),
+      ],
+      { telemetry },
+    );
+    expect(telemetry.totalEntries).toBe(1);
+    expect(telemetry.emitted).toBe(1);
+  });
+});
+
 describe("applyTypesToFileCst — param annotations via AST lookup", () => {
   it("annotates a single param", () => {
     const out = applied("function foo(a) {}", [entry("test.ts", 14, [["string"]])]);

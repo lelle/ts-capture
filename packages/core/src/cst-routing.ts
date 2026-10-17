@@ -42,18 +42,18 @@ export function routeEntries(
   const passThrough: CollectedTypeInfo = [];
 
   for (const entry of typeInfo) {
-    if (telemetry) telemetry.totalEntries++;
     const [, pos, , opts] = entry;
+    // Neither is input to apply, so neither is counted, as in `apply-types.ts`:
+    // a `paramReturn` record says what calling the parameter returned, not
+    // what the parameter is, and a written type is observed only for `verify`.
+    if (opts?.paramReturn) continue;
+    if (opts?.annotated) continue;
+    if (telemetry) telemetry.totalEntries++;
     // User-marked range — drop the entry entirely (apply produces
     // no output for this position, neither CST nor pass-through).
     if (ignoredRanges.some(([s, e]) => pos >= s && pos < e)) {
       continue;
     }
-    // See the same guard in `apply-types.ts`: a `paramReturn` record says what
-    // calling the parameter returned, not what the parameter is.
-    if (opts?.paramReturn) continue;
-    // Observed at a written type for `verify`; apply never writes over one.
-    if (opts?.annotated) continue;
     if (opts?.thisType) {
       const site = thisTypeSites.get(pos);
       if (site) {
