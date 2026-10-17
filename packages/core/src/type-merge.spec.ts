@@ -122,6 +122,21 @@ describe("splitTopLevelUnion", () => {
       "Map<string | number, boolean>",
     ]);
   });
+
+  it("splits after a member whose type is a function", () => {
+    expect(splitTopLevelUnion("{ f: () => void } | string")).toEqual([
+      "{ f: () => void }",
+      "string",
+    ]);
+  });
+
+  it("splits around a parenthesised function type", () => {
+    expect(splitTopLevelUnion("string | (() => void) | number")).toEqual([
+      "string",
+      "(() => void)",
+      "number",
+    ]);
+  });
 });
 
 describe("parseObjectType", () => {
@@ -551,6 +566,15 @@ describe("mergeTypes — cartesian-product collapse inside Array<...>", () => {
         INFER_DEFAULTS,
       ),
     ).toBeTheType(["{ a: null | number, b: null | number }[]"]);
+  });
+
+  it("collapses the union when the objects hold a function", () => {
+    expect(
+      mergeTypes(
+        ["Array<{ a: null, f: () => void } | { a: number, f: () => void }>"],
+        INFER_DEFAULTS,
+      ),
+    ).toBeTheType(["{ a: null | number, f: () => void }[]"]);
   });
 
   it("leaves a single element-type variant unchanged", () => {

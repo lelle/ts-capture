@@ -274,6 +274,8 @@ export function splitTopLevelUnion(s: string): string[] {
   for (let i = 0; i < s.length; i++) {
     const ch = s[i]!;
     if (ch === "{" || ch === "[" || ch === "(" || ch === "<") depth++;
+    // The `>` of a function type's `=>` closes nothing.
+    else if (ch === ">" && s[i - 1] === "=") continue;
     else if (ch === "}" || ch === "]" || ch === ")" || ch === ">") depth--;
     else if (depth === 0 && ch === "|") {
       // Accept either `|` or ` | ` as the union separator
