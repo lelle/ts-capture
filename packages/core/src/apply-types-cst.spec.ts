@@ -536,6 +536,46 @@ describe("applyTypesToFileCst — varDecl + class-field annotations via AST look
     expect(out).toAnnotate("name", "string");
   });
 
+  describe("a field set from a constructor param gets the param's type", () => {
+    const source = `class Counter {
+  count;
+  constructor(initial) {
+    this.count = initial;
+  }
+}`;
+    const initialEnd = source.indexOf("initial)") + "initial".length;
+
+    it.each([
+      ["without a program", {}],
+      ["with a program", { project: true }],
+      ["with the type-check oracle", { verify: true }],
+    ])("%s", (_, options) => {
+      const out = applied(source, [entry("test.ts", initialEnd, [["number"]])], options);
+      expect(out).toAnnotate("initial", "number");
+      expect(out).toAnnotate("count", "number");
+    });
+
+    it.each([
+      ["without a program", {}],
+      ["with a program", { project: true }],
+      ["with the type-check oracle", { verify: true }],
+    ])("writes the field's type once when the param's type is a named shape, %s", (_, options) => {
+      const named = `interface Opts { a: number; b: string }
+class Holder {
+  opts;
+  constructor(initial) {
+    this.opts = initial;
+  }
+}`;
+      const pos = named.indexOf("initial)") + "initial".length;
+      const out = applied(named, [entry("test.ts", pos, [["{ a: number; b: string }"]])], options);
+      // `Opts | Opts` is the same type as `Opts`, so the spelling is compared.
+      expect(out.text).toBe(
+        named.replace("opts;", "opts: Opts;").replace("(initial)", "(initial: Opts)"),
+      );
+    });
+  });
+
   it("annotates a class field initializer", () => {
     const source = "class C { value = 42; }";
     const out = applied(

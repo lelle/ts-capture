@@ -109,6 +109,13 @@ export interface ApplyTypesOptions extends CompilerOptions {
    * would delete them.
    */
   stripConflictNotes?: boolean;
+  /**
+   * Whether this pass infers class fields from constructor params. False when
+   * the CST applier delegates: it inferred them before routing, and the source
+   * handed over already holds the params' types, so inferring again would
+   * union the field's type with itself.
+   */
+  inferClassFields?: boolean;
   prefix?: string;
   /** Inference behavior flags. Defaults match INFER_DEFAULTS (today's behavior). */
   infer?: InferOptions;

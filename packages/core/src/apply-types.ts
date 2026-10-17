@@ -163,7 +163,8 @@ export function applyTypesToFile(
   // Synthesize class-field type-info entries from constructor-param
   // assignments before the main pipeline. These flow through dedup, merge,
   // and replacement just like real observations.
-  const fieldEntries = inferClassFieldTypes(source, typeInfo);
+  const fieldEntries =
+    options.inferClassFields === false ? [] : inferClassFieldTypes(source, typeInfo);
   if (fieldEntries.length > 0) {
     typeInfo = [...typeInfo, ...fieldEntries];
   }

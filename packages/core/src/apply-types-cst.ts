@@ -7,6 +7,7 @@ import type { CollectedTypeInfo } from "./type-collector.js";
 
 import { advanceCurrentSource } from "./apply-types-verify.js";
 import { applyTypesToFile } from "./apply-types.js";
+import { inferClassFieldTypes } from "./class-field-inference.js";
 import { INFER_DEFAULTS, type InferOptions } from "./configuration.js";
 import { buildCstReplacements, type CstApplyContext } from "./cst-replacements.js";
 import { routeEntries } from "./cst-routing.js";
@@ -146,6 +147,12 @@ export function applyTypesToFileCst(
   const telemetry = options.telemetry;
 
   // --- Route entries: AST-eligible vs pass-through ---
+
+  // A field's type comes from the constructor param assigned to it. Inferred
+  // before routing, which would hand the param entries to CST and the field
+  // to the pass-through, so neither side saw both.
+  const fieldEntries = inferClassFieldTypes(source, typeInfo);
+  if (fieldEntries.length > 0) typeInfo = [...typeInfo, ...fieldEntries];
 
   const { eligible: deduped, passThrough } = routeEntries(typeInfo, cstIndex, infer, telemetry);
 
@@ -288,6 +295,7 @@ export function applyTypesToFileCst(
       : {}),
     // This pass already stripped, and `afterCst` holds the notes it wrote.
     stripConflictNotes: false,
+    inferClassFields: false,
   };
   const result = applyTypesToFile(afterCst, rebasedPassThrough, innerOptions, program);
   if (telemetry && sub) {

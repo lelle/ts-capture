@@ -2,8 +2,8 @@ import ts from "typescript";
 
 import type { CollectedTypeInfo } from "./type-collector.js";
 
-// Class-field type inference for the offset-based applier. Pure over a
-// `ts.SourceFile` + the file's existing observations; no `ts.Program`.
+// Class-field type inference for both appliers. Pure over a `ts.SourceFile`
+// + the file's existing observations; no `ts.Program`.
 
 /**
  * Generate synthetic type-info entries for class instance fields whose
