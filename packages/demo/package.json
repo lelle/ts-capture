@@ -17,13 +17,13 @@
     "@ts-capture/core": "workspace:*",
     "@ts-capture/examples-site": "workspace:*",
     "@ts-capture/vite": "workspace:*",
-    "playwright": "1.63.0",
+    "playwright": "1.64.0",
     "typescript": "6.0.3",
-    "vite": "8.2.1"
+    "vite": "8.3.4"
   },
   "devDependencies": {
-    "@types/node": "26.2.0",
-    "oxlint": "1.77.0",
+    "@types/node": "26.6.5",
+    "oxlint": "1.87.0",
     "vitest": "4.1.11"
   }
 }

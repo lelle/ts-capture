@@ -40,12 +40,12 @@
     "@ts-capture/core": "workspace:*"
   },
   "devDependencies": {
-    "@babel/core": "8.0.1",
-    "@babel/preset-typescript": "8.0.1",
+    "@babel/core": "8.0.7",
+    "@babel/preset-typescript": "8.0.7",
     "@ts-capture/core": "workspace:*",
-    "@types/node": "26.2.0",
+    "@types/node": "26.6.5",
     "@vitest/coverage-v8": "4.1.11",
-    "oxlint": "1.77.0",
+    "oxlint": "1.87.0",
     "typescript": "6.0.3",
     "vitest": "4.1.11"
   },

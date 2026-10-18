@@ -41,12 +41,12 @@
   },
   "devDependencies": {
     "@ts-capture/core": "workspace:*",
-    "@types/node": "26.2.0",
+    "@types/node": "26.6.5",
     "@vitest/coverage-v8": "4.1.11",
     "jsdom": "29.1.1",
-    "oxlint": "1.77.0",
+    "oxlint": "1.87.0",
     "typescript": "6.0.3",
-    "vite": "8.2.1",
+    "vite": "8.3.4",
     "vitest": "4.1.11"
   },
   "author": "Sverre Ølnes <sverre.olnes@gmail.com>",

@@ -54,7 +54,7 @@ export interface ExtraOptions {
  * When ts-capture falls back to a coarse / generic emit because it
  * couldn't observe the precise shape, the entry is tagged with a reason.
  * Apply emits an in-source marker comment (e.g.
- * `/* @ts-capture:generic-fn *​/`) when `infer.emitDiagnosticComments`
+ * `/* @ts-capture:generic-fn *\/`) when `infer.emitDiagnosticComments`
  * is enabled, so reviewers can distinguish confident emits from
  * fallbacks. Default vocabulary is intentionally small; new tags are
  * additive only (vocabulary is part of the public surface).

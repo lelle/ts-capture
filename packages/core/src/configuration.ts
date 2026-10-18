@@ -208,7 +208,7 @@ export interface InferOptions {
     preferUndefinedOverNull: boolean;
   };
   /**
-   * Emit `/* @ts-capture:<reason> *​/` marker comments next to
+   * Emit `/* @ts-capture:<reason> *\/` marker comments next to
    * annotations where ts-capture fell back to a coarse / generic emit
    * because the precise shape couldn't be observed. Reviewers can use
    * the markers to distinguish confident emits from fallbacks. Default
