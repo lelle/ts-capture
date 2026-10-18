@@ -420,10 +420,10 @@ describe("applyTypesToFileCst — param annotations via AST lookup", () => {
   // reason, and a rebase that also subtracted the removals would drop the
   // annotation instead (the `--comments` → review → `apply` workflow is the
   // path that has notes in the file to begin with).
-  it("a note left by a previous run does not move a pass-through offset", () => {
+  it("a note left by a previous run does not move a skip's position", () => {
     const pristine = "function f(a) {}\nexport function* gen() {}\n";
-    // `a` is a CST site and inserts; a generator's return type is not indexed,
-    // so it routes to passThrough and its offset goes through the rebase.
+    // `a` is a CST site and inserts; a generator's return type is not indexed
+    // (generators are not instrumented), so it is a skip at its own offset.
     const typeInfo: CollectedTypeInfo = [
       entry("test.ts", pristine.indexOf("a)") + 1, [["string"]]),
       entry("test.ts", pristine.indexOf("gen()") + "gen()".length, [["Generator<number>"]], {
@@ -437,10 +437,13 @@ describe("applyTypesToFileCst — param annotations via AST lookup", () => {
       "// @ts-capture[proposal]: `gen` return would be `Generator<number>`\n" +
       "export function* gen() {}\n";
     for (const source of [pristine, noted]) {
-      const out = applied(source, typeInfo);
+      const telemetry = newApplyTelemetry();
+      const out = applied(source, typeInfo, { telemetry });
       expect(out).toAnnotate("a", "string");
-      expect(out).toAnnotate({ returnOf: "gen" }, "Generator<number>");
       expect(out.text).not.toContain("@ts-capture");
+      expect(telemetry.skipped).toEqual([
+        expect.objectContaining({ pos: typeInfo[1][1], reason: "no-site" }),
+      ]);
     }
   });
 

@@ -115,6 +115,18 @@ describe.each(TIERS)("annotate, oracle %s", (tier) => {
     expect(result.skips).toContainEqual(expect.objectContaining({ pos, reason: "redundant" }));
   });
 
+  // `apply --infer.outputMode=comments` writes a line's one note above it, and
+  // the apply that follows reads the same observations, made before the note.
+  it("places an entry collected before a preview wrote its notes", () => {
+    const pristine = "const k = 1;\nfunction f(a) { return a; }\n";
+    const entries = [entry("target.ts", pristine.indexOf("a)") + 1, [["number"]])];
+    const preview = annotate(pristine, entries, { infer: { outputMode: "comments" } }).text;
+    expect(preview).toContain("@ts-capture[proposal]");
+    const { result } = annotated(tier, preview, entries);
+    expect(checked(pristine, result.text)).toAnnotate("a", "number");
+    expect(result.text).not.toContain("@ts-capture");
+  });
+
   it("returns its telemetry instead of filling one passed in", () => {
     const source = "function f(a) { return a; }\nf(1);\n";
     const { result } = annotated(tier, source, collect(source));
@@ -132,8 +144,7 @@ describe.each(TIERS)("annotate, oracle %s", (tier) => {
   });
 
   // Each entry is either written or skipped with a reason; none leaves
-  // silently. Entries the CST index cannot place go to the offset applier,
-  // which records no skips, so these stay red until step 2 of the RFC.
+  // silently.
   describe("every entry is written or skipped", () => {
     it("for entries at a site", () => {
       const source = "function f(a, b: string) { return a; }\nf(1, 'x');\nconst n = 1;\n";
@@ -146,11 +157,17 @@ describe.each(TIERS)("annotate, oracle %s", (tier) => {
       }
     });
 
-    it.fails("for an entry at no site", () => {
+    it.each([
+      ["a parameter", {}],
+      ["a return", { returnType: true }],
+      ["a variable", { varDecl: true }],
+      ["a this", { thisType: true }],
+    ])("for %s entry at no site", (_, opts) => {
       const source = "function f(a) { return a; }\n";
-      const { result } = annotated(tier, source, [entry("target.ts", 99, [["string"]])]);
+      const pos = source.indexOf("return");
+      const { result } = annotated(tier, source, [entry("target.ts", pos, [["string"]], opts)]);
       expect(result.text).toBe(source);
-      expect(skippedAt(result, 99)).toBe(true);
+      expect(result.skips).toEqual([{ pos, reason: "no-site", observed: "string" }]);
     });
   });
 });

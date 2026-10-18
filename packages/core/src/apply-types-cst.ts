@@ -1,14 +1,14 @@
 import ts from "typescript";
 
-import type { ApplyTelemetry, ApplyTypesOptions } from "./contract.js";
+import type { ApplyTypesOptions } from "./contract.js";
 import type { RoutedEntry } from "./cst-routing.js";
 import type { CstSiteIndex } from "./cst-site-index.js";
 import type { CollectedTypeInfo } from "./type-collector.js";
 
 import { advanceCurrentSource } from "./apply-types-verify.js";
-import { applyTypesToFile } from "./apply-types.js";
 import { inferClassFieldTypes } from "./class-field-inference.js";
 import { INFER_DEFAULTS, type InferOptions } from "./configuration.js";
+import { markerLineRanges, markerSpanRanges } from "./conflict-comment.js";
 import { buildCstReplacements, type CstApplyContext } from "./cst-replacements.js";
 import { routeEntries } from "./cst-routing.js";
 import { buildCheckerSiteIndex, buildCstSiteIndex } from "./cst-site-index.js";
@@ -24,14 +24,12 @@ import {
  * AST-aware applier — the default path (`infer.cstAware: true`). The
  * string-offset-based applyTypesToFile can drop a type at the wrong
  * site when offsets get stale; an AST-driven apply step sidesteps
- * that bug class and folds idempotency into the same pass. This
- * applier handles the common cases directly off the AST and routes
- * the rest through the offset-based path with offsets rebased to
- * account for CST insertions.
+ * that bug class and folds idempotency into the same pass. An entry
+ * whose position is no site in the AST is a `no-site` skip.
  *
  * Scope:
  *
- * - **AST path (handled here directly)**:
+ * - **Sites**:
  *   - Parameter annotations on FunctionDeclaration, MethodDeclaration,
  *     ArrowFunction, FunctionExpression, ConstructorDeclaration. Both
  *     identifier-named and BindingPattern-named (object / array
@@ -58,19 +56,6 @@ import {
  *     required from the producer side. CST is strictly more robust
  *     than the offset-based path here: legacy / third-party dump files
  *     missing the flag still produce correct output.
- * - **Pass-through path (delegated to applyTypesToFile, with offset
- *   rebasing)**: any entry whose pos doesn't match a known AST site.
- *   In practice this means stale offsets and exotic shapes the
- *   visitor doesn't yet recognise. Common cases now all flow through
- *   CST.
- *
- * Offset rebasing: after the CST pass inserts text at known offsets,
- * any pass-through entry whose original pos was AFTER one of those
- * offsets needs its pos shifted by the cumulative inserted length.
- * Without this, applyTypesToFile would splice into the post-CST
- * source at stale offsets and produce mangled output. The rebase is
- * a single sorted-merge pass — see `rebaseOffset` below.
- *
  * Edits are emitted as string replacements at AST-derived offsets, NOT
  * via the TS printer. The shared `computeAnnotationTypeString` helper
  * means both paths produce byte-identical type strings on the same
@@ -148,13 +133,15 @@ export function applyTypesToFileCst(
 
   // --- Route entries: AST-eligible vs pass-through ---
 
+  typeInfo = shiftPastNotes(typeInfo, source, cstIndex);
+
   // A field's type comes from the constructor param assigned to it. Inferred
   // before routing, which would hand the param entries to CST and the field
   // to the pass-through, so neither side saw both.
   const fieldEntries = inferClassFieldTypes(source, typeInfo);
   if (fieldEntries.length > 0) typeInfo = [...typeInfo, ...fieldEntries];
 
-  const { eligible: deduped, passThrough } = routeEntries(typeInfo, cstIndex, infer, telemetry);
+  const { eligible: deduped } = routeEntries(typeInfo, cstIndex, infer, telemetry);
 
   // --- Build CST replacements ---
 
@@ -189,21 +176,26 @@ export function applyTypesToFileCst(
   const afterFirst = applyReplacements(source, firstReplacements);
   const throughFirst = rebaser(firstReplacements);
   let afterCst = afterFirst;
-  let throughCst = throughFirst;
 
   if (verify && dependents.size > 0) {
     advanceCurrentSource(verify, afterFirst);
     const secondProgram = verify.project.service.getProgram() ?? program;
     const secondIndex = buildCstSiteIndex(parseDetached(afterFirst), afterFirst, infer);
     // Sites keep their kind from the first routing; only their offsets moved.
-    // One that no longer resolves goes to the offset applier with the rest.
     const originalPos = new Map<number, number>();
     const moved = new Map<string, RoutedEntry>();
     for (const [key, routed] of dependents) {
       const [file, pos, types, opts] = routed.entry;
       const newPos = throughFirst(pos);
       if (!hasSite(secondIndex, routed.kind, newPos)) {
-        passThrough.push(routed.entry);
+        if (telemetry) {
+          telemetry.positionMismatch++;
+          telemetry.skipped.push({
+            pos,
+            reason: "no-site",
+            observed: [...new Set(types.map(([name]) => name).filter(Boolean))].join(" | "),
+          });
+        }
         continue;
       }
       originalPos.set(newPos, pos);
@@ -229,90 +221,9 @@ export function applyTypesToFileCst(
       skip.pos = originalPos.get(skip.pos) ?? skip.pos;
     }
     afterCst = applyReplacements(afterFirst, secondReplacements);
-    const throughSecond = rebaser(secondReplacements);
-    throughCst = (pos) => throughSecond(throughFirst(pos));
   }
 
-  if (passThrough.length === 0) return afterCst;
-
-  // Advance the verify context's in-memory source to match
-  // `afterCst` so the pass-through delegate's verify probes land at
-  // the correct (rebased) offsets. The accepted CST candidates were
-  // already proved not to introduce new diagnostics, so no
-  // re-baselining is needed — `advanceCurrentSource` is the cheap
-  // variant of `commitReplacements` that skips the cross-file scan.
-  if (options.verify) {
-    advanceCurrentSource(options.verify, afterCst);
-  }
-
-  // --- Rebase pass-through offsets through the CST passes ---
-  //
-  // Each pass-through entry's `pos` is relative to the original source; to
-  // splice into `afterCst` it moves through every edit the CST passes made.
-  const rebaseOffset = throughCst;
-
-  const rebasedPassThrough: CollectedTypeInfo = passThrough.map(([file, pos, types, opts]) => [
-    file,
-    rebaseOffset(pos),
-    types,
-    opts,
-  ]);
-
-  // Telemetry handoff: the CST loop above already counted every
-  // input entry in `totalEntries`. The passThrough delegate to the
-  // offset applier would re-count those same entries. Give the
-  // delegate a SUB-telemetry it can freely increment, then merge its
-  // skip / emit counts back into the outer telemetry — but skip
-  // `totalEntries` (the outer count is the authoritative one).
-  const sub: ApplyTelemetry | undefined = telemetry
-    ? {
-        totalEntries: 0,
-        emitted: 0,
-        idempotent: 0,
-        unparseable: 0,
-        positionMismatch: 0,
-        verifyReject: 0,
-        redundant: 0,
-        skipped: [],
-      }
-    : undefined;
-  // Invert the rebasing so the delegate can look sites up by their original
-  // offset. Built from the same pairs the rebase produced, so the two cannot
-  // drift apart.
-  const originalPosByRebased = new Map<number, number>();
-  for (const [, pos] of passThrough) originalPosByRebased.set(rebaseOffset(pos), pos);
-
-  const innerOptions = {
-    ...options,
-    ...(sub ? { telemetry: sub } : {}),
-    ...(checkerIndex
-      ? {
-          checkerSites: {
-            index: checkerIndex,
-            toOriginalPos: (p: number) => originalPosByRebased.get(p) ?? p,
-          },
-        }
-      : {}),
-    // This pass already stripped, and `afterCst` holds the notes it wrote.
-    stripConflictNotes: false,
-    inferClassFields: false,
-  };
-  const result = applyTypesToFile(afterCst, rebasedPassThrough, innerOptions, program);
-  if (telemetry && sub) {
-    telemetry.emitted += sub.emitted;
-    telemetry.idempotent += sub.idempotent;
-    telemetry.unparseable += sub.unparseable;
-    telemetry.positionMismatch += sub.positionMismatch;
-    telemetry.verifyReject += sub.verifyReject;
-    telemetry.redundant += sub.redundant;
-    for (const skipped of sub.skipped) {
-      telemetry.skipped.push({
-        ...skipped,
-        pos: originalPosByRebased.get(skipped.pos) ?? skipped.pos,
-      });
-    }
-  }
-  return result;
+  return afterCst;
 }
 
 /**
@@ -378,6 +289,42 @@ function isCallbackArgument(fn: ts.Node): boolean {
   const parent = node.parent;
   if (!ts.isCallExpression(parent) && !ts.isNewExpression(parent)) return false;
   return parent.arguments?.some((arg) => arg === node) ?? false;
+}
+
+/**
+ * A preview writes its notes into the file, and the apply after it reads
+ * observations made before them. An entry that lands on no site is moved past
+ * the notes in front of it, and kept there when that is a site. One collected
+ * from the file with its notes already lands on its site and stays.
+ */
+function shiftPastNotes(
+  typeInfo: CollectedTypeInfo,
+  source: string,
+  index: CstSiteIndex,
+): CollectedTypeInfo {
+  const notes = [...markerLineRanges(source), ...markerSpanRanges(source)].sort(
+    (a, b) => a[0] - b[0],
+  );
+  if (notes.length === 0) return typeInfo;
+  const placed = (kind: RoutedEntry["kind"], pos: number): boolean =>
+    hasSite(index, kind, pos) || (kind === "param" && index.typedParamEnds.has(pos));
+  return typeInfo.map((e) => {
+    const [file, pos, types, opts] = e;
+    const kind = opts?.thisType
+      ? "thisType"
+      : opts?.varDecl
+        ? "varDecl"
+        : opts?.returnType
+          ? "returnType"
+          : "param";
+    if (placed(kind, pos)) return e;
+    let shifted = pos;
+    for (const [start, end] of notes) {
+      if (start >= shifted) break;
+      shifted += end - start;
+    }
+    return placed(kind, shifted) ? [file, shifted, types, opts] : e;
+  });
 }
 
 function hasSite(index: CstSiteIndex, kind: RoutedEntry["kind"], pos: number): boolean {

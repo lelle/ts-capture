@@ -5,12 +5,11 @@ import type { CollectedTypeInfo } from "./type-collector.js";
 
 import { decideVarDeclSite } from "./annotation-eligibility.js";
 
-// Entry routing for the AST-aware applier. Pure
-// classification: given the offset-keyed `CstSiteIndex` and the collected
-// observations, decide which entries the CST path can annotate directly and
-// which fall through to the offset-based applier. All the skip guards
-// (rhsIsFunction, generic context, union-producing / opaque initializers,
-// existing-type idempotency) live here.
+// Entry routing for the AST-aware applier: given the offset-keyed
+// `CstSiteIndex` and the collected observations, decide which entries have a
+// site to annotate. All the skip guards (rhsIsFunction, generic context,
+// union-producing / opaque initializers, existing-type idempotency) live here,
+// and an entry at no site is a skip of its own.
 
 export type CstEntryKind = "param" | "returnType" | "varDecl" | "thisType";
 
@@ -22,14 +21,11 @@ export interface RoutedEntry {
 export interface RoutedEntries {
   /** CST-eligible entries, deduped by `(file, pos, kind)`. */
   eligible: Map<string, RoutedEntry>;
-  /** Entries delegated to the offset-based applier. */
-  passThrough: CollectedTypeInfo;
 }
 
 /**
- * Classify every observation into a CST-eligible site or the pass-through
- * delegate. `telemetry`, when present, is incremented in place
- * (`totalEntries`, `idempotent`) exactly as the inline routing did.
+ * Classify every observation into a CST-eligible site or a skip. `telemetry`,
+ * when present, is incremented in place and receives the skips.
  */
 export function routeEntries(
   typeInfo: CollectedTypeInfo,
@@ -46,13 +42,13 @@ export function routeEntries(
     typedParamEnds,
   } = index;
   const cstEligible: RoutedEntry[] = [];
-  const passThrough: CollectedTypeInfo = [];
-  const alreadyAnnotated = (entry: CollectedTypeInfo[number]): void => {
+  const skip = (entry: CollectedTypeInfo[number], reason: "already-annotated" | "no-site") => {
     if (!telemetry) return;
-    telemetry.idempotent++;
+    if (reason === "already-annotated") telemetry.idempotent++;
+    else telemetry.positionMismatch++;
     telemetry.skipped.push({
       pos: entry[1],
-      reason: "already-annotated",
+      reason,
       observed: [...new Set(entry[2].map(([name]) => name).filter(Boolean))].join(" | "),
     });
   };
@@ -75,15 +71,14 @@ export function routeEntries(
       if (site) {
         cstEligible.push({ entry, kind: "thisType" });
       } else {
-        passThrough.push(entry);
+        skip(entry, "no-site");
       }
       continue;
     }
     if (opts?.varDecl) {
       const site = varDeclSites.get(pos);
       // Eligibility decision shared with the offset-based applier — see
-      // annotation-eligibility.ts. The AST index supplies the per-site facts;
-      // a missing site delegates to the offset path's pass-through.
+      // annotation-eligibility.ts. The AST index supplies the per-site facts.
       const verdict = decideVarDeclSite(
         site
           ? {
@@ -100,38 +95,35 @@ export function routeEntries(
       );
       if (verdict === "annotate") {
         cstEligible.push({ entry, kind: "varDecl" });
-      } else if (verdict === "delegate") {
-        passThrough.push(entry);
+      } else if (verdict === "no-site") {
+        skip(entry, "no-site");
       } else if (verdict === "idempotent") {
-        alreadyAnnotated(entry);
+        skip(entry, "already-annotated");
       }
       // "drop" → emit nothing, neither eligible nor pass-through.
       continue;
     }
     if (opts?.returnType) {
       const site = returnTypeSites.get(pos);
-      // Already-typed return: AST-native idempotency (skip without
-      // sending to passThrough either — the offset-based path's
-      // isAlreadyApplied would also skip, so behaviour matches).
       // Bypassed when `infer.ignoreExistingTypes` is on.
       if (site && site.hasReturnType && !infer.ignoreExistingTypes) {
-        alreadyAnnotated(entry);
+        skip(entry, "already-annotated");
         continue;
       }
       if (site) {
         cstEligible.push({ entry, kind: "returnType" });
       } else {
-        passThrough.push(entry);
+        skip(entry, "no-site");
       }
       continue;
     }
     // Plain param entry.
     if (typedParamEnds.has(pos)) {
-      alreadyAnnotated(entry);
+      skip(entry, "already-annotated");
     } else if (paramSites.has(pos)) {
       cstEligible.push({ entry, kind: "param" });
     } else {
-      passThrough.push(entry);
+      skip(entry, "no-site");
     }
   }
 
@@ -156,5 +148,5 @@ export function routeEntries(
     }
   }
 
-  return { eligible, passThrough };
+  return { eligible };
 }

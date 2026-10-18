@@ -1,6 +1,6 @@
 // Shared annotation-eligibility decision, consumed by both appliers so the
-// offset-based and AST-based paths agree on which positions to annotate, skip,
-// or delegate. Pure: given a site's facts + the observation, returns the
+// offset-based and AST-based paths agree on which positions to annotate or
+// skip. Pure: given a site's facts + the observation, returns the
 // verdict.
 
 /** The per-site facts every var-decl eligibility rule consults. */
@@ -22,7 +22,7 @@ export type VarDeclVerdict =
   | "annotate" // emit the annotation here
   | "drop" // never annotate here (either applier)
   | "idempotent" // already typed — skip and count as idempotent
-  | "delegate"; // site unknown to this applier — hand to the offset path
+  | "no-site"; // no declaration at this position
 
 /**
  * Decide a var-decl annotation site. `facts` is undefined when the applier has
@@ -35,8 +35,7 @@ export function decideVarDeclSite(
   firstObservationIsUndefined: boolean,
   ignoreExistingTypes: boolean,
 ): VarDeclVerdict {
-  // No site record — only the offset path can place this; delegate.
-  if (!facts) return "delegate";
+  if (!facts) return "no-site";
   // Outer-annotation conflict (function RHS / type-args / generic context):
   // an outer annotation here is redundant or contravariantly incompatible.
   if (facts.outerAnnotationSkip) return "drop";

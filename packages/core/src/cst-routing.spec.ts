@@ -56,18 +56,19 @@ const route = (
 ) => routeEntries(typeInfo, index, infer, tel);
 
 describe("routeEntries", () => {
-  it("sends an entry with no matching site to pass-through", () => {
-    const { eligible, passThrough } = route([entry(10)], emptyIndex());
+  it("records an entry with no matching site as a no-site skip", () => {
+    const tel = newApplyTelemetry();
+    const { eligible } = route([entry(10)], emptyIndex(), INFER_DEFAULTS, tel);
     expect(eligible.size).toBe(0);
-    expect(passThrough).toHaveLength(1);
+    expect(tel.skipped).toEqual([{ pos: 10, reason: "no-site", observed: "string" }]);
+    expect(tel.positionMismatch).toBe(1);
   });
 
   it("classifies a plain param entry as CST-eligible", () => {
     const idx = emptyIndex();
     idx.paramSites.set(10, { node: {} as any });
-    const { eligible, passThrough } = route([entry(10)], idx);
+    const { eligible } = route([entry(10)], idx);
     expect([...eligible.values()][0].kind).toBe("param");
-    expect(passThrough).toHaveLength(0);
   });
 
   it("routes thisType entries by thisTypeSites presence", () => {
@@ -76,16 +77,17 @@ describe("routeEntries", () => {
     expect([...route([entry(10, { thisType: true })], idx).eligible.values()][0].kind).toBe(
       "thisType",
     );
-    expect(route([entry(99, { thisType: true })], idx).passThrough).toHaveLength(1);
+    const tel = newApplyTelemetry();
+    route([entry(99, { thisType: true })], idx, INFER_DEFAULTS, tel);
+    expect(tel.skipped).toEqual([expect.objectContaining({ pos: 99, reason: "no-site" })]);
   });
 
   it("drops a position inside an ignored range entirely", () => {
     const idx = emptyIndex();
     idx.ignoredRanges.push([5, 20]);
     idx.paramSites.set(10, { node: {} as any });
-    const { eligible, passThrough } = route([entry(10)], idx);
+    const { eligible } = route([entry(10)], idx);
     expect(eligible.size).toBe(0);
-    expect(passThrough).toHaveLength(0);
   });
 
   describe("varDecl skip guards (all drop the entry, no pass-through)", () => {
@@ -104,9 +106,8 @@ describe("routeEntries", () => {
       it(label, () => {
         const idx = emptyIndex();
         idx.varDeclSites.set(10, site);
-        const { eligible, passThrough } = route([entry(10, { varDecl: true }, types)], idx);
+        const { eligible } = route([entry(10, { varDecl: true }, types)], idx);
         expect(eligible.size).toBe(0);
-        expect(passThrough).toHaveLength(0);
       });
     });
 
@@ -126,14 +127,8 @@ describe("routeEntries", () => {
     const idx = emptyIndex();
     idx.varDeclSites.set(10, varDeclSite({ hasType: true }));
     const tel = newApplyTelemetry();
-    const { eligible, passThrough } = route(
-      [entry(10, { varDecl: true })],
-      idx,
-      INFER_DEFAULTS,
-      tel,
-    );
+    const { eligible } = route([entry(10, { varDecl: true })], idx, INFER_DEFAULTS, tel);
     expect(eligible.size).toBe(0);
-    expect(passThrough).toHaveLength(0);
     expect(tel.idempotent).toBe(1);
     expect(tel.totalEntries).toBe(1);
     expect(tel.skipped).toEqual([{ pos: 10, reason: "already-annotated", observed: "string" }]);
@@ -147,9 +142,8 @@ describe("routeEntries", () => {
   it("skips already-typed returnType as idempotent", () => {
     const idx = emptyIndex();
     idx.returnTypeSites.set(10, { hasReturnType: true });
-    const { eligible, passThrough } = route([entry(10, { returnType: true })], idx);
+    const { eligible } = route([entry(10, { returnType: true })], idx);
     expect(eligible.size).toBe(0);
-    expect(passThrough).toHaveLength(0);
   });
 
   it("drops an observation of a typed position, even with ignoreExistingTypes", () => {
@@ -157,13 +151,12 @@ describe("routeEntries", () => {
     idx.paramSites.set(10, { node: {} as any });
     idx.returnTypeSites.set(20, { hasReturnType: true });
     const on = { ...INFER_DEFAULTS, ignoreExistingTypes: true };
-    const { eligible, passThrough } = route(
+    const { eligible } = route(
       [entry(10, { annotated: true }), entry(20, { returnType: true, annotated: true })],
       idx,
       on,
     );
     expect(eligible.size).toBe(0);
-    expect(passThrough).toHaveLength(0);
   });
 
   it("dedups entries with the same (file, pos, opts), merging their types", () => {

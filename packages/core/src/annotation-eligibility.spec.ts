@@ -21,8 +21,8 @@ const decide = (
 ) => decideVarDeclSite(facts, obs, firstUndef, ignoreExisting);
 
 describe("decideVarDeclSite", () => {
-  it("delegates when the site is unknown (no facts)", () => {
-    expect(decide(undefined)).toBe("delegate");
+  it("answers no-site when the site is unknown (no facts)", () => {
+    expect(decide(undefined)).toBe("no-site");
   });
 
   it("annotates a clean site", () => {
