@@ -126,9 +126,9 @@ export function routeEntries(
       } else if (verdict === "outer-conflict") {
         skip(entry, "kept-existing", outerConflictDetail(site!));
       } else if (verdict === "one-branch") {
-        skip(entry, "no-information", "one branch of the initializer observed");
+        skip(entry, "left-to-typescript", "one branch of the initializer observed");
       } else if (verdict === "only-undefined") {
-        skip(entry, "no-information", "only `undefined` observed");
+        skip(entry, "left-to-typescript", "only `undefined` observed");
       }
       continue;
     }

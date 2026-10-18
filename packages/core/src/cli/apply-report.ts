@@ -126,12 +126,14 @@ export function reportLines(
   const keptExisting = skips.filter((s) => s.reason === "kept-existing").length;
   const alreadyAnnotated = skips.filter((s) => s.reason === "already-annotated").length;
   const ignored = skips.filter((s) => s.reason === "ignored").length;
-  const nothingToAdd = redundant + keptExisting + alreadyAnnotated + ignored;
+  const leftToTypeScript = skips.filter((s) => s.reason === "left-to-typescript").length;
+  const nothingToAdd = redundant + keptExisting + alreadyAnnotated + ignored + leftToTypeScript;
   if (nothingToAdd > 0) {
     lines.push("", `Nothing to add (${nothingToAdd})`);
     if (redundant > 0) lines.push(`  ${redundant} already inferred by TypeScript`);
     if (alreadyAnnotated > 0) lines.push(`  ${alreadyAnnotated} already annotated`);
     if (keptExisting > 0) lines.push(`  ${keptExisting} where the code already says more`);
+    if (leftToTypeScript > 0) lines.push(`  ${leftToTypeScript} left for TypeScript to infer`);
     if (ignored > 0) lines.push(`  ${ignored} marked @ts-capture-ignore`);
   }
   return lines;

@@ -40,6 +40,8 @@ export type ApplySkipReason =
   | "already-annotated"
   /** The declaration is marked `@ts-capture-ignore`. */
   | "ignored"
+  /** TypeScript infers a wider type than the observations show, and keeps it. */
+  | "left-to-typescript"
   /** The position is no place a type can be written, as when the code changed since the run. */
   | "no-site";
 

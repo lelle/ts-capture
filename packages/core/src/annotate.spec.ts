@@ -169,18 +169,25 @@ describe.each(TIERS)("annotate, oracle %s", (tier) => {
         "kept-existing",
       ],
       [
+        "whose initializer chooses between functions",
+        "declare const asc: boolean;\nconst c = asc ? (a: number) => a : (a: number) => -a;\n",
+        "c =",
+        ["(a: number) => number", "(a: unknown) => unknown"],
+        "kept-existing",
+      ],
+      [
         "seen at one branch of a union",
         "declare const a: string | undefined;\nconst p = a ?? 1;\n",
         "p =",
         ["string"],
-        "no-information",
+        "left-to-typescript",
       ],
       [
         "seen only as undefined",
         "declare function get(): string | undefined;\nconst u = get();\n",
         "u =",
         ["undefined"],
-        "no-information",
+        "left-to-typescript",
       ],
     ])("%s", (_, source, at, types, reason) => {
       const pos = source.indexOf(at) + 1;

@@ -3,6 +3,7 @@ import ts from "typescript";
 import type { ExtraOptions } from "./type-collector.js";
 
 import {
+  isFunctionValued,
   isLiteralUndefinedInitializer,
   isUnionProducingExpression,
 } from "./expression-predicates.js";
@@ -177,8 +178,7 @@ export function buildOuterAnnotationSkipSet(source: string): ApplyContextSets {
     if (
       (ts.isVariableDeclaration(node) || ts.isPropertyDeclaration(node)) &&
       ts.isIdentifier(node.name) &&
-      node.initializer &&
-      (ts.isArrowFunction(node.initializer) || ts.isFunctionExpression(node.initializer))
+      isFunctionValued(node.initializer)
     ) {
       skip.add(node.name.end);
     }

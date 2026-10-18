@@ -3,6 +3,7 @@ import ts from "typescript";
 import type { InferOptions } from "./configuration.js";
 
 import {
+  isFunctionValued,
   isLiteralUndefinedInitializer,
   isUnionProducingExpression,
 } from "./expression-predicates.js";
@@ -289,9 +290,7 @@ export function buildCstSiteIndex(
       varDeclSites.set(node.name.end, {
         nameNode: node.name,
         hasType: !!node.type,
-        rhsIsFunction:
-          !!initializer &&
-          (ts.isArrowFunction(initializer) || ts.isFunctionExpression(initializer)),
+        rhsIsFunction: isFunctionValued(initializer),
         initializer,
         narrowsLiterals: isConst,
         hasInitializerTypeArguments:
@@ -311,9 +310,7 @@ export function buildCstSiteIndex(
       varDeclSites.set(node.name.end, {
         nameNode: node.name,
         hasType: !!node.type,
-        rhsIsFunction:
-          !!initializer &&
-          (ts.isArrowFunction(initializer) || ts.isFunctionExpression(initializer)),
+        rhsIsFunction: isFunctionValued(initializer),
         initializer,
         narrowsLiterals: isReadonly,
         hasInitializerTypeArguments:

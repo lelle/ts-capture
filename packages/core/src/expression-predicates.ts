@@ -98,3 +98,19 @@ function isArrayFindLikeCall(expr: ts.Expression): boolean {
   if (!ts.isIdentifier(name)) return false;
   return ARRAY_FIND_LIKE_METHODS.has(name.text);
 }
+
+/**
+ * An initializer whose value is a function written with its own types: an
+ * arrow, a function expression, or a choice between them (`c ? f : g`). An
+ * outer annotation would only restate or contradict those types.
+ */
+export function isFunctionValued(expr: ts.Expression | undefined): boolean {
+  if (!expr) return false;
+  if (ts.isParenthesizedExpression(expr)) return isFunctionValued(expr.expression);
+  if (ts.isArrowFunction(expr) || ts.isFunctionExpression(expr)) return true;
+  return (
+    ts.isConditionalExpression(expr) &&
+    isFunctionValued(expr.whenTrue) &&
+    isFunctionValued(expr.whenFalse)
+  );
+}

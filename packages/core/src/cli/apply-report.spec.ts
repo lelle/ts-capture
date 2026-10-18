@@ -26,6 +26,11 @@ describe("reportLines", () => {
     );
   });
 
+  it("counts a variable left for TypeScript to infer as nothing to add", () => {
+    const lines = reportLines(newApplyTelemetry(), [skip("left-to-typescript", "p")]);
+    expect(lines.join("\n")).toContain("Nothing to add (1)\n  1 left for TypeScript to infer");
+  });
+
   it("counts a position marked @ts-capture-ignore as nothing to add", () => {
     const lines = reportLines(newApplyTelemetry(), [skip("ignored", "a")]);
     expect(lines.join("\n")).toContain("Nothing to add (1)\n  1 marked @ts-capture-ignore");
