@@ -123,6 +123,28 @@ describe.each(TIERS)("annotate, oracle %s", (tier) => {
     expect(result.skips).toEqual([{ pos, reason: "ignored", observed: "number" }]);
   });
 
+  // Parallel workers record the same site many times, one observation each.
+  describe("judges a site by all its entries together", () => {
+    const source = "declare const a: string | undefined;\nconst p = a ?? 1;\n";
+    const pos = source.indexOf("p =") + 1;
+
+    it("records one skip for a site seen many times", () => {
+      const e = () => entry("target.ts", pos, [["string"]], { varDecl: true });
+      const { result } = annotated(tier, source, [e(), e(), e()]);
+      expect(result.skips.filter((skip) => skip.pos === pos)).toHaveLength(1);
+    });
+
+    it("counts both branches seen in separate entries", () => {
+      const { result } = annotated(tier, source, [
+        entry("target.ts", pos, [["string"]], { varDecl: true }),
+        entry("target.ts", pos, [["number"]], { varDecl: true }),
+      ]);
+      expect(result.skips).not.toContainEqual(
+        expect.objectContaining({ detail: "one branch of the initializer observed" }),
+      );
+    });
+  });
+
   describe("says why it left a variable to TypeScript", () => {
     it.each([
       [

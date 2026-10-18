@@ -54,14 +54,38 @@ export function routeEntries(
     });
   };
 
+  // One entry per site, with every observation of it. Keyed on the site's
+  // kind, not the raw opts object. One position can host different kinds
+  // legitimately (a paren-less arrow's param and its return annotation share
+  // the param-end offset), so pos alone is too coarse — but the whole opts
+  // object is too fine: incidental fields (`fnRetPos`, `async`) split one site
+  // into several, and each then emits its own annotation, producing
+  // `x: string: string`. The rules below count observations, so they must see
+  // a site's entries together, and a site is skipped once.
+  const bySite = new Map<string, CollectedTypeInfo[number]>();
   for (const entry of typeInfo) {
-    const [, pos, , opts] = entry;
+    const [file, pos, types, opts] = entry;
     // Neither is input to apply, so neither is counted, as in `apply-types.ts`:
     // a `paramReturn` record says what calling the parameter returned, not
     // what the parameter is, and a written type is observed only for `verify`.
     if (opts?.paramReturn) continue;
     if (opts?.annotated) continue;
     if (telemetry) telemetry.totalEntries++;
+    const kind = opts?.thisType
+      ? "this"
+      : opts?.varDecl
+        ? "var"
+        : opts?.returnType
+          ? "ret"
+          : "param";
+    const key = `${file}\x00${pos}\x00${kind}`;
+    const existing = bySite.get(key);
+    if (existing) existing[2].push(...types);
+    else bySite.set(key, [file, pos, [...types], opts]);
+  }
+
+  for (const entry of bySite.values()) {
+    const [, pos, , opts] = entry;
     if (ignoredRanges.some(([s, e]) => pos >= s && pos < e)) {
       skip(entry, "ignored");
       continue;
@@ -89,7 +113,7 @@ export function routeEntries(
               hasType: site.hasType,
             }
           : undefined,
-        entry[2].length,
+        new Set(entry[2].map(([name]) => name)).size,
         entry[2][0]?.[0] === "undefined",
         infer.ignoreExistingTypes,
       );
@@ -132,25 +156,10 @@ export function routeEntries(
     }
   }
 
-  // Dedup CST-eligible entries by (file, pos, kind).
-  //
-  // Keyed on the routed `kind`, not the raw opts object. One position can
-  // host different kinds legitimately (a paren-less arrow's param and its
-  // return annotation share the param-end offset), so pos alone is too
-  // coarse — but the whole opts object is too fine: incidental fields
-  // (`fnRetPos`, `async`) split one site into several, and each
-  // then emits its own annotation, producing `x: string: string`. The offset
-  // applier keys the same way and for the same reason.
   const eligible = new Map<string, RoutedEntry>();
   for (const item of cstEligible) {
-    const [file, pos, types, opts] = item.entry;
-    const k = `${file}\x00${pos}\x00${item.kind}`;
-    const existing = eligible.get(k);
-    if (existing) {
-      existing.entry[2].push(...types);
-    } else {
-      eligible.set(k, { entry: [file, pos, [...types], opts], kind: item.kind });
-    }
+    const [file, pos] = item.entry;
+    eligible.set(`${file}\x00${pos}\x00${item.kind}`, item);
   }
 
   return { eligible };

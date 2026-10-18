@@ -302,7 +302,7 @@ export function applyTypesToFile(
           hasOpaqueInitializer: opaqueInitializerVarDecls.has(pos),
           hasType: false,
         },
-        types.length,
+        new Set(types.map(([name]) => name)).size,
         types[0]?.[0] === "undefined",
         infer.ignoreExistingTypes,
       );
