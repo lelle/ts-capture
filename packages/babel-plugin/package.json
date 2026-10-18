@@ -44,10 +44,10 @@
     "@babel/preset-typescript": "8.0.1",
     "@ts-capture/core": "workspace:*",
     "@types/node": "26.2.0",
-    "@vitest/coverage-v8": "4.1.10",
+    "@vitest/coverage-v8": "4.1.11",
     "oxlint": "1.77.0",
     "typescript": "6.0.3",
-    "vitest": "4.1.10"
+    "vitest": "4.1.11"
   },
   "author": "Sverre Ølnes <sverre.olnes@gmail.com>",
   "repository": {

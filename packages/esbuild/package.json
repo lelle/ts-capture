@@ -42,11 +42,11 @@
   },
   "devDependencies": {
     "@types/node": "26.2.0",
-    "@vitest/coverage-v8": "4.1.10",
+    "@vitest/coverage-v8": "4.1.11",
     "esbuild": "0.28.2",
     "oxlint": "1.77.0",
     "typescript": "6.0.3",
-    "vitest": "4.1.10",
+    "vitest": "4.1.11",
     "@ts-capture/core": "workspace:*"
   },
   "author": "Sverre Ølnes <sverre.olnes@gmail.com>",
