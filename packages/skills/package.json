@@ -1,6 +1,6 @@
 {
   "name": "@ts-capture/skills",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Agent skills for ts-capture onboarding and review of inferred annotations. (0.x — API may change between minor versions.)",
   "files": [
     "ts-capture-apply-review",

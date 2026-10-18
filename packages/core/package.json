@@ -1,6 +1,6 @@
 {
   "name": "@ts-capture/core",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "ts-capture core — capture runtime values, shape them as TypeScript types. Engine + CLI for instrumentation, observation, and apply. (0.x — API may change between minor versions.)",
   "type": "module",
   "exports": {
