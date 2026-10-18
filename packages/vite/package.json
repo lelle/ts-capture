@@ -1,6 +1,6 @@
 {
   "name": "@ts-capture/vite",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "ts-capture Vite plugin — instrument modules in browser + Vitest for click-for-types and test-driven type collection. (0.x — API may change between minor versions.)",
   "type": "module",
   "exports": {

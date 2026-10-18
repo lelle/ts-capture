@@ -1,5 +1,12 @@
 # @ts-capture/svelte
 
+## 0.3.0
+
+### Patch Changes
+
+- Updated dependencies [[`d21c07e`](https://github.com/lelle/ts-capture/commit/d21c07eb0eb861c9fce89177a31322c954261933)]:
+  - @ts-capture/core@0.3.0
+
 ## 0.2.0
 
 ### Patch Changes
