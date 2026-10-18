@@ -20,7 +20,9 @@ export interface VarDeclFacts {
 
 export type VarDeclVerdict =
   | "annotate" // emit the annotation here
-  | "drop" // never annotate here (either applier)
+  | "outer-conflict" // the initializer has types of its own, or a generic context
+  | "one-branch" // one observation of an initializer that produces a union
+  | "only-undefined" // `undefined` alone, from an initializer that may give more
   | "idempotent" // already typed — skip and count as idempotent
   | "no-site"; // no declaration at this position
 
@@ -38,16 +40,16 @@ export function decideVarDeclSite(
   if (!facts) return "no-site";
   // Outer-annotation conflict (function RHS / type-args / generic context):
   // an outer annotation here is redundant or contravariantly incompatible.
-  if (facts.outerAnnotationSkip) return "drop";
+  if (facts.outerAnnotationSkip) return "outer-conflict";
   // Union-producing initializer (??, ||, ternary, ?., arr.find(...)) with a
   // single observation: it came from one branch, so annotating rejects the
   // other branch's reachable type. Let TS infer the union.
-  if (facts.isUnionProducingInitializer && observationCount === 1) return "drop";
+  if (facts.isUnionProducingInitializer && observationCount === 1) return "one-branch";
   // Sole-undefined observation on an opaque initializer (call, await, member
   // access): static return is almost certainly `T | undefined`; `: undefined`
   // would reject the non-undefined branch.
   if (facts.hasOpaqueInitializer && observationCount === 1 && firstObservationIsUndefined) {
-    return "drop";
+    return "only-undefined";
   }
   // Already-typed binding — idempotent skip, unless ignoreExistingTypes is on.
   if (facts.hasType && !ignoreExistingTypes) return "idempotent";

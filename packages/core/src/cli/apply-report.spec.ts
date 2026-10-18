@@ -26,6 +26,11 @@ describe("reportLines", () => {
     );
   });
 
+  it("counts a position marked @ts-capture-ignore as nothing to add", () => {
+    const lines = reportLines(newApplyTelemetry(), [skip("ignored", "a")]);
+    expect(lines.join("\n")).toContain("Nothing to add (1)\n  1 marked @ts-capture-ignore");
+  });
+
   it("lists a position that is no place for a type under what was not written", () => {
     const lines = reportLines(newApplyTelemetry(), [skip("no-site", "total")]);
     expect(lines.join("\n")).toContain(

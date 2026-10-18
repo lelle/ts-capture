@@ -1,6 +1,6 @@
 import type { InferOptions } from "./configuration.js";
-import type { ApplyTelemetry } from "./contract.js";
-import type { CstSiteIndex } from "./cst-site-index.js";
+import type { ApplySkipReason, ApplyTelemetry } from "./contract.js";
+import type { CstSiteIndex, VarDeclSite } from "./cst-site-index.js";
 import type { CollectedTypeInfo } from "./type-collector.js";
 
 import { decideVarDeclSite } from "./annotation-eligibility.js";
@@ -42,14 +42,15 @@ export function routeEntries(
     typedParamEnds,
   } = index;
   const cstEligible: RoutedEntry[] = [];
-  const skip = (entry: CollectedTypeInfo[number], reason: "already-annotated" | "no-site") => {
+  const skip = (entry: CollectedTypeInfo[number], reason: ApplySkipReason, detail?: string) => {
     if (!telemetry) return;
     if (reason === "already-annotated") telemetry.idempotent++;
-    else telemetry.positionMismatch++;
+    if (reason === "no-site") telemetry.positionMismatch++;
     telemetry.skipped.push({
       pos: entry[1],
       reason,
       observed: [...new Set(entry[2].map(([name]) => name).filter(Boolean))].join(" | "),
+      ...(detail ? { detail } : {}),
     });
   };
 
@@ -61,9 +62,8 @@ export function routeEntries(
     if (opts?.paramReturn) continue;
     if (opts?.annotated) continue;
     if (telemetry) telemetry.totalEntries++;
-    // User-marked range — drop the entry entirely (apply produces
-    // no output for this position, neither CST nor pass-through).
     if (ignoredRanges.some(([s, e]) => pos >= s && pos < e)) {
+      skip(entry, "ignored");
       continue;
     }
     if (opts?.thisType) {
@@ -99,8 +99,13 @@ export function routeEntries(
         skip(entry, "no-site");
       } else if (verdict === "idempotent") {
         skip(entry, "already-annotated");
+      } else if (verdict === "outer-conflict") {
+        skip(entry, "kept-existing", outerConflictDetail(site!));
+      } else if (verdict === "one-branch") {
+        skip(entry, "no-information", "one branch of the initializer observed");
+      } else if (verdict === "only-undefined") {
+        skip(entry, "no-information", "only `undefined` observed");
       }
-      // "drop" → emit nothing, neither eligible nor pass-through.
       continue;
     }
     if (opts?.returnType) {
@@ -149,4 +154,10 @@ export function routeEntries(
   }
 
   return { eligible };
+}
+
+function outerConflictDetail(site: VarDeclSite): string {
+  if (site.rhsIsFunction) return "the initializer is a function with its own types";
+  if (site.hasInitializerTypeArguments) return "the initializer passes type arguments";
+  return "inside a generic function";
 }

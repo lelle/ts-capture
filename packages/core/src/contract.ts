@@ -38,6 +38,8 @@ export type ApplySkipReason =
   | "kept-existing"
   /** A type is already written there. */
   | "already-annotated"
+  /** The declaration is marked `@ts-capture-ignore`. */
+  | "ignored"
   /** The position is no place a type can be written, as when the code changed since the run. */
   | "no-site";
 

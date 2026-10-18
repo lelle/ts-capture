@@ -30,18 +30,18 @@ describe("decideVarDeclSite", () => {
   });
 
   it("drops on an outer-annotation conflict (function RHS / type-args / generic)", () => {
-    expect(decide({ ...clear, outerAnnotationSkip: true })).toBe("drop");
+    expect(decide({ ...clear, outerAnnotationSkip: true })).toBe("outer-conflict");
   });
 
   it("drops a union-producing initializer with a single observation, but not with two", () => {
     const facts = { ...clear, isUnionProducingInitializer: true };
-    expect(decide(facts, 1)).toBe("drop");
+    expect(decide(facts, 1)).toBe("one-branch");
     expect(decide(facts, 2)).toBe("annotate");
   });
 
   it("drops an opaque initializer only on a sole-undefined observation", () => {
     const facts = { ...clear, hasOpaqueInitializer: true };
-    expect(decide(facts, 1, true)).toBe("drop");
+    expect(decide(facts, 1, true)).toBe("only-undefined");
     expect(decide(facts, 1, false)).toBe("annotate");
     expect(decide(facts, 2, true)).toBe("annotate");
   });
@@ -52,7 +52,7 @@ describe("decideVarDeclSite", () => {
   });
 
   it("applies the rules in order — the outer-skip wins over a later guard", () => {
-    expect(decide({ ...clear, outerAnnotationSkip: true, hasType: true })).toBe("drop");
+    expect(decide({ ...clear, outerAnnotationSkip: true, hasType: true })).toBe("outer-conflict");
   });
 });
 

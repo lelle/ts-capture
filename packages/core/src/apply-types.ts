@@ -306,7 +306,7 @@ export function applyTypesToFile(
         types[0]?.[0] === "undefined",
         infer.ignoreExistingTypes,
       );
-      if (verdict === "drop") continue;
+      if (verdict !== "annotate") continue;
     }
 
     // When the user wrote `const w = window as MyWindow` they explicitly

@@ -115,6 +115,68 @@ describe.each(TIERS)("annotate, oracle %s", (tier) => {
     expect(result.skips).toContainEqual(expect.objectContaining({ pos, reason: "redundant" }));
   });
 
+  it("says it left a declaration marked @ts-capture-ignore alone", () => {
+    const source = "// @ts-capture-ignore\nfunction f(a) { return a; }\n";
+    const pos = source.indexOf("a)") + 1;
+    const { result } = annotated(tier, source, [entry("target.ts", pos, [["number"]])]);
+    expect(result.text).toBe(source);
+    expect(result.skips).toEqual([{ pos, reason: "ignored", observed: "number" }]);
+  });
+
+  describe("says why it left a variable to TypeScript", () => {
+    it.each([
+      [
+        "whose initializer is a function",
+        "const g = (x: number) => x;\n",
+        "g =",
+        ["(x: number) => number"],
+        "kept-existing",
+      ],
+      [
+        "whose initializer passes type arguments",
+        "declare function make<T>(): T;\nconst m = make<string>();\n",
+        "m =",
+        ["string"],
+        "kept-existing",
+      ],
+      [
+        "inside a generic function",
+        "function id<T>(v: T) { const w = v; return w; }\n",
+        "w =",
+        ["number"],
+        "kept-existing",
+      ],
+      [
+        "seen at one branch of a union",
+        "declare const a: string | undefined;\nconst p = a ?? 1;\n",
+        "p =",
+        ["string"],
+        "no-information",
+      ],
+      [
+        "seen only as undefined",
+        "declare function get(): string | undefined;\nconst u = get();\n",
+        "u =",
+        ["undefined"],
+        "no-information",
+      ],
+    ])("%s", (_, source, at, types, reason) => {
+      const pos = source.indexOf(at) + 1;
+      const { result } = annotated(tier, source, [
+        entry(
+          "target.ts",
+          pos,
+          types.map((t) => [t]),
+          { varDecl: true },
+        ),
+      ]);
+      expect(result.text).toBe(source);
+      expect(result.skips).toEqual([
+        expect.objectContaining({ pos, reason, detail: expect.any(String) }),
+      ]);
+    });
+  });
+
   // `apply --infer.outputMode=comments` writes a line's one note above it, and
   // the apply that follows reads the same observations, made before the note.
   it("places an entry collected before a preview wrote its notes", () => {
@@ -189,6 +251,17 @@ describe("a tier with more to check writes no more than one with less, or says w
       const none = annotated("none", source, [e]).result;
       const program = annotated("program", source, [e]).result;
       const project = annotated("project", source, [e]).result;
+      const byTier: Array<[Tier, AnnotateResult]> = [
+        ["none", none],
+        ["program", program],
+        ["project", project],
+      ];
+      for (const [tier, result] of byTier) {
+        expect(
+          written(result, source) || skippedAt(result, e[1]),
+          `${tier} leaves ${e[1]} silently`,
+        ).toBe(true);
+      }
       if (written(none, source)) {
         expect(written(program, source) || skippedAt(program, e[1]), `program at ${e[1]}`).toBe(
           true,
