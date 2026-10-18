@@ -90,13 +90,19 @@ describe.each(TIERS)("annotate, oracle %s", (tier) => {
     expect(out).toTypeAs("n", "number");
   });
 
-  // CST counts it as idempotent but records no skip. Red until step 2.
-  it.fails("leaves a written type alone and says why", () => {
-    const source = "function f(a: number) { return a; }\n";
-    const pos = source.indexOf("a:") + 1;
-    const { result } = annotated(tier, source, [entry("target.ts", pos, [["string"]])]);
-    expect(result.text).toBe(source);
-    expect(result.skips).toContainEqual(expect.objectContaining({ pos }));
+  describe("leaves a written type alone and says why", () => {
+    const source = "function f(a: number): number { return a; }\nconst n: number = f(1);\n";
+    it.each([
+      ["a parameter", source.indexOf("a:") + 1, {}],
+      ["a return", source.indexOf("): number") + 1, { returnType: true }],
+      ["a variable", source.indexOf("n:") + 1, { varDecl: true }],
+    ])("%s", (_, pos, opts) => {
+      const { result } = annotated(tier, source, [entry("target.ts", pos, [["string"]], opts)]);
+      expect(result.text).toBe(source);
+      expect(result.skips).toContainEqual(
+        expect.objectContaining({ pos, reason: "already-annotated", observed: "string" }),
+      );
+    });
   });
 
   it("reports a skip at its position in the text it was given", () => {

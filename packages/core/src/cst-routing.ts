@@ -37,9 +37,25 @@ export function routeEntries(
   infer: InferOptions,
   telemetry?: ApplyTelemetry,
 ): RoutedEntries {
-  const { ignoredRanges, thisTypeSites, varDeclSites, returnTypeSites, paramSites } = index;
+  const {
+    ignoredRanges,
+    thisTypeSites,
+    varDeclSites,
+    returnTypeSites,
+    paramSites,
+    typedParamEnds,
+  } = index;
   const cstEligible: RoutedEntry[] = [];
   const passThrough: CollectedTypeInfo = [];
+  const alreadyAnnotated = (entry: CollectedTypeInfo[number]): void => {
+    if (!telemetry) return;
+    telemetry.idempotent++;
+    telemetry.skipped.push({
+      pos: entry[1],
+      reason: "already-annotated",
+      observed: [...new Set(entry[2].map(([name]) => name).filter(Boolean))].join(" | "),
+    });
+  };
 
   for (const entry of typeInfo) {
     const [, pos, , opts] = entry;
@@ -87,7 +103,7 @@ export function routeEntries(
       } else if (verdict === "delegate") {
         passThrough.push(entry);
       } else if (verdict === "idempotent") {
-        if (telemetry) telemetry.idempotent++;
+        alreadyAnnotated(entry);
       }
       // "drop" → emit nothing, neither eligible nor pass-through.
       continue;
@@ -99,7 +115,7 @@ export function routeEntries(
       // isAlreadyApplied would also skip, so behaviour matches).
       // Bypassed when `infer.ignoreExistingTypes` is on.
       if (site && site.hasReturnType && !infer.ignoreExistingTypes) {
-        if (telemetry) telemetry.idempotent++;
+        alreadyAnnotated(entry);
         continue;
       }
       if (site) {
@@ -110,7 +126,9 @@ export function routeEntries(
       continue;
     }
     // Plain param entry.
-    if (paramSites.has(pos)) {
+    if (typedParamEnds.has(pos)) {
+      alreadyAnnotated(entry);
+    } else if (paramSites.has(pos)) {
       cstEligible.push({ entry, kind: "param" });
     } else {
       passThrough.push(entry);

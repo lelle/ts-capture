@@ -35,7 +35,11 @@ export type ApplySkipReason =
   /** TypeScript already infers the same type. */
   | "redundant"
   /** The code already says something an observation must not overwrite. */
-  | "kept-existing";
+  | "kept-existing"
+  /** A type is already written there. */
+  | "already-annotated"
+  /** The position is no place a type can be written, as when the code changed since the run. */
+  | "no-site";
 
 export interface ApplySkip {
   /** Offset in the source handed to the applier. */

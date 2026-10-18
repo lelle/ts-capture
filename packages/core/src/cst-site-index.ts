@@ -90,6 +90,8 @@ export type VarDeclSite = {
 /** All AST-derived apply sites for one source file, keyed by offset. */
 export interface CstSiteIndex {
   paramSites: Map<number, ParamSite>;
+  /** Where a parameter's written type already stands, unless `ignoreExistingTypes`. */
+  typedParamEnds: Set<number>;
   thisTypeSites: Map<number, ThisTypeSite>;
   returnTypeSites: Map<number, ReturnTypeSite>;
   varDeclSites: Map<number, VarDeclSite>;
@@ -164,6 +166,7 @@ export function buildCstSiteIndex(
   infer: InferOptions,
 ): CstSiteIndex {
   const paramSites = new Map<number, ParamSite>();
+  const typedParamEnds = new Set<number>();
   const arrayCallbackArrowParams = new Set<number>();
   const thisTypeSites = new Map<number, ThisTypeSite>();
   const returnTypeSites = new Map<number, ReturnTypeSite>();
@@ -220,6 +223,9 @@ export function buildCstSiteIndex(
           arrayCallbackArrowParams.add(findReturnTypePos(arg));
         }
       }
+    }
+    if (ts.isParameter(node) && node.type && !infer.ignoreExistingTypes) {
+      typedParamEnds.add(node.name.end + (node.questionToken ? 1 : 0));
     }
     if (ts.isParameter(node) && (!node.type || infer.ignoreExistingTypes)) {
       // BindingPattern.end gives the position after the closing `}` /
@@ -348,6 +354,7 @@ export function buildCstSiteIndex(
 
   return {
     paramSites,
+    typedParamEnds,
     thisTypeSites,
     returnTypeSites,
     varDeclSites,

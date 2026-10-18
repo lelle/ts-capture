@@ -5,6 +5,7 @@ import type { CstSiteIndex, VarDeclSite } from "./cst-site-index.js";
 import type { CollectedTypeEntry, CollectedTypeInfo, ExtraOptions } from "./type-collector.js";
 
 import { INFER_DEFAULTS } from "./configuration.js";
+import { newApplyTelemetry } from "./contract.js";
 import { routeEntries } from "./cst-routing.js";
 
 // Direct specs for entry routing. The
@@ -16,6 +17,7 @@ import { routeEntries } from "./cst-routing.js";
 function emptyIndex(): CstSiteIndex {
   return {
     paramSites: new Map(),
+    typedParamEnds: new Set(),
     thisTypeSites: new Map(),
     returnTypeSites: new Map(),
     varDeclSites: new Map(),
@@ -123,14 +125,7 @@ describe("routeEntries", () => {
   it("skips already-typed varDecl as idempotent unless ignoreExistingTypes", () => {
     const idx = emptyIndex();
     idx.varDeclSites.set(10, varDeclSite({ hasType: true }));
-    const tel = {
-      totalEntries: 0,
-      emitted: 0,
-      idempotent: 0,
-      unparseable: 0,
-      positionMismatch: 0,
-      verifyReject: 0,
-    };
+    const tel = newApplyTelemetry();
     const { eligible, passThrough } = route(
       [entry(10, { varDecl: true })],
       idx,
@@ -141,6 +136,7 @@ describe("routeEntries", () => {
     expect(passThrough).toHaveLength(0);
     expect(tel.idempotent).toBe(1);
     expect(tel.totalEntries).toBe(1);
+    expect(tel.skipped).toEqual([{ pos: 10, reason: "already-annotated", observed: "string" }]);
 
     const on = { ...INFER_DEFAULTS, ignoreExistingTypes: true };
     expect([...route([entry(10, { varDecl: true })], idx, on).eligible.values()][0].kind).toBe(

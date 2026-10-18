@@ -27,6 +27,11 @@ const NOT_WRITTEN: Array<{ reason: ApplySkipReason; heading: string; brief: stri
     heading: "Falls outside the type already there",
     brief: "outside the existing type",
   },
+  {
+    reason: "no-site",
+    heading: "No place to write it - has the code changed since the run?",
+    brief: "at no place for a type",
+  },
 ];
 
 const MESSAGE_LIMIT = 200;
@@ -119,9 +124,7 @@ export function reportLines(
 
   const redundant = skips.filter((s) => s.reason === "redundant").length;
   const keptExisting = skips.filter((s) => s.reason === "kept-existing").length;
-  // `idempotent` also counts the restatements the checker gate found, which
-  // are in `redundant` above.
-  const alreadyAnnotated = Math.max(0, telemetry.idempotent - telemetry.redundant);
+  const alreadyAnnotated = skips.filter((s) => s.reason === "already-annotated").length;
   const nothingToAdd = redundant + keptExisting + alreadyAnnotated;
   if (nothingToAdd > 0) {
     lines.push("", `Nothing to add (${nothingToAdd})`);
