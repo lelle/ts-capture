@@ -3,6 +3,9 @@
 /** Instrument TypeScript source so its call sites record runtime argument and return values at test time. */
 export { instrumentSource } from "./instrument.js";
 
+/** Write collected types into one file's text, or into every file they name; skips and telemetry come back as values. */
+export { annotate, annotateProject } from "./annotate.js";
+
 /** Apply collected types to a single file, or to many files, via the offset-based applier. */
 export { applyTypesToFile, applyTypesToFiles } from "./apply-types.js";
 
@@ -89,6 +92,15 @@ export { resolveInferOptions, parseInferFlagOverrides, INFER_DEFAULTS } from "./
 
 /** Options controlling source instrumentation. */
 export type { InstrumentOptions } from "./transformer.js";
+
+/** What `annotate` and `annotateProject` take and return, and how much they may ask TypeScript. */
+export type {
+  AnnotateOptions,
+  AnnotateResult,
+  AnnotateProjectInput,
+  AnnotateProjectResult,
+  TypeOracle,
+} from "./annotate.js";
 
 /** Options controlling how collected types are applied to source. */
 export type { ApplyTypesOptions } from "./contract.js";

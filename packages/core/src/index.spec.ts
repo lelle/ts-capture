@@ -6,6 +6,8 @@ describe("public API", () => {
   const expectedExports = [
     // Core pipeline
     "instrumentSource",
+    "annotate",
+    "annotateProject",
     "applyTypesToFile",
     "applyTypesToFileCst",
     "applyTypesToFiles",
