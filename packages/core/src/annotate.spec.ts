@@ -64,8 +64,22 @@ describe.each(TIERS)("annotate, oracle %s", (tier) => {
     const source =
       "class Counter {\n  count;\n  constructor(initial) { this.count = initial; }\n}\nnew Counter(1);\n";
     const { out } = annotated(tier, source, collect(source));
-    expect(out).toAnnotate("count", "number");
+    // Under `project`, TypeScript infers the field from the typed parameter.
+    expect(out).toTypeAs("count", "number");
     expect(out).toAnnotate("initial", "number");
+  });
+
+  // The field's entry is made by apply, not observed, so nothing else would
+  // say why a field was left untyped.
+  it("says why it left a class field untyped", () => {
+    const source =
+      "class Box {\n  item;\n  constructor(item) { this.item = item; }\n}\nnew Box(undefined);\n";
+    const { result } = annotated(tier, source, [
+      entry("target.ts", source.indexOf("item)") + 4, [["unknown"]]),
+    ]);
+    expect(result.skips).toContainEqual(
+      expect.objectContaining({ pos: source.indexOf("item;") + 4 }),
+    );
   });
 
   // Under `project` the outer function is typed first, and the callback then

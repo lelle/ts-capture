@@ -129,7 +129,8 @@ export function inferClassFieldTypes(
         fileName,
         member.name.end,
         sortedTypes.map((t) => [t, undefined] as [string, undefined]),
-        {},
+        // A field is a declaration site like a variable's, and routes as one.
+        { varDecl: true },
       ]);
     }
   }

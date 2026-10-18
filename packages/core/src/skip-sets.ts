@@ -282,15 +282,16 @@ export function buildOuterAnnotationSkipSet(source: string): ApplyContextSets {
     }
 
     // Record every legitimate `varDecl` insertion point —
-    // the `name.end` of a Variable/PropertyDeclaration whose initializer is
-    // set. Apply hard-skips any `varDecl` entry whose offset isn't in this
-    // set (covers position drift between instrumenter-view source and
-    // apply-view source). For an object pattern, `name.end` is after the `}`.
+    // the `name.end` of a variable with an initializer, or of a class field
+    // (class-field inference writes at one that has none). Apply hard-skips any
+    // `varDecl` entry whose offset isn't in this set (covers position drift
+    // between instrumenter-view source and apply-view source). For an object
+    // pattern, `name.end` is after the `}`.
     if (
       (ts.isVariableDeclaration(node) || ts.isPropertyDeclaration(node)) &&
       (ts.isIdentifier(node.name) ||
         (ts.isVariableDeclaration(node) && ts.isObjectBindingPattern(node.name))) &&
-      node.initializer
+      (node.initializer || ts.isPropertyDeclaration(node))
     ) {
       validVarDeclEnds.add(node.name.end);
     }

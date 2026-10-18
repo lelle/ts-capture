@@ -566,17 +566,24 @@ describe("applyTypesToFileCst — varDecl + class-field annotations via AST look
     it.each([
       ["without a program", {}],
       ["with a program", { project: true }],
-      ["with the type-check oracle", { verify: true }],
     ])("%s", (_, options) => {
       const out = applied(source, [entry("test.ts", initialEnd, [["number"]])], options);
       expect(out).toAnnotate("initial", "number");
       expect(out).toAnnotate("count", "number");
     });
 
+    // The oracle judges the field against the file with the param typed, and
+    // TypeScript then infers the field from the constructor's assignment.
+    it("with the type-check oracle, as an inferred type", () => {
+      const out = applied(source, [entry("test.ts", initialEnd, [["number"]])], { verify: true });
+      expect(out).toAnnotate("initial", "number");
+      expect(out).toLeaveUntyped("count");
+      expect(out).toTypeAs("count", "number");
+    });
+
     it.each([
       ["without a program", {}],
       ["with a program", { project: true }],
-      ["with the type-check oracle", { verify: true }],
     ])("writes the field's type once when the param's type is a named shape, %s", (_, options) => {
       const named = `interface Opts { a: number; b: string }
 class Holder {
