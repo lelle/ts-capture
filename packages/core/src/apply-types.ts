@@ -469,7 +469,7 @@ export function applyTypesToFile(
       }
     }
 
-    // Append a `/* @ts-capture:<reason> *​/` marker when the entry's
+    // Append a `/* @ts-capture:<reason> */` marker when the entry's
     // observation(s) include an approximation reason and the user has
     // opted in via `infer.emitDiagnosticComments`. Reviewers use the
     // markers to distinguish confident emits from fallbacks.

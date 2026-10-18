@@ -25,11 +25,11 @@
     "typescript": "6.0.3"
   },
   "devDependencies": {
-    "@types/node": "26.2.0",
+    "@types/node": "26.6.5",
     "@typescript/vfs": "1.6.5",
     "@vitest/coverage-v8": "4.1.11",
     "esbuild": "0.28.2",
-    "oxlint": "1.77.0",
+    "oxlint": "1.87.0",
     "vitest": "4.1.11"
   }
 }

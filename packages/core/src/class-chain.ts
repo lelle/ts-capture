@@ -51,7 +51,7 @@ function findMostSpecificCommonBase(observations: ClassWithChain[]): string | nu
  * output. Some shapes (e.g. a single observation of an object type
  * with a class-typed value) flow through paths that don't call
  * `rewriteCommonBase` / `mergeKeyValues`, so the marker survives. This
- * regex-strips every `/​* @sa:... *​/` occurrence from the final
+ * regex-strips every `/* @sa:... *\/` occurrence from the final
  * type string regardless of nesting.
  *
  * Safe because the marker shape (whitespace + comment + `@sa:` +

@@ -18,7 +18,7 @@ function getDominantApproximationReason(types: DiscoveredType[]): ApproximationR
 
 /**
  * Build the marker-comment suffix for the apply-emit path.
- * Returns `" /* @ts-capture:<reason> *​/"` when the entry carries an
+ * Returns `" /* @ts-capture:<reason> *\/"` when the entry carries an
  * approximation reason AND the user opted in via
  * `infer.emitDiagnosticComments`; empty string otherwise. Shared
  * between `applyTypesToFile` (offset-based) and `applyTypesToFileCst`
