@@ -1,17 +1,14 @@
 import type { ProjectVerificationContext, VerificationContext } from "./apply-types-verify.js";
 import type { CompilerOptions } from "./compiler-helper.js";
 import type { InferOptions } from "./configuration.js";
-import type { CstSiteIndex } from "./cst-site-index.js";
 
 /**
  * Per-reason skip counters surfaced via `--telemetry`. Mutable sink:
  * the caller (`cmdApply`) allocates one, threads it through every
- * `applyTypesToFile` / `applyTypesToFileCst` call, prints the summary
- * at end of run.
+ * file it applies, prints the summary at end of run.
  *
  * Categories:
- *   - `idempotent`: position already typed in source (CST `node.type`
- *     check + offset `isAlreadyApplied`).
+ *   - `idempotent`: position already typed in source (`node.type`).
  *   - `unparseable`: candidate type string failed the parse / format
  *     pre-check; can't safely emit.
  *   - `positionMismatch`: offset doesn't match a valid insertion site
@@ -88,42 +85,6 @@ export function newApplyTelemetry(): ApplyTelemetry {
 }
 
 export interface ApplyTypesOptions extends CompilerOptions {
-  /**
-   * Checker-resolvable annotation sites, keyed by position in the *original*
-   * source, plus the inverse of any rebasing applied to the entries.
-   *
-   * The offset-based applier has no AST index of its own, and nodes reparsed
-   * from a source string do not belong to the checker's Program. Supplying
-   * these lets it ask the same "does TypeScript already know this?" question
-   * the CST applier asks. Without them it falls back to its syntactic guards —
-   * which is where all 23 redundant `: void` annotations in a nestjs/nest run
-   * came from.
-   *
-   * @internal Handed from one applier to the other, not part of the public
-   * contract. `toOriginalPos` must be the exact inverse of the rebasing the
-   * caller applied; a wrong one resolves sites to the wrong nodes and the
-   * checker then answers about a position nobody asked about.
-   */
-  checkerSites?: {
-    index: CstSiteIndex;
-    toOriginalPos: (pos: number) => number;
-  };
-  /**
-   * Whether this pass owns removing ts-capture's own conflict notes.
-   *
-   * True when the offset applier is the entry point. False when the CST
-   * applier delegates its pass-through entries: it has already stripped, and
-   * the source handed over holds the notes it just wrote — stripping again
-   * would delete them.
-   */
-  stripConflictNotes?: boolean;
-  /**
-   * Whether this pass infers class fields from constructor params. False when
-   * the CST applier delegates: it inferred them before routing, and the source
-   * handed over already holds the params' types, so inferring again would
-   * union the field's type with itself.
-   */
-  inferClassFields?: boolean;
   prefix?: string;
   /** Inference behavior flags. Defaults match INFER_DEFAULTS (today's behavior). */
   infer?: InferOptions;

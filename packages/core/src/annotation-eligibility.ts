@@ -1,7 +1,5 @@
-// Shared annotation-eligibility decision, consumed by both appliers so the
-// offset-based and AST-based paths agree on which positions to annotate or
-// skip. Pure: given a site's facts + the observation, returns the
-// verdict.
+// Which positions to annotate or skip. Pure: given a site's facts + the
+// observation, returns the verdict.
 
 /** The per-site facts every var-decl eligibility rule consults. */
 export interface VarDeclFacts {

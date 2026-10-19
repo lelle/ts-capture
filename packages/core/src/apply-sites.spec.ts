@@ -273,8 +273,8 @@ describe("discriminated union detection (applier wiring)", () => {
 
 describe("apply — outer-annotation skip on typed-RHS var declarations (applier wiring)", () => {
   // The function-expression-RHS detection (across const-arrow, function-expr,
-  // and class-field PropertyDeclaration) is unit-tested at the boundary in
-  // skip-sets.spec.ts (buildOuterAnnotationSkipSet); the drop decision in
+  // and class-field PropertyDeclaration) is read in the site index
+  // (cst-site-index.ts); the drop decision in
   // annotation-eligibility.spec.ts (decideVarDeclSite). These e2e samples prove
   // the applier wiring: an outer annotation is skipped on a function RHS (it
   // would contravariantly conflict with the typed RHS / inner observations),
@@ -770,9 +770,8 @@ describe("apply — paren-less arrow wrap is per-position", () => {
   // itself is SKIPPED (requireTypeRefInScope, preferNamedInScope
   // substitution to unreachable name) and a sibling returnType-entry
   // lands at the same pos without `opts.arrow`, the wrap would be
-  // missed → `state: T => body` (TS1005). detectParenLessArrowParam
-  // is hoisted out of the per-entry gate and computed once per pos;
-  // any landing entry triggers wrap. The parens are text; the result
+  // missed → `state: T => body` (TS1005). The paren-less check is
+  // made once per pos; any landing entry triggers wrap. The parens are text; the result
   // parsing with the annotation in place is the claim.
 
   it("returnType-entry alone at paren-less arrow pos: wrap still happens", () => {
@@ -1075,7 +1074,7 @@ describe("@ts-capture-ignore comment skip", () => {
 
 // --- union-producing initializer skip (applier wiring) -----------------
 // The AST-shape detection (??, ||, &&, ternary, ?., Array#find/#findLast) is
-// unit-tested at the boundary in skip-sets.spec.ts (unionProducingInitializer);
+// read in the site index (cst-site-index.ts, unionProducingInitializer);
 // the single-observation drop in annotation-eligibility.spec.ts. These e2e
 // samples prove the applier wiring: a sole observation on a union-producing
 // site is skipped, a genuine multi-type union is still annotated, and a
@@ -1119,8 +1118,8 @@ describe("skip undefined-narrowing on union-producing initializer (applier wirin
 });
 
 // --- sole-undefined skip on opaque initializers (applier wiring) --------
-// The opaque-initializer detection (await / call / method / new) is unit-tested
-// at the boundary in skip-sets.spec.ts (opaqueInitializerVarDecls); the
+// The opaque-initializer detection (await / call / method / new) is read in
+// the site index (cst-site-index.ts, opaqueInitializerVarDecls); the
 // sole-undefined drop in annotation-eligibility.spec.ts. These e2e samples
 // prove the applier wiring: a sole-undefined observation on an opaque call is
 // skipped, while the literal `undefined` keyword form and a non-undefined
@@ -1233,8 +1232,8 @@ describe("async function returning Promise doesn't double-wrap (applier wiring)"
 
 // --- Array.prototype-callback structural suppression (applier wiring) ---
 // The set of contextually-typed Array.prototype methods (filter/map/some/find/
-// forEach/reduce) and the param/returnType positions they flag are unit-tested
-// at the boundary in skip-sets.spec.ts (arrayCallbackArrowParams); the
+// forEach/reduce) and the param/returnType positions they flag are read in the
+// site index (cst-site-index.ts, arrayCallbackArrowParams); the
 // structural-vs-primitive suppression decision in annotation-eligibility.spec.ts
 // (suppressArrayCallbackStructural). These e2e samples prove the applier wiring.
 describe("skip arrow-param annotation in Array.prototype callbacks (applier wiring)", () => {

@@ -465,8 +465,7 @@ export function explainRejection(
  *
  * Fast path: try every candidate together in one probe. If clean,
  * all are accepted with a single LanguageService scan — usually 30×
- * cheaper than the per-candidate slow path used by `applyTypesToFile`
- * before this slice.
+ * cheaper than probing each candidate on its own.
  *
  * Slow path (batch is dirty): bisect — split the candidate set in
  * half and recurse. Subsets that pass alone are accepted; subsets
@@ -573,9 +572,7 @@ export function commitReplacements(
 /**
  * Lightweight variant of `commitReplacements`: swap the in-memory
  * source for the target file without the cross-file re-baseline. Used
- * when a multi-phase applier (e.g. CST → offset-based pass-through)
- * needs subsequent verify probes to see the same source string the
- * pass-through is editing into. Skips the expensive cross-file
+ * when later verify probes must see the source as written so far. Skips the expensive cross-file
  * diagnostic scan — caller is responsible for ensuring the new source
  * doesn't introduce diagnostics that should re-baseline (typically by
  * having already filtered through `filterAcceptedReplacements`).

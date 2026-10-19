@@ -57,10 +57,6 @@ function findType(
  * every observed type was filtered out (e.g. all-undefined for an
  * optional param) or if the observations vector was empty to begin
  * with.
- *
- * Shared between the offset-based `applyTypesToFile` and the
- * AST-aware `applyTypesToFileCst` (apply-types-cst.ts) so both paths
- * produce byte-identical type strings on the same input.
  */
 export function computeAnnotationTypeString(
   types: DiscoveredType[],

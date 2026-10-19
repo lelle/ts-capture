@@ -21,11 +21,10 @@ import {
 } from "./scope-reachability.js";
 
 /**
- * AST-aware applier — the default path (`infer.cstAware: true`). The
- * string-offset-based applyTypesToFile can drop a type at the wrong
- * site when offsets get stale; an AST-driven apply step sidesteps
- * that bug class and folds idempotency into the same pass. An entry
- * whose position is no site in the AST is a `no-site` skip.
+ * The applier behind `annotate`. Sites come from the AST, so a stale
+ * offset cannot put a type at the wrong site, and idempotency is part
+ * of the same pass. An entry whose position is no site in the AST is a
+ * `no-site` skip.
  *
  * Scope:
  *
@@ -53,13 +52,10 @@ import {
  *     `function.parameters.pos` (right after the opening `(`). Whether
  *     the comma separator is needed comes from
  *     `parameters.length > 0` on the AST — no `thisNeedsComma` flag
- *     required from the producer side. CST is strictly more robust
- *     than the offset-based path here: legacy / third-party dump files
- *     missing the flag still produce correct output.
+ *     required from the producer side, so dump files missing the flag
+ *     still produce correct output.
  * Edits are emitted as string replacements at AST-derived offsets, NOT
- * via the TS printer. The shared `computeAnnotationTypeString` helper
- * means both paths produce byte-identical type strings on the same
- * input — only the site-selection differs.
+ * via the TS printer.
  *
  * ## Source-map fidelity (deferred)
  *
@@ -131,13 +127,12 @@ export function applyTypesToFileCst(
   const checkerIndex = buildCheckerSiteIndex(program, options.filename, source, infer);
   const telemetry = options.telemetry;
 
-  // --- Route entries: AST-eligible vs pass-through ---
+  // --- Route entries to their sites ---
 
   typeInfo = shiftPastNotes(typeInfo, source, cstIndex);
 
-  // A field's type comes from the constructor param assigned to it. Inferred
-  // before routing, which would hand the param entries to CST and the field
-  // to the pass-through, so neither side saw both.
+  // A field's type comes from the constructor param assigned to it, so it is
+  // inferred before routing, from the param entries.
   const fieldEntries = inferClassFieldTypes(source, typeInfo);
   if (fieldEntries.length > 0) typeInfo = [...typeInfo, ...fieldEntries];
 

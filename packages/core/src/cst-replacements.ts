@@ -423,7 +423,7 @@ export function buildCstReplacements(
       // `(x) => body` stays as harmless valid syntax. Priority scheme:
       // `)` priority 0, param annotation priority 1 — sorts so the
       // annotation lands BEFORE the `)` in the output, yielding
-      // `(x: T) => body`. Mirrors the offset-based path.
+      // `(x: T) => body`.
       const paramName = ts.isIdentifier(site.node.name) ? site.node.name.text : undefined;
       if (site.parensOpenPos !== undefined) {
         requestParenWrap(site.parensOpenPos, pos);
@@ -452,10 +452,8 @@ export function buildCstReplacements(
         skip("no-information");
         continue;
       }
-      // When the function already has params, the apply needs a
-      // separator between `this: T` and the first real param.
-      // Mirrors the offset-based path's opts.thisNeedsComma flag —
-      // here read directly from the AST.
+      // When the function already has params, `this: T` needs a
+      // separator before the first one.
       const suffix = site.hasOtherParams ? ", " : "";
       // `this` was the one site kind the gate never covered — and the only one
       // whose whole subject is `this`. In a class method the checker already
@@ -492,12 +490,8 @@ export function buildCstReplacements(
       // `this` has no single value to write down. Any concrete type here —
       // however well observed — costs every subclass its own return type.
       if (!gateAllows(pos, "returnType", inferredReturn, emitted)) continue;
-      // Lower priority than param inserts so the priority-tied
-      // collision case from the offset-based path (paren-less arrow:
-      // both inserts at same pos) is handled the same way. In this
-      // CST path paren-less arrows are gated out (single-param +
-      // paren-less goes through `parens` opt → passThrough), so this
-      // is purely defensive.
+      // Lower priority than param inserts: on a paren-less arrow both
+      // land at the same pos, and the param goes first.
       // Parse-check.
       if (!isParseableTypeString(emitted)) {
         skip("no-information", "not a type TypeScript can parse");

@@ -59,7 +59,7 @@ export function inferClassFieldTypes(
 
   const synthetic: CollectedTypeInfo = [];
   // Inherit the file name from the input typeInfo (assumes caller has
-  // grouped by file — applyTypesToFile is single-file by contract).
+  // grouped by file — the applier is single-file by contract).
   const fileName = typeInfo[0]?.[0] ?? "";
 
   function visitClass(classNode: ts.ClassDeclaration | ts.ClassExpression) {

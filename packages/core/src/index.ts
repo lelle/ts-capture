@@ -6,11 +6,8 @@ export { instrumentSource } from "./instrument.js";
 /** Write collected types into one file's text, or into every file they name; skips and telemetry come back as values. */
 export { annotate, annotateProject } from "./annotate.js";
 
-/** Apply collected types to a single file, or to many files, via the offset-based applier. */
-export { applyTypesToFile, applyTypesToFiles } from "./apply-types.js";
-
-/** Apply collected types via the AST-aware (CST) applier — the default, offset-drift-resistant path. */
-export { applyTypesToFileCst } from "./apply-types-cst.js";
+/** Earlier names for `annotate` and `annotateProject`, returning only the text. */
+export { applyTypesToFile, applyTypesToFileCst, applyTypesToFiles } from "./apply-types.js";
 
 /** Compute annotation coverage (how many inferable positions carry a type) for a source file. */
 export { typeCoverage } from "./type-coverage.js";

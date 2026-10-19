@@ -231,9 +231,7 @@ export function buildCstSiteIndex(
     if (ts.isParameter(node) && (!node.type || infer.ignoreExistingTypes)) {
       // BindingPattern.end gives the position after the closing `}` /
       // `]`, which is exactly where ts-capture's destructure-param
-      // annotation should land. positionLooksLikeInsertionSite in the
-      // offset-based path accepts `}` and `]` as before-chars for the
-      // same reason.
+      // annotation should land.
       const indexPos = node.name.end + (node.questionToken ? 1 : 0);
       // Detect paren-less single-param arrow context. Mirrors
       // transformer.ts:hasParensAroundArguments. The arrow's parent is

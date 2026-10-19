@@ -106,8 +106,8 @@ export function routeEntries(
     }
     if (opts?.varDecl) {
       const site = varDeclSites.get(pos);
-      // Eligibility decision shared with the offset-based applier — see
-      // annotation-eligibility.ts. The AST index supplies the per-site facts.
+      // The AST index supplies the per-site facts; annotation-eligibility.ts
+      // decides.
       const verdict = decideVarDeclSite(
         site
           ? {

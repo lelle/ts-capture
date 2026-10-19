@@ -93,19 +93,7 @@ export interface InferOptions {
    * accepting that some annotations may produce TS2304.
    */
   requireTypeRefInScope: boolean;
-  /**
-   * Use the AST-aware applier (`applyTypesToFileCst`) instead of the
-   * legacy string-offset-based `applyTypesToFile`. ON by default — the
-   * CST path handles every routing case the offset-based path does,
-   * plus two it doesn't (paren-less arrow return types, AST-derived
-   * `this`-separator handling), and correctly skips a class-field
-   * outer-annotation case the offset path emits redundantly.
-   *
-   * Set to false to fall back to the legacy offset-based applier
-   * (e.g. for diffing two paths during migration). The
-   * `applyTypesToFile` symbol is unchanged; only the CLI's dispatch
-   * default changes.
-   */
+  /** @deprecated Has no effect: there is one applier. Will be removed. */
   cstAware: boolean;
   /**
    * TypeChecker-in-the-loop. When on, every candidate annotation is
@@ -123,9 +111,8 @@ export interface InferOptions {
    */
   typecheckVerify: boolean;
   /**
-   * Ignore existing annotations. Bypasses both
-   * idempotency checks (CST `node.type !== undefined`
-   * filter + offset-based `isAlreadyApplied`) so apply emits its
+   * Ignore existing annotations. Bypasses the idempotency check
+   * (`node.type !== undefined`) so apply emits its
    * preferred annotation even at positions that already have one.
    *
    * Off by default. This mode produces SYNTACTICALLY INVALID TS

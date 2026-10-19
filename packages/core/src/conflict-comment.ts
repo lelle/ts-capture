@@ -232,11 +232,6 @@ export function addNote<T extends object>(
 /**
  * Where every note goes, as replacements.
  *
- * One place because both appliers need the same answer. It lived in the CST
- * applier alone, so a pass-through entry on a crowded line came out in the old
- * ambiguous form — invisible until a project routes through the second path,
- * and nestjs/nest does not.
- *
  * A line is crowded by every note it carries, contradictions included: left
  * out of the count they put two formats on one line, and kept a naming
  * collision that `(d) => (d)` produces on its own.

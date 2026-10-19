@@ -1,9 +1,3 @@
-// A buffered annotation insertion, awaiting batch verify before it
-// becomes a `Replacement.insert(pos, text, priority)`. Shared by both
-// appliers (offset-based `apply-types.ts` and AST-based
-// `cst-replacements.ts`) so the verify-batch shape stays identical.
-export type AnnotationCandidate = { pos: number; text: string; priority?: number };
-
 export class Replacement {
   static insert(pos: number, text: string, priority = 0): Replacement {
     return new Replacement(pos, pos, text, priority);
