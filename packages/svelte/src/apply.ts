@@ -1,6 +1,11 @@
-import type { ApplyTypesOptions, CollectedTypeInfo } from "@ts-capture/core";
+import type {
+  AnnotateResult,
+  ApplyTypesOptions,
+  CollectedTypeInfo,
+  TypeOracle,
+} from "@ts-capture/core";
 
-import { applyTypesToFile, registerVirtualFile } from "@ts-capture/core";
+import { annotate } from "@ts-capture/core";
 import { parse } from "svelte/compiler";
 
 import { registerRunesAmbient } from "./runes-ambient.js";
@@ -21,19 +26,25 @@ export interface ApplySvelteTypesOptions extends ApplyTypesOptions {
 /**
  * Apply collected type observations back to a `.svelte` source file.
  *
- * Works by extracting each `<script>` block's text, applying
- * `applyTypesToFile` to the block in isolation (positions are relative to the
- * block content, matching what `sveltePreprocessor` produced), then splicing
- * the annotated block back into the full `.svelte` source.
- *
- * Blocks are processed in reverse source order so a splice to a later block
- * does not shift the start offset of an earlier block.
+ * Works by extracting each `<script>` block's text, annotating the block in
+ * isolation (positions are relative to the block content, matching what
+ * `sveltePreprocessor` produced), then splicing the annotated block back into
+ * the full `.svelte` source.
  */
 export function applySvelteTypesToFile(
   svelteSource: string,
   typeInfo: CollectedTypeInfo,
   options: ApplySvelteTypesOptions,
 ): string {
+  return annotateSvelte(svelteSource, typeInfo, options).text;
+}
+
+/** As `applySvelteTypesToFile`, with skips at their positions in `svelteSource`. */
+export function annotateSvelte(
+  svelteSource: string,
+  typeInfo: CollectedTypeInfo,
+  options: ApplySvelteTypesOptions,
+): AnnotateResult {
   const ast = parse(svelteSource, { modern: true });
 
   type ScriptBlock = NonNullable<typeof ast.instance>;
@@ -41,15 +52,16 @@ export function applySvelteTypesToFile(
     [ast.instance, ast.module] as (ScriptBlock | null)[]
   ).filter((b): b is ScriptBlock => b != null);
 
-  if (blocks.length === 0) return svelteSource;
-
   const contentOf = (b: ScriptBlock): SvelteProgram =>
     b.content as unknown as SvelteProgram;
 
-  // Descending by content start: later block processed first, so earlier offsets stay valid.
+  // Descending by content start: a later block is spliced first, so an
+  // earlier block's offsets, and every skip's, stay those of `svelteSource`.
   blocks.sort((a, b) => contentOf(b).start - contentOf(a).start);
 
-  let result = svelteSource;
+  let text = svelteSource;
+  const skips: AnnotateResult["skips"][number][] = [];
+  const telemetry = emptyTelemetry();
 
   for (const block of blocks) {
     const isModule = block.context === "module";
@@ -62,36 +74,54 @@ export function applySvelteTypesToFile(
     if (blockEntries.length === 0) continue;
 
     const { start, end } = contentOf(block);
-    const scriptText = result.slice(start, end);
+    const scriptText = text.slice(start, end);
 
-    // When the CLI hands over the project verification
-    // context, verify each block as a standalone TS file co-located with
-    // the .svelte source. The virtual path equals the entries' synthetic
-    // path (`<svelteFile>__script.ts`), so it sits in the same directory
-    // and resolves the same relative / path-alias imports. Block offsets
-    // already match the virtual file's text (scriptText). Without a
-    // project context the block applies heuristically as before.
-    let applied: string;
+    // With the project context, the block is checked as a TS file next to the
+    // component (`<svelteFile>__script.ts`), so it resolves the same relative
+    // and path-alias imports.
+    let oracle: TypeOracle = { kind: "none" };
     if (options.projectVerify) {
-      const virtualPath = `${virtualPrefix}.ts`;
       registerRunesAmbient(options.projectVerify);
-      const verify = registerVirtualFile(
-        options.projectVerify,
-        virtualPath,
-        scriptText,
-      );
-      const program = options.projectVerify.service.getProgram();
-      applied = applyTypesToFile(
-        scriptText,
-        blockEntries,
-        { ...options, verify, filename: virtualPath },
-        program,
-      );
-    } else {
-      applied = applyTypesToFile(scriptText, blockEntries, options);
+      oracle = { kind: "project", project: options.projectVerify };
     }
-    result = result.slice(0, start) + applied + result.slice(end);
+    const annotated = annotate(scriptText, blockEntries, {
+      filename: `${virtualPrefix}.ts`,
+      infer: options.infer,
+      oracle,
+      ignoreFiles: options.ignoreFiles,
+    });
+    text = text.slice(0, start) + annotated.text + text.slice(end);
+    for (const skip of annotated.skips)
+      skips.push({ ...skip, pos: skip.pos + start });
+    addCounts(telemetry, annotated.telemetry);
   }
 
-  return result;
+  telemetry.skipped = skips;
+  return { text, skips, telemetry };
+}
+
+function emptyTelemetry(): AnnotateResult["telemetry"] {
+  return {
+    totalEntries: 0,
+    emitted: 0,
+    idempotent: 0,
+    unparseable: 0,
+    positionMismatch: 0,
+    verifyReject: 0,
+    redundant: 0,
+    skipped: [],
+  };
+}
+
+function addCounts(
+  into: AnnotateResult["telemetry"],
+  from: AnnotateResult["telemetry"],
+): void {
+  into.totalEntries += from.totalEntries;
+  into.emitted += from.emitted;
+  into.idempotent += from.idempotent;
+  into.unparseable += from.unparseable;
+  into.positionMismatch += from.positionMismatch;
+  into.verifyReject += from.verifyReject;
+  into.redundant += from.redundant;
 }

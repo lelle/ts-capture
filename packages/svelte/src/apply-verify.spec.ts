@@ -45,7 +45,7 @@ describe("svelte apply typecheck-verify", () => {
             project.dir,
           )
         : undefined;
-    const text = sveltePlugin().apply(source, entries, {
+    const { text } = sveltePlugin().apply(source, entries, {
       filename,
       projectVerify,
     });
@@ -132,5 +132,43 @@ describe("svelte apply typecheck-verify", () => {
     expect(out).toAnnotate("sound", "string | undefined");
     expect(out).toLeaveUntyped("unsound");
     expect(out).toHaveNoNewDiagnostics();
+  });
+
+  // So `apply --report` can point into the component, not into the block.
+  it("says why it dropped one, at its position in the .svelte file", () => {
+    const project = makeProject({
+      "ctx.ts":
+        "export function getCtx(): string | undefined { return undefined }\n",
+    });
+    const filename = project.pathOf("Comp.svelte");
+    const body = "\nimport { getCtx } from './ctx'\nconst unsound = getCtx()\n";
+    const source = `<script lang="ts">${body}</script>`;
+    const result = sveltePlugin().apply(
+      source,
+      [
+        entry(
+          `${filename}__script.ts`,
+          endOf(body, "const unsound"),
+          [["string"]],
+          {
+            varDecl: true,
+          },
+        ),
+      ],
+      {
+        filename,
+        projectVerify: createProjectVerificationContext(
+          project.fileNames,
+          project.compilerOptions,
+          project.dir,
+        ),
+      },
+    );
+    expect(result.skips).toEqual([
+      expect.objectContaining({
+        pos: source.indexOf("unsound") + "unsound".length,
+        reason: "type-error",
+      }),
+    ]);
   });
 });

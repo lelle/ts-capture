@@ -1,4 +1,5 @@
 import type {
+  AnnotateResult,
   ApplierPlugin,
   ApplyTypesOptions,
   CollectedTypeInfo,
@@ -7,7 +8,7 @@ import type {
 
 import { instrumentSource } from "@ts-capture/core";
 
-import { applySvelteTypesToFile } from "./apply.js";
+import { annotateSvelte } from "./apply.js";
 
 export { applySvelteTypesToFile } from "./apply.js";
 export type { ApplySvelteTypesOptions } from "./apply.js";
@@ -101,10 +102,12 @@ export function sveltePreprocessor(
  * skips every synthetic svelte path (the earlier safety net).
  * With it registered, both `__script.ts` and `__module.ts`
  * virtual entries for the same `.svelte` file are routed to a
- * single `applySvelteTypesToFile` call that writes annotations
+ * single `annotateSvelte` call that writes annotations
  * back into the owning file's `<script>` blocks.
  */
-export function sveltePlugin(): ApplierPlugin {
+export function sveltePlugin(): Omit<ApplierPlugin, "apply"> & {
+  apply: (...args: Parameters<ApplierPlugin["apply"]>) => AnnotateResult;
+} {
   const VIRTUAL_SUFFIX_RE = /\.svelte__(?:script|module)\.ts$/;
   return {
     name: "svelte",
@@ -115,14 +118,14 @@ export function sveltePlugin(): ApplierPlugin {
       source: string,
       entries: CollectedTypeInfo,
       options: ApplyTypesOptions,
-    ): string => {
+    ): AnnotateResult => {
       // `options.filename` is the resolved `.svelte` path (the CLI
       // strips the virtual suffix via resolveSourceFile before
       // calling). applySvelteTypesToFile uses it to filter entries
       // back to the right script/module block by matching the
       // virtual prefix in each entry's filename.
       const svelteFilename = options.filename ?? "";
-      return applySvelteTypesToFile(source, entries, {
+      return annotateSvelte(source, entries, {
         ...options,
         svelteFilename,
       });

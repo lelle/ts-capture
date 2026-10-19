@@ -147,7 +147,7 @@ function annotateWith(
   return { text: out, skips: telemetry.skipped, telemetry };
 }
 
-function addTelemetry(into: ApplyTelemetry, from: ApplyTelemetry): void {
+export function addTelemetry(into: ApplyTelemetry, from: ApplyTelemetry): void {
   into.totalEntries += from.totalEntries;
   into.emitted += from.emitted;
   into.idempotent += from.idempotent;

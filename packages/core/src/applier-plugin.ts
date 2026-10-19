@@ -17,6 +17,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 
+import type { AnnotateResult } from "./annotate.js";
 import type { ApplyTypesOptions } from "./contract.js";
 import type { CollectedTypeInfo } from "./type-collector.js";
 export interface ApplierPlugin {
@@ -42,15 +43,20 @@ export interface ApplierPlugin {
    * to this source file (possibly from MULTIPLE virtual paths —
    * e.g. both `__script.ts` and `__module.ts` for the same
    * `.svelte`), and the same ApplyTypesOptions the built-in
-   * applier would get. Must return the modified source verbatim
-   * (or the input unchanged if nothing applied).
+   * applier would get. Returns what `annotate` returns, with skip
+   * positions relative to `source`, so `apply --report` can list them.
    *
    * The plugin is responsible for any framework-specific logic
-   * (parsing `.svelte` blocks, mapping offsets, etc.). Core does
-   * not assume any particular structure beyond "source string in,
-   * source string out".
+   * (parsing `.svelte` blocks, mapping offsets, etc.).
+   *
+   * A plain string is still accepted, with nothing to report.
+   * @deprecated for the string return; return an `AnnotateResult`.
    */
-  apply: (source: string, entries: CollectedTypeInfo, options: ApplyTypesOptions) => string;
+  apply: (
+    source: string,
+    entries: CollectedTypeInfo,
+    options: ApplyTypesOptions,
+  ) => AnnotateResult | string;
 }
 
 export interface PluginRouting {

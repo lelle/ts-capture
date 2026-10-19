@@ -286,13 +286,10 @@ describe("sveltePlugin", () => {
       entry("comp.svelte__script.ts", endOf(FOO, "(a"), [["string"]]),
     ];
     const plugin = sveltePlugin();
-    const result = plugin.apply(svelteSource, typeInfo, {
+    const { text } = plugin.apply(svelteSource, typeInfo, {
       filename: "comp.svelte",
     });
-    expect(appliedSvelte(svelteSource, result).script).toAnnotate(
-      "a",
-      "string",
-    );
+    expect(appliedSvelte(svelteSource, text).script).toAnnotate("a", "string");
   });
 });
 

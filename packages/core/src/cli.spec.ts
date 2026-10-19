@@ -411,6 +411,50 @@ describe("cli", () => {
         });
       });
 
+      it("counts and reports what a plugin returning an AnnotateResult wrote and skipped", () => {
+        withTmpDir((dir) => {
+          const targetFile = path.join(dir, "target.ts");
+          fs.writeFileSync(targetFile, "let a;\nlet b;\n");
+          const syntheticFile = path.join(dir, "target.virtual.fake");
+          fs.writeFileSync(
+            path.join(dir, "ts-capture.config.mjs"),
+            [
+              "export default {",
+              "  plugins: [",
+              "    {",
+              "      name: 'fake-plugin',",
+              `      match: (f) => f.endsWith('.virtual.fake'),`,
+              `      resolveSourceFile: (f) => f.replace(/\\.virtual\\.fake$/, '.ts'),`,
+              `      apply: (source) => ({`,
+              `        text: source.replace('let a;', 'let a: number;'),`,
+              `        skips: [{ pos: 12, reason: 'no-information', observed: 'unknown' }],`,
+              `        telemetry: { totalEntries: 2, emitted: 1, idempotent: 0, unparseable: 0,`,
+              `          positionMismatch: 0, verifyReject: 0, redundant: 0, skipped: [] },`,
+              `      }),`,
+              "    },",
+              "  ],",
+              "};",
+              "",
+            ].join("\n"),
+          );
+          const jsonFile = path.join(dir, "types.json");
+          fs.writeFileSync(
+            jsonFile,
+            JSON.stringify([
+              [syntheticFile, 5, [["number", undefined]], { varDecl: true }],
+              [syntheticFile, 12, [["unknown", undefined]], { varDecl: true }],
+            ]),
+          );
+
+          const { stdout } = runInDir(dir, "apply", jsonFile, "--report");
+          expect(stdout).toContain("apply: 1 annotation written in 1 file.\n");
+          expect(stdout).toMatch(
+            / {2}Carries no type information \(1\)\n {4}\S*target\.ts:2:5 {2}b\n/,
+          );
+          expect(fs.readFileSync(targetFile, "utf-8")).toBe("let a: number;\nlet b;\n");
+        });
+      });
+
       it("invalid plugin config produces a clear error, not a silent skip", () => {
         withTmpDir((dir) => {
           const configPath = path.join(dir, "ts-capture.config.mjs");

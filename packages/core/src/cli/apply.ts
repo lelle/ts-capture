@@ -5,6 +5,7 @@ import ts from "typescript";
 
 import type { CollectedTypeInfo } from "../type-collector.js";
 
+import { addTelemetry } from "../annotate.js";
 import { type ApplierPlugin, loadPluginsFromConfig, routeFile } from "../applier-plugin.js";
 import { buildSkipMatcher } from "../apply-skip.js";
 import { applyTypesToFileCst } from "../apply-types-cst.js";
@@ -380,9 +381,8 @@ export async function cmdApply(args: string[], flags: Set<string>) {
       // Plugin-owned file: hand the resolved source + collected entries
       // to the plugin. Entries still carry their original virtual paths
       // so the plugin can route them to the right block / region inside
-      // the source. Plugins don't currently honor telemetry — that's a
-      // follow-up if/when plugin-side observability is needed.
-      result = group.plugin.apply(source, group.entries, {
+      // the source.
+      const applied = group.plugin.apply(source, group.entries, {
         infer,
         filename: file,
         verify,
@@ -393,6 +393,12 @@ export async function cmdApply(args: string[], flags: Set<string>) {
         // verification.
         projectVerify: projectVerifier,
       });
+      if (typeof applied === "string") {
+        result = applied;
+      } else {
+        result = applied.text;
+        addTelemetry(telemetry, { ...applied.telemetry, skipped: [...applied.skips] });
+      }
     } else {
       const apply = infer.cstAware ? applyTypesToFileCst : applyTypesToFile;
       // The language service's program holds every file applied so far; the
