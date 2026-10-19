@@ -155,6 +155,18 @@ describe.each(TIERS)("annotate, oracle %s", (tier) => {
         expect.objectContaining({ pos, reason: "already-annotated", observed: "string" }),
       );
     });
+
+    it("a `this`", () => {
+      const typed = "function greet(this: Date) { return this.getTime(); }\n";
+      const pos = typed.indexOf("(") + 1;
+      const { result } = annotated(tier, typed, [
+        entry("target.ts", pos, [["Date"]], { thisType: true }),
+      ]);
+      expect(result.text).toBe(typed);
+      expect(result.skips).toContainEqual(
+        expect.objectContaining({ pos, reason: "already-annotated" }),
+      );
+    });
   });
 
   it("reports a skip at its position in the text it was given", () => {

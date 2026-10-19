@@ -1,3 +1,5 @@
+import ts from "typescript";
+
 import type { InferOptions } from "./configuration.js";
 import type { ApplySkipReason, ApplyTelemetry } from "./contract.js";
 import type { CstSiteIndex, VarDeclSite } from "./cst-site-index.js";
@@ -92,7 +94,10 @@ export function routeEntries(
     }
     if (opts?.thisType) {
       const site = thisTypeSites.get(pos);
-      if (site) {
+      const first = site?.node.parameters[0];
+      if (first && ts.isIdentifier(first.name) && first.name.text === "this") {
+        skip(entry, "already-annotated");
+      } else if (site) {
         cstEligible.push({ entry, kind: "thisType" });
       } else {
         skip(entry, "no-site");
