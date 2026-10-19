@@ -357,6 +357,43 @@ describe("a tier with more to check writes no more than one with less, or says w
   });
 });
 
+// A Svelte block is checked as a file of its own, next to the component, that
+// the project's tsconfig never listed.
+describe("annotate, a file the project does not hold, under the project oracle", () => {
+  it("checks it against the project as if it were one of its files", () => {
+    const project = makeProject({ "lib.ts": "export const unit = 2;\n" });
+    const oracle: TypeOracle = {
+      kind: "project",
+      project: createProjectVerificationContext(
+        project.fileNames,
+        project.compilerOptions,
+        project.dir,
+      ),
+    };
+    const source =
+      'import { unit } from "./lib";\n' +
+      "export function scale(n) { return n * unit; }\n" +
+      "export function shout(s) { return s.toUpperCase(); }\n";
+    const nPos = source.indexOf("n)") + 1;
+    const sPos = source.indexOf("s)") + 1;
+    const result = annotate(
+      source,
+      [
+        entry("Box.svelte__script.ts", nPos, [["number"]]),
+        entry("Box.svelte__script.ts", sPos, [["number"]]),
+      ],
+      {
+        filename: project.pathOf("Box.svelte__script.ts"),
+        oracle,
+      },
+    );
+    expect(result.text).toContain("scale(n: number)");
+    expect(result.skips).toContainEqual(
+      expect.objectContaining({ pos: sPos, reason: "type-error" }),
+    );
+  });
+});
+
 describe("annotateProject", () => {
   function projectOf(files: Record<string, string>) {
     const project = makeProject(files);

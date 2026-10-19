@@ -8,6 +8,7 @@ import {
   createVerificationContext,
   orderByImports,
   type ProjectVerificationContext,
+  registerVirtualFile,
   type VerificationContext,
 } from "./apply-types-verify.js";
 import { INFER_DEFAULTS, type InferOptions } from "./configuration.js";
@@ -64,9 +65,20 @@ export function annotate(
   const oracle = options.oracle ?? { kind: "none" };
   const verify =
     oracle.kind === "project" && options.filename
-      ? createVerificationContext(oracle.project, options.filename, text)
+      ? verificationFor(oracle.project, options.filename, text)
       : undefined;
   return annotateWith(text, entries, options, verify);
+}
+
+/** A file the project does not list, such as a Svelte block, joins it as a virtual file. */
+function verificationFor(
+  project: ProjectVerificationContext,
+  filename: string,
+  text: string,
+): VerificationContext {
+  return project.userFiles.includes(filename)
+    ? createVerificationContext(project, filename, text)
+    : registerVirtualFile(project, filename, text);
 }
 
 /** Write the observed types into every file they name. */
