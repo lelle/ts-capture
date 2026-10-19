@@ -957,9 +957,9 @@ describe("tsCapturePlugin", () => {
   // *generated as a string* (not type-checked against CollectedTypeInfo
   // at compile time), so the structural contract has to be verified at
   // runtime. Asserts the snippet-emitted dump file structurally matches
-  // what applyTypesToFile consumes, by running a real roundtrip.
+  // what annotate consumes, by running a real roundtrip.
   describe("collector → apply contract roundtrip", () => {
-    it("snippet-emitted dump validates as CollectedTypeEntry[] and applyTypesToFile accepts it", async () => {
+    it("snippet-emitted dump validates as CollectedTypeEntry[] and annotate accepts it", async () => {
       const outDir = fs.mkdtempSync(path.join(os.tmpdir(), "ts-capture-contract-"));
       const prevDir = process.env.TS_CAPTURE_TYPES_DIR;
       process.env.TS_CAPTURE_TYPES_DIR = outDir;
@@ -1020,13 +1020,13 @@ describe("tsCapturePlugin", () => {
           expect(typeof entry[3]).toBe("object"); // ExtraOptions
         }
 
-        // Roundtrip: the dump must be accepted by applyTypesToFile without
+        // Roundtrip: the dump must be accepted by annotate without
         // error. Use a real source whose offset 9 is `function f(x` — i.e.
         // the parameter `x` after `function `. The applier should leave
         // either a typed or unchanged source, not throw.
-        const { applyTypesToFile } = await import("@ts-capture/core");
+        const { annotate } = await import("@ts-capture/core");
         const source = "function f(x) { return x; }";
-        const result = applyTypesToFile(source, raw, {});
+        const result = annotate(source, raw).text;
         expect(typeof result).toBe("string");
         expect(result.length).toBeGreaterThan(0);
       } finally {
@@ -1207,9 +1207,8 @@ describe("tsCapturePlugin", () => {
         const req = makeReq("/__ts-capture_collect", "POST");
         const res = makeRes();
         middleware(req, res, vi.fn());
-        // Two entries for the same file exercise the grouping merge branch
-        // (existing.push). Empty inner type arrays mean applyTypesToFile is a
-        // no-op, which is enough to cover the read + write back path.
+        // Empty inner type arrays mean annotate is a no-op, which is enough
+        // to cover the read + write back path.
         const payload = [
           [srcFile, 0, [], {}],
           [srcFile, 1, [], {}],
@@ -1217,6 +1216,47 @@ describe("tsCapturePlugin", () => {
         feed(req, JSON.stringify(payload));
         expect(res.writeHead).toHaveBeenCalledWith(200, { "Content-Type": "application/json" });
         expect(fs.readFileSync(srcFile, "utf-8")).toBe(original);
+      } finally {
+        fs.rmSync(tmpDir, { recursive: true, force: true });
+      }
+    });
+
+    it("apply: types an arrow inside JSX in a .tsx file", () => {
+      const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "ts-capture-vite-test-"));
+      const srcFile = path.join(tmpDir, "App.tsx");
+      // Read as plain TypeScript, the JSX before the arrow hides it.
+      const original = [
+        "it('no error', async () => {",
+        "  const App = () => {",
+        "    const [count, setCount] = useState(0)",
+        "    return (",
+        "      <Suspense fallback={<div>Loading...</div>}>",
+        "        <div>",
+        "          <button",
+        "            onClick={() => {",
+        "              startTransition(() => {",
+        "                setCount((c) => c + 1)",
+        "              })",
+        "            }}",
+        "          >",
+        "            {count}",
+        "          </button>",
+        "        </div>",
+        "      </Suspense>",
+        "    )",
+        "  }",
+        "  render(<App />, root)",
+        "})",
+        "",
+      ].join("\n");
+      fs.writeFileSync(srcFile, original);
+      try {
+        const middleware = captureMiddleware(tsCapturePlugin({ apply: true }) as Plugin);
+        const req = makeReq("/__ts-capture_collect", "POST");
+        middleware(req, makeRes(), vi.fn());
+        const pos = original.indexOf("(c)") + 2;
+        feed(req, JSON.stringify([[srcFile, pos, [["number", {}]], { arrow: true }]]));
+        expect(fs.readFileSync(srcFile, "utf-8")).toContain("setCount((c: number) => c + 1)");
       } finally {
         fs.rmSync(tmpDir, { recursive: true, force: true });
       }

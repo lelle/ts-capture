@@ -1,7 +1,7 @@
 import type { CollectedTypeInfo, LiteralOptions } from "@ts-capture/core";
 import type { Plugin, ViteDevServer } from "vite";
 
-import { applyTypesToFile, instrumentSource } from "@ts-capture/core";
+import { annotateProject, instrumentSource } from "@ts-capture/core";
 import fs from "node:fs";
 
 // ---------------------------------------------------------------------------
@@ -294,17 +294,10 @@ export function tsCapturePlugin(options: TsCapturePluginOptions = {}): Plugin {
             }
 
             if (options.apply) {
-              const grouped = new Map<string, CollectedTypeInfo>();
-              for (const entry of typeInfo) {
-                const file = entry[0];
-                const existing = grouped.get(file);
-                if (existing) existing.push(entry);
-                else grouped.set(file, [entry]);
-              }
-              for (const [file, entries] of grouped) {
+              const { files } = annotateProject({ types: typeInfo, readFile: readSource });
+              for (const [file, result] of files) {
                 try {
-                  const source = fs.readFileSync(file, "utf-8");
-                  fs.writeFileSync(file, applyTypesToFile(source, entries, {}));
+                  fs.writeFileSync(file, result.text);
                 } catch {}
               }
             }
@@ -319,6 +312,15 @@ export function tsCapturePlugin(options: TsCapturePluginOptions = {}): Plugin {
       });
     },
   };
+}
+
+/** A file that can't be read is left out of the apply, not a failed request. */
+function readSource(file: string): string | undefined {
+  try {
+    return fs.readFileSync(file, "utf-8");
+  } catch {
+    return undefined;
+  }
 }
 
 /**
