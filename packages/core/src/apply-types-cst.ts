@@ -120,7 +120,7 @@ export function applyTypesToFileCst(
   const ctorArityMap: Map<string, number> | undefined =
     program && options.filename ? buildCtorArityMap(program, options.filename) : undefined;
 
-  const sf = parseDetached(source);
+  const sf = parseDetached(source, options.filename);
 
   // --- Build AST-site indices ---
 
@@ -180,7 +180,11 @@ export function applyTypesToFileCst(
   if (verify && dependents.size > 0) {
     advanceCurrentSource(verify, afterFirst);
     const secondProgram = verify.project.service.getProgram() ?? program;
-    const secondIndex = buildCstSiteIndex(parseDetached(afterFirst), afterFirst, infer);
+    const secondIndex = buildCstSiteIndex(
+      parseDetached(afterFirst, options.filename),
+      afterFirst,
+      infer,
+    );
     // Sites keep their kind from the first routing; only their offsets moved.
     const originalPos = new Map<number, number>();
     const moved = new Map<string, RoutedEntry>();
@@ -245,13 +249,15 @@ function scopedTypeNamesFor(
   return buildScopedTypeNames(source, filename);
 }
 
-function parseDetached(source: string): ts.SourceFile {
+/** In the file's own dialect: read as plain TypeScript, JSX turns into error recovery. */
+function parseDetached(source: string, filename: string | undefined): ts.SourceFile {
+  const jsx = filename !== undefined && /\.[jt]sx$/.test(filename);
   return ts.createSourceFile(
-    "__ts-capture_apply_cst.ts",
+    jsx ? "__ts-capture_apply_cst.tsx" : "__ts-capture_apply_cst.ts",
     source,
     ts.ScriptTarget.Latest,
     /*setParentNodes*/ true,
-    ts.ScriptKind.TS,
+    jsx ? ts.ScriptKind.TSX : ts.ScriptKind.TS,
   );
 }
 

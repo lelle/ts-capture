@@ -15,10 +15,10 @@ import { makeProject, programOf } from "./test-utils/project.js";
 type Tier = TypeOracle["kind"];
 const TIERS: Tier[] = ["none", "program", "project"];
 
-/** Annotate `source` as `target.ts` of a fresh project, with the tier's oracle. */
-function annotated(tier: Tier, source: string, entries: CollectedTypeInfo) {
-  const project = makeProject({ "target.ts": source });
-  const filename = project.pathOf("target.ts");
+/** Annotate `source` as `file` of a fresh project, with the tier's oracle. */
+function annotated(tier: Tier, source: string, entries: CollectedTypeInfo, file = "target.ts") {
+  const project = makeProject({ [file]: source });
+  const filename = project.pathOf(file);
   const oracle: TypeOracle =
     tier === "none"
       ? { kind: "none" }
@@ -67,6 +67,43 @@ describe.each(TIERS)("annotate, oracle %s", (tier) => {
     if (tier !== "project") {
       expect(result.text).toContain("const parse = (s): number => JSON.parse(s);");
     }
+  });
+
+  // Read as plain TypeScript, the JSX before it turns the arrow into error
+  // recovery nodes, and its entries find no site.
+  it("types an arrow inside JSX in a .tsx file", () => {
+    const source = [
+      "it('no error', async () => {",
+      "  const App = () => {",
+      "    const [count, setCount] = useState(0)",
+      "    return (",
+      "      <Suspense fallback={<div>Loading...</div>}>",
+      "        <div>",
+      "          <button",
+      "            onClick={() => {",
+      "              startTransition(() => {",
+      "                setCount((c) => c + 1)",
+      "              })",
+      "            }}",
+      "          >",
+      "            {count}",
+      "          </button>",
+      "        </div>",
+      "      </Suspense>",
+      "    )",
+      "  }",
+      "  render(<App />, root)",
+      "})",
+      "",
+    ].join("\n");
+    const pos = source.indexOf("(c)") + 2;
+    const { result } = annotated(
+      tier,
+      source,
+      [entry("App.tsx", pos, [["number"]], { arrow: true })],
+      "App.tsx",
+    );
+    expect(result.skips.map((skip) => skip.reason)).not.toContain("no-site");
   });
 
   it("types a variable TypeScript cannot infer", () => {
