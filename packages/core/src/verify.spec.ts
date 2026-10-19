@@ -442,6 +442,23 @@ describe("verifyTypes (integration with TS program)", () => {
       expect(verifyTypes(typeInfo, program).entries[0].verdict).toBe("match");
     });
 
+    it("checks a written interface against the shape the run saw", () => {
+      const source =
+        "interface User { id: number; name: string }\n" +
+        "export function greet(user: User) { return user.name; }\n";
+      const { program, absPath } = buildProgramWithFile(source);
+      const at = source.indexOf("user: User") + "user".length;
+      const typeInfo: CollectedTypeInfo = [
+        [absPath, at, [["{ id: number, name: string }", undefined]], { annotated: true }],
+        [absPath, at, [["{ id: string, name: string }", undefined]], { annotated: true }],
+      ];
+
+      expect(verifyTypes(typeInfo, program).entries.map((e) => e.verdict)).toEqual([
+        "match",
+        "mismatch",
+      ]);
+    });
+
     it("lets an optional parameter be undefined", () => {
       const source = "export function f(headers?: string) { return headers; }\n";
       const { program, absPath } = buildProgramWithFile(source);

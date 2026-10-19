@@ -148,9 +148,9 @@ describe("cli", () => {
         expect(stdout).toContain("a.ts:1:21  a");
         expect(stdout).toContain("declared  string");
         expect(stdout).toContain("observed  number");
-        expect(stdout).toContain("1 match, 1 mismatch, 2 unverifiable");
+        // A Map where a Set is written: the checker settles what the text could not.
+        expect(stdout).toContain("1 match, 2 mismatch, 1 unverifiable");
         expect(stdout).toContain("1 declared any");
-        expect(stdout).toContain("1 complex declared type");
       });
     });
 

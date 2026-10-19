@@ -129,7 +129,7 @@ src/account.ts:12:17  balance
   observed  number
 
 120 observed positions: 10 match, 1 mismatch, 104 unverifiable, 5 without a declaration.
-  unverifiable: 98 declared any, 6 complex declared type
+  unverifiable: 98 declared any, 6 generic declared type
 ```
 
 When written types were observed, they get a section of their own, ahead of
@@ -150,11 +150,17 @@ Inferred types (310 checked)
 When none were, `verify` says so on stderr, so a run without the variable does
 not read as "every type you wrote is right".
 
-A position is _unverifiable_ when the comparison would be a guess: the type is
-`any`, `unknown` or polymorphic `this`, or a generic the heuristic can only
-compare for equality. An observed `undefined` matches a `void` return. An async
-return is compared with what its promise resolved to; one whose promise never
-settled is unverifiable. _Without a declaration_ counts positions whose file is
+TypeScript does the comparing: each observed type is resolved in the file it
+was seen in, a name the file does not import through the one module that
+exports it, and checked for assignability to the type at the position. A
+position is _unverifiable_ when the run cannot decide: the type is `any`,
+`unknown`, polymorphic `this` or generic; it is a literal type the run widens
+(`"a"` is observed as `string`) or narrower than any observation can show (a
+brand, type arguments); a name in the observation is in no module, or in more
+than one; or the type requires what the runtime does not record (symbol keys,
+methods a class instance inherits). An observed `undefined` matches a `void`
+return. An async return is compared with what its promise resolved to; one
+whose promise never settled is unverifiable. _Without a declaration_ counts positions whose file is
 not in the project, or that no longer line up with a declaration because the
 source changed after observation.
 
