@@ -18,6 +18,8 @@ export default [
   },
   {
     files: ["**/*.{ts,tsx,mts,cts}"],
+    // Directives here name rules from eslint.config.mjs, which this config doesn't run.
+    linterOptions: { reportUnusedDisableDirectives: "off" },
     languageOptions: {
       parser: tsParser,
       parserOptions: {
