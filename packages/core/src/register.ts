@@ -18,7 +18,7 @@ import { register } from "node:module";
 
 import type { CollectionContext, ExtraOptions } from "./type-collector.js";
 
-import { applyTypesToFile } from "./apply-types.js";
+import { annotateProject } from "./annotate.js";
 import { createCollectionContext, getTypeName } from "./type-collector.js";
 
 // Collection context for this session
@@ -62,25 +62,23 @@ process.on("exit", () => {
   const collected = ctx.getCollectedTypes();
   if (collected.length === 0) return;
 
-  // Group by filename
-  const grouped = new Map<string, typeof collected>();
-  for (const entry of collected) {
-    const file = entry[0];
-    const existing = grouped.get(file);
-    if (existing) existing.push(entry);
-    else grouped.set(file, [entry]);
-  }
-
-  for (const [file, entries] of grouped) {
+  const { files } = annotateProject({ types: collected, readFile: readSource });
+  for (const [file, result] of files) {
     try {
-      const source = fs.readFileSync(file, "utf-8");
-      const result = applyTypesToFile(source, entries, {});
-      fs.writeFileSync(file, result);
+      fs.writeFileSync(file, result.text);
     } catch {
       // Best-effort during exit
     }
   }
 });
+
+function readSource(file: string): string | undefined {
+  try {
+    return fs.readFileSync(file, "utf-8");
+  } catch {
+    return undefined;
+  }
+}
 
 // `register` is flagged @deprecated by recent @types/node in favour of
 // `module.registerHooks`, but we keep it deliberately: registerHooks needs

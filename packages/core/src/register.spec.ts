@@ -33,7 +33,7 @@ describe("register (node runner)", () => {
       const lines = [
         `import { instrumentSource } from "${distDir}/instrument.js";`,
         `import { createCollectionContext } from "${distDir}/type-collector.js";`,
-        `import { applyTypesToFile } from "${distDir}/apply-types.js";`,
+        `import { annotate } from "${distDir}/annotate.js";`,
         `import fs from "node:fs";`,
         `import ts from "${tsLib}";`,
         `const source = fs.readFileSync("${srcFile}", "utf-8");`,
@@ -44,7 +44,7 @@ describe("register (node runner)", () => {
         `const fn = new Function("__tscptr__", "console", compiled);`,
         `fn(tscptr, console);`,
         `const types = ctx.getCollectedTypes().filter(([f]) => f === "${srcFile}");`,
-        `if (types.length > 0) { fs.writeFileSync("${srcFile}", applyTypesToFile(source, types, {})); }`,
+        `if (types.length > 0) { fs.writeFileSync("${srcFile}", annotate(source, types).text); }`,
       ];
       const runnerFile = path.join(dir, "runner.mjs");
       fs.writeFileSync(runnerFile, lines.join("\n"));
