@@ -21,6 +21,8 @@ export default defineConfig({
         "src/**/*.spec.ts",
         "src/test-utils/**",
         "src/cli.ts",
+        // Run as dist/cli.js in a child process, out of reach of in-process coverage.
+        "src/cli/!(apply-report).ts",
         "src/loader.ts",
         "src/register.ts",
       ],
