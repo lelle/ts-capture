@@ -451,6 +451,28 @@ describe("annotateProject", () => {
     );
   });
 
+  it("checks a file the project does not hold against it, under the project oracle", () => {
+    const { project, context } = projectOf({ "lib.ts": "export const unit = 2;\n" });
+    const source =
+      'import { unit } from "./lib";\n' +
+      "export function scale(n) { return n * unit; }\n" +
+      "export function shout(s) { return s.toUpperCase(); }\n";
+    const outside = project.pathOf("outside.ts");
+    const sPos = source.indexOf("s)") + 1;
+    const run = annotateProject({
+      types: [
+        entry(outside, source.indexOf("n)") + 1, [["number"]]),
+        entry(outside, sPos, [["number"]]),
+      ],
+      readFile: (path) => (path === outside ? source : undefined),
+      oracle: { kind: "project", project: context },
+    });
+    expect(run.files.get(outside)!.text).toContain("scale(n: number)");
+    expect(run.files.get(outside)!.skips).toContainEqual(
+      expect.objectContaining({ pos: sPos, reason: "type-error" }),
+    );
+  });
+
   it("skips a file it cannot read", () => {
     const run = annotateProject({
       types: [entry("/nowhere.ts", 1, [["number"]])],

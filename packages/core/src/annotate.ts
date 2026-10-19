@@ -107,7 +107,7 @@ export function annotateProject(input: AnnotateProjectInput): AnnotateProjectRes
     if (text === undefined) continue;
     const options = { filename: file, infer: input.infer, oracle, ignoreFiles: input.ignoreFiles };
     const verify =
-      oracle.kind === "project" ? createVerificationContext(oracle.project, file, text) : undefined;
+      oracle.kind === "project" ? verificationFor(oracle.project, file, text) : undefined;
     const result = annotateWith(text, grouped.get(file)!, options, verify);
     // The next file is checked against this one as written.
     if (verify) advanceCurrentSource(verify, result.text);
