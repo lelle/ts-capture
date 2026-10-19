@@ -1630,4 +1630,54 @@ describe("cli", () => {
       expect(exitCode).toBe(1);
     });
   });
+
+  describe("apply-bundle", () => {
+    it("types the source parameters behind a bundle's observations", async () => {
+      const { SourceMapGenerator } = await import("source-map");
+      const dir = fs.mkdtempSync(path.join(os.tmpdir(), "ts-capture-cli-"));
+      try {
+        const source = "export function add(a, b) { return a + b; }\n";
+        fs.writeFileSync(path.join(dir, "src.ts"), source);
+        // Minified, as a bundler would leave it; the map leads back to the names.
+        const bundle = "function add(r,e){return r+e}\n";
+        fs.writeFileSync(path.join(dir, "bundle.js"), bundle);
+        const map = new SourceMapGenerator({ file: "bundle.js" });
+        for (const [mangled, name] of [
+          ["r,", "a,"],
+          ["e)", "b)"],
+        ]) {
+          map.addMapping({
+            source: "src.ts",
+            original: { line: 1, column: source.indexOf(name) },
+            generated: { line: 1, column: bundle.indexOf(mangled) },
+          });
+        }
+        fs.writeFileSync(path.join(dir, "bundle.js.map"), map.toString());
+        const bundlePath = path.join(dir, "bundle.js");
+        fs.writeFileSync(
+          path.join(dir, "observations.json"),
+          JSON.stringify([
+            { name: "r", pos: bundle.indexOf("r,"), file: bundlePath, type: "number" },
+            { name: "e", pos: bundle.indexOf("e)"), file: bundlePath, type: "number" },
+          ]),
+        );
+
+        const { stdout, exitCode } = run(
+          "apply-bundle",
+          path.join(dir, "observations.json"),
+          "--map",
+          path.join(dir, "bundle.js.map"),
+        );
+
+        expect(exitCode).toBe(0);
+        expect(stdout).toContain("2 translated");
+        const out = checked(source, fs.readFileSync(path.join(dir, "src.ts"), "utf-8"));
+        expect(out).toAnnotate("a", "number");
+        expect(out).toAnnotate("b", "number");
+        expect(out).toHaveNoNewDiagnostics();
+      } finally {
+        fs.rmSync(dir, { recursive: true, force: true });
+      }
+    });
+  });
 });

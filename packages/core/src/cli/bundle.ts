@@ -2,9 +2,8 @@ import fs from "node:fs";
 import path from "node:path";
 
 import type { BundleObservation } from "../bundle/instrument-bundle.js";
-import type { CollectedTypeInfo } from "../type-collector.js";
 
-import { applyTypesToFile } from "../apply-types.js";
+import { annotateProject } from "../annotate.js";
 import { instrumentBundle } from "../bundle/instrument-bundle.js";
 import { translateBundleObservations } from "../bundle/translate-observations.js";
 
@@ -76,18 +75,10 @@ export async function cmdApplyBundle(args: string[]) {
     `apply-bundle: ${observations.length} observations -> ${result.typeInfo.length} translated, ${result.unmapped.length} unmapped, ${result.missingSource.length} missing-source\n`,
   );
 
-  // Group by file and apply via existing applyTypesToFile.
-  const grouped = new Map<string, CollectedTypeInfo>();
-  for (const entry of result.typeInfo) {
-    const file = entry[0];
-    const existing = grouped.get(file);
-    if (existing) existing.push(entry);
-    else grouped.set(file, [entry]);
-  }
-  for (const [file, entries] of grouped) {
-    const source = fs.readFileSync(file, "utf-8");
-    const updated = applyTypesToFile(source, entries, {});
-    fs.writeFileSync(file, updated);
-  }
-  process.stdout.write(`apply-bundle: applied to ${grouped.size} files\n`);
+  const { files } = annotateProject({
+    types: result.typeInfo,
+    readFile: (file) => fs.readFileSync(file, "utf-8"),
+  });
+  for (const [file, annotated] of files) fs.writeFileSync(file, annotated.text);
+  process.stdout.write(`apply-bundle: applied to ${files.size} files\n`);
 }
