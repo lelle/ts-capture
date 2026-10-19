@@ -1,6 +1,7 @@
 import ts from "typescript";
 
-import { parseObjectType, splitTopLevelUnion } from "./type-merge.js";
+import { parseObjectType } from "./type-merge.js";
+import { unionArms } from "./type-text.js";
 
 type PartitionedMembers = { required: Map<string, string>; optional: Map<string, string> };
 type MemberPair = { key: string; type: string };
@@ -415,7 +416,7 @@ const LITERAL_ARM_RE = /^(?:"(?:[^"\\]|\\.)*"|-?\d+(?:\.\d+)?|true|false)$/;
  */
 function literalUnionAlias(emitted: string, aliases: readonly LiteralUnionAlias[]): string | null {
   if (aliases.length === 0) return null;
-  const arms = splitTopLevelUnion(emitted.trim());
+  const arms = unionArms(emitted.trim());
   const literals = [...new Set(arms.filter((arm) => LITERAL_ARM_RE.test(arm)))].sort();
   if (literals.length === 0) return null;
   const others = arms.filter((arm) => !LITERAL_ARM_RE.test(arm));
@@ -498,7 +499,7 @@ function rewriteToNamedRecursive(
   }
   // Top-level union: rewrite each branch; rejoin only if any branch
   // changed. Preserves the original separator format (`|` vs ` | `).
-  const branches = splitTopLevelUnion(trimmed);
+  const branches = unionArms(trimmed);
   if (branches.length > 1) {
     let anyChanged = false;
     const rewrittenBranches = branches.map((b) => {
@@ -696,7 +697,7 @@ function fieldTypeCompatible(observed: string, candidate: string): boolean {
   const o = observed.trim();
   const c = candidate.trim();
   if (o === c) return true;
-  const candidateBranches = splitTopLevelUnion(c).map((s) => s.trim());
+  const candidateBranches = unionArms(c).map((s) => s.trim());
   if (candidateBranches.length > 1 && candidateBranches.includes(o)) {
     // Observation's branch is one of the candidate's union members.
     return true;

@@ -10,6 +10,7 @@ import {
   type TypeNode,
   widenLiterals,
 } from "./type-ir.js";
+import { typeText, unionArms } from "./type-text.js";
 
 /**
  * Parse a top-level object type string into a key→value map. Accepts both
@@ -211,13 +212,7 @@ export function collapseLiteral(type: string, infer: InferOptions): string {
  * `Discriminant = HasNonUniformType | HasLiteralType`.
  */
 function isLiteralTypeString(type: string): boolean {
-  if (/^"(?:[^"\\]|\\.)*"$/.test(type)) return true;
-  // Numeric literals: accept decimal AND scientific notation. The
-  // runtime collector emits `String(value)` (value-walker.ts, resolveType)
-  // which produces scientific form for very large/small finite numbers
-  // — `String(1e21) === "1e+21"`.
-  if (/^-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?$/.test(type)) return true;
-  return type === "true" || type === "false";
+  return typeText(type)?.literal === true;
 }
 
 /**
@@ -263,31 +258,6 @@ function mergeKeyValues(values: string[], infer: InferOptions = INFER_DEFAULTS):
 }
 
 /**
- * Depth-aware split of a top-level union string. `{a:T}|{b:U}` splits to
- * `["{a:T}", "{b:U}"]`. Nested braces / brackets / parens / angle brackets
- * are skipped so unions inside object values don't break the split.
- */
-export function splitTopLevelUnion(s: string): string[] {
-  const parts: string[] = [];
-  let depth = 0;
-  let start = 0;
-  for (let i = 0; i < s.length; i++) {
-    const ch = s[i]!;
-    if (ch === "{" || ch === "[" || ch === "(" || ch === "<") depth++;
-    // The `>` of a function type's `=>` closes nothing.
-    else if (ch === ">" && s[i - 1] === "=") continue;
-    else if (ch === "}" || ch === "]" || ch === ")" || ch === ">") depth--;
-    else if (depth === 0 && ch === "|") {
-      // Accept either `|` or ` | ` as the union separator
-      parts.push(s.slice(start, i).trim());
-      start = i + 1;
-    }
-  }
-  parts.push(s.slice(start).trim());
-  return parts.filter((p) => p.length > 0);
-}
-
-/**
  * Collapse cartesian-product object unions inside an array shape.
  *
  *   Array<{a:null,b:null} | {a:null,b:n} | {a:n,b:null} | {a:n,b:n}>
@@ -315,7 +285,7 @@ function compressArrayObjectUnion(t: string, infer: InferOptions): string {
     inner = arrayMatch[1]!;
   }
 
-  const parts = splitTopLevelUnion(inner);
+  const parts = unionArms(inner);
   if (parts.length < 2) return t;
 
   const objectParts: string[] = [];
@@ -622,7 +592,7 @@ function mergeTupleTypes(types: string[]): string[] {
   const arity = tuples[0].elements.length;
   if (arrays.length === 0 && tuples.every((tuple) => tuple.elements.length === arity)) {
     const elements = tuples[0].elements.map((_, i) => {
-      const arms = new Set(tuples.flatMap((tuple) => splitTopLevelUnion(tuple.elements[i])));
+      const arms = new Set(tuples.flatMap((tuple) => unionArms(tuple.elements[i])));
       return [...arms].sort().join(" | ");
     });
     return [...rest, `[${elements.join(", ")}]`];

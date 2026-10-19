@@ -5,6 +5,7 @@ import type { CollectedTypeInfo, ExtraOptions } from "./type-collector.js";
 import { findCloseParenPos } from "./instrumentation-site-spec.js";
 import { unwrapOneLevelPromise } from "./named-type-rewrite.js";
 import { parseObjectType } from "./type-merge.js";
+import { unionArms } from "./type-text.js";
 
 export type VerifyVerdict = "match" | "mismatch" | "unverifiable" | "no-declaration";
 
@@ -142,7 +143,7 @@ function resolveDeclaredType(node: ts.Node, checker: ts.TypeChecker): string {
     const written = checker.typeToString(checker.getTypeFromTypeNode(explicitType));
     // `x?: T` may be left out, which a call observes as `undefined`.
     const optional = ts.isParameter(node) && node.questionToken !== undefined;
-    if (!optional || splitTopLevelUnion(written).includes("undefined")) return written;
+    if (!optional || unionArms(written).includes("undefined")) return written;
     return isFunctionType(written) ? `(${written}) | undefined` : `${written} | undefined`;
   }
   return checker.typeToString(checker.getTypeAtLocation(node));
@@ -264,7 +265,7 @@ export function isCompatible(observed: string[], declared: string): VerifyOutcom
 
   // A union with a function, object or generic arm, `((e: Error) => void) |
   // undefined`: each observation is held against each arm on its own.
-  const arms = splitTopLevelUnion(declaredNorm);
+  const arms = unionArms(declaredNorm);
   if (arms.length > 1 && arms.some(isComplex)) return compareArms(observed, arms);
 
   // Function types: declared `(args) => ret` (possibly with generics prefix).
@@ -366,24 +367,6 @@ function compareArms(observed: string[], arms: string[]): VerifyOutcome {
     unverifiable ??= unsure;
   }
   return unverifiable ?? { verdict: "match" };
-}
-
-/** Split on the `|` that are not inside brackets, parentheses or a generic. */
-function splitTopLevelUnion(t: string): string[] {
-  const arms: string[] = [];
-  let depth = 0;
-  let start = 0;
-  for (let i = 0; i < t.length; i++) {
-    const c = t[i];
-    if (c === "(" || c === "{" || c === "[" || c === "<") depth++;
-    else if (c === ")" || c === "}" || c === "]" || (c === ">" && t[i - 1] !== "=")) depth--;
-    else if (c === "|" && depth === 0) {
-      arms.push(t.slice(start, i).trim());
-      start = i + 1;
-    }
-  }
-  arms.push(t.slice(start).trim());
-  return arms.filter((arm) => arm.length > 0);
 }
 
 function unparenthesize(t: string): string {

@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { INFER_DEFAULTS, type InferOptions } from "./configuration.js";
-import { collapseLiteral, mergeTypes, parseObjectType, splitTopLevelUnion } from "./type-merge.js";
+import { collapseLiteral, mergeTypes, parseObjectType } from "./type-merge.js";
 import "./test-utils/matchers.js";
 
 // Boundary / characterization spec for the type-merge algebra. type-merge.ts
@@ -109,33 +109,6 @@ describe("collapseLiteral", () => {
 
   it("does not widen nested literals when the flag is on", () => {
     expect(collapseLiteral('{ a: "yes" }', litOn)).toBeTheType('{ a: "yes" }');
-  });
-});
-
-describe("splitTopLevelUnion", () => {
-  it("splits a top-level union into its members", () => {
-    expect(splitTopLevelUnion("string | number")).toEqual(["string", "number"]);
-  });
-
-  it("does not split unions nested inside generic arguments", () => {
-    expect(splitTopLevelUnion("Map<string | number, boolean>")).toEqual([
-      "Map<string | number, boolean>",
-    ]);
-  });
-
-  it("splits after a member whose type is a function", () => {
-    expect(splitTopLevelUnion("{ f: () => void } | string")).toEqual([
-      "{ f: () => void }",
-      "string",
-    ]);
-  });
-
-  it("splits around a parenthesised function type", () => {
-    expect(splitTopLevelUnion("string | (() => void) | number")).toEqual([
-      "string",
-      "(() => void)",
-      "number",
-    ]);
   });
 });
 

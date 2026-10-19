@@ -67,6 +67,8 @@
 import { randomUUID } from "node:crypto";
 import ts from "typescript";
 
+import { unionArms } from "./type-text.js";
+
 const SYNTH_PATH = "/__ts-capture_merge_probe.ts";
 
 /**
@@ -176,42 +178,7 @@ export function _prototypeMergeViaChecker(types: readonly string[]): string[] | 
   // (`Array.from(new Set(...)).sort().join(" | ")`) operates on
   // member-level granularity. Previous version returned `[joined]`,
   // which collapsed downstream dedup/sort/filter into no-ops.
-  return splitTopLevelUnion(mergedText);
-}
-
-/**
- * Split a `|`-separated union string into its top-level members,
- * respecting bracket nesting. `"A | (B | C)"` → `["A", "(B | C)"]`.
- * `"{ a: number; b: string; } | { a: number; }"` → both shapes.
- *
- * Pipes inside `()`, `[]`, `{}`, or `<>` brackets are treated as
- * nested operator usage, not member separators.
- */
-function splitTopLevelUnion(s: string): string[] {
-  const out: string[] = [];
-  let depth = 0;
-  let start = 0;
-  let inQuote: string | null = null;
-  for (let i = 0; i < s.length; i++) {
-    const c = s[i];
-    if (inQuote) {
-      if (c === inQuote && s[i - 1] !== "\\") inQuote = null;
-      continue;
-    }
-    if (c === '"' || c === "'" || c === "`") {
-      inQuote = c;
-      continue;
-    }
-    if (c === "(" || c === "[" || c === "{" || c === "<") depth++;
-    else if (c === ")" || c === "]" || c === "}" || c === ">") depth--;
-    else if (c === "|" && depth === 0) {
-      out.push(s.slice(start, i).trim());
-      start = i + 1;
-    }
-  }
-  const tail = s.slice(start).trim();
-  if (tail !== "") out.push(tail);
-  return out;
+  return unionArms(mergedText);
 }
 
 /**
