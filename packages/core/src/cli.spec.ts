@@ -776,16 +776,6 @@ describe("cli", () => {
         return out!;
       }
 
-      // The offset-based applier serves pass-through entries even when
-      // `cstAware` is on, and it had no checker check at all — which is where
-      // all 23 redundant `: void` annotations in the nest run came from.
-      it("skips `: void` through the offset-based applier too", () => {
-        const source = "export function run(cb) {\n  cb();\n}\n";
-        expect(
-          applyReturnFixture(source, (s) => s.indexOf("(cb)") + 4, ["--infer.cstAware=false"]),
-        ).toLeaveUntyped({ returnOf: "run" });
-      });
-
       it("skips `: void` on a function declaration", () => {
         const source = "export function run(cb) {\n  cb();\n}\n";
         expect(applyReturnFixture(source, (s) => s.indexOf("(cb)") + 4)).toLeaveUntyped({
@@ -820,6 +810,37 @@ describe("cli", () => {
         const source = "export const run = (cb) => {\n  cb();\n};\n";
         expect(applyReturnFixture(source, (s) => s.indexOf("(cb)") + 4)).toLeaveUntyped({
           returnOf: "run",
+        });
+      });
+    });
+
+    describe("a file the tsconfig does not list", () => {
+      it("checks each annotation against the project before writing it", () => {
+        withTmpDir((rawDir) => {
+          const dir = fs.realpathSync(rawDir);
+          fs.writeFileSync(
+            path.join(dir, "tsconfig.json"),
+            JSON.stringify({ ...JSON.parse(TSCONFIG), include: undefined, files: ["lib.ts"] }),
+          );
+          fs.writeFileSync(path.join(dir, "lib.ts"), "export const unit = 2;\n");
+          const source =
+            'import { unit } from "./lib";\n' +
+            "export function scale(n) { return n * unit; }\n" +
+            "export function shout(s) { return s.toUpperCase(); }\n";
+          const file = path.join(dir, "outside.ts");
+          fs.writeFileSync(file, source);
+          const jsonFile = path.join(dir, "types.json");
+          fs.writeFileSync(
+            jsonFile,
+            JSON.stringify([
+              [file, source.indexOf("n)") + 1, [["number", undefined]], {}],
+              [file, source.indexOf("s)") + 1, [["number", undefined]], {}],
+            ]),
+          );
+          const { stdout } = runInDir(dir, "apply", jsonFile, "--report");
+          expect(fileAfter(file, source)).toAnnotate("n", "number");
+          expect(fileAfter(file, source)).toLeaveUntyped("s");
+          expect(stdout).toContain("Would add a type error");
         });
       });
     });
@@ -963,6 +984,22 @@ describe("cli", () => {
           fs.writeFileSync(jsonFile, JSON.stringify([[file, 14, [["string", undefined]], {}]]));
           const { stderr } = runInDir(dir, "apply", jsonFile, "--dry-run", "--comments");
           expect(stderr).not.toContain("unrecognised");
+        });
+      });
+    });
+
+    // The setting chose the offset-based applier, which is gone.
+    describe("infer.cstAware=false", () => {
+      it("says it no longer has an effect, and applies as without it", () => {
+        withTmpDir((dir) => {
+          const file = path.join(dir, "a.ts");
+          fs.writeFileSync(file, FOO);
+          const jsonFile = path.join(dir, "types.json");
+          fs.writeFileSync(jsonFile, JSON.stringify([[file, 14, [["string", undefined]], {}]]));
+          const { exitCode, stderr } = runInDir(dir, "apply", jsonFile, "--infer.cstAware=false");
+          expect(exitCode).toBe(0);
+          expect(stderr).toContain("infer.cstAware has no effect");
+          expect(fileAfter(file, FOO)).toAnnotate("a", "string");
         });
       });
     });

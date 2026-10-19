@@ -5,17 +5,14 @@ import ts from "typescript";
 
 import type { CollectedTypeInfo } from "../type-collector.js";
 
-import { addTelemetry } from "../annotate.js";
+import { addTelemetry, annotateProject } from "../annotate.js";
 import { type ApplierPlugin, loadPluginsFromConfig, routeFile } from "../applier-plugin.js";
 import { buildSkipMatcher } from "../apply-skip.js";
-import { applyTypesToFileCst } from "../apply-types-cst.js";
 import {
   advanceCurrentSource,
   createProjectVerificationContext,
   createVerificationContext,
-  orderByImports,
 } from "../apply-types-verify.js";
-import { applyTypesToFile } from "../apply-types.js";
 import { getProgram } from "../compiler-helper.js";
 import { findConfigFile, loadConfig } from "../config-file.js";
 import {
@@ -178,11 +175,9 @@ export async function cmdApply(args: string[], flags: Set<string>) {
   // asking each applier afterwards what it did.
   const telemetry: ApplyTelemetry = newApplyTelemetry();
 
-  // Idempotency manifest: <types.json>.applied. Covers the
-  // multi-entry case (the in-source pos-based check in applyTypesToFile
-  // covers single-entry; this covers full-file). On match:
-  // short-circuit. --force bypasses; --dry-run never writes the
-  // manifest.
+  // Idempotency manifest: <types.json>.applied. The applier skips a site
+  // already typed; this skips the whole run. --force bypasses; --dry-run never
+  // writes the manifest.
   const manifestPath = resolved + ".applied";
   const currentHash = hashTypeInfoContent(jsonContent);
   if (!force && !dryRun && fs.existsSync(manifestPath)) {
@@ -317,6 +312,12 @@ export async function cmdApply(args: string[], flags: Set<string>) {
     infer = { ...infer, typecheckVerify: false };
   }
 
+  if (infer.cstAware === false) {
+    process.stderr.write(
+      `[ts-capture apply] infer.cstAware has no effect: there is one applier now. The setting will be removed.\n`,
+    );
+  }
+
   if (infer.ignoreExistingTypes) {
     process.stderr.write(
       `[ts-capture apply] --infer.ignoreExistingTypes is ON. This mode bypasses idempotency checks and emits annotations at already-typed positions; the resulting source IS NOT VALID TYPESCRIPT. Use it for divergence measurement only.\n`,
@@ -349,86 +350,70 @@ export async function cmdApply(args: string[], flags: Set<string>) {
         )
       : undefined;
 
-  // Dependencies first, so a callee annotated earlier in the run is typed by
-  // the time its callers' locals are judged for redundancy.
-  const orderedFiles = projectVerifier
-    ? orderByImports([...grouped.keys()], projectVerifier.reverseImportGraph)
-    : [...grouped.keys()];
+  const builtIn: CollectedTypeInfo = [];
+  const pluginFiles: string[] = [];
+  for (const [file, group] of grouped) {
+    if (skipMatcher.shouldSkip(file)) skippedFiles.push(file);
+    else if (group.plugin) pluginFiles.push(file);
+    else builtIn.push(...group.entries);
+  }
 
-  for (const file of orderedFiles) {
+  const sources = new Map<string, string>();
+  const results = new Map<string, string>();
+  const run = annotateProject({
+    types: builtIn,
+    readFile: (file) => {
+      const source = fs.readFileSync(file, "utf-8");
+      sources.set(file, source);
+      return source;
+    },
+    oracle: projectVerifier
+      ? { kind: "project", project: projectVerifier }
+      : program
+        ? { kind: "program", program }
+        : { kind: "none" },
+    infer,
+  });
+  addTelemetry(telemetry, run.telemetry);
+  for (const [file, result] of run.files) {
+    results.set(file, result.text);
+    for (const skip of result.skips) located.push(locateSkip(skip, file, sources.get(file)!));
+  }
+
+  // After the built-in files, so a block is checked against the files it imports as written.
+  for (const file of pluginFiles) {
     const group = grouped.get(file)!;
-    if (skipMatcher.shouldSkip(file)) {
-      skippedFiles.push(file);
-      continue;
-    }
-
     const source = fs.readFileSync(file, "utf-8");
-    // Verify only fires when the target file is part of the discovered
-    // tsconfig's project. Files outside (e.g. ad-hoc test fixtures in
-    // /tmp without their own tsconfig, or plugin-owned framework files
-    // like `.svelte` that aren't in tsconfig's fileNames) fall back to
-    // the heuristic path — the LanguageService can't supply diagnostics
-    // for files it doesn't know about, so the verify probe would
-    // silently reject every candidate.
+    sources.set(file, source);
+    // The language service holds only the files the tsconfig lists; the
+    // plugin registers its blocks into the project context itself.
     const verify =
       projectVerifier && projectVerifier.userFiles.includes(file)
         ? createVerificationContext(projectVerifier, file, source)
         : undefined;
-
-    const firstSkipOfFile = telemetry.skipped.length;
+    // Entries keep their virtual paths, so the plugin can route each to its block.
+    const applied = group.plugin!.apply(source, group.entries, {
+      infer,
+      filename: file,
+      verify,
+      projectVerify: projectVerifier,
+    });
     let result: string;
-    if (group.plugin) {
-      // Plugin-owned file: hand the resolved source + collected entries
-      // to the plugin. Entries still carry their original virtual paths
-      // so the plugin can route them to the right block / region inside
-      // the source.
-      const applied = group.plugin.apply(source, group.entries, {
-        infer,
-        filename: file,
-        verify,
-        // Plugins verify their own framework blocks by registering
-        // virtual TS files into the shared project context. Per-file
-        // `verify` is undefined for .svelte (not in tsconfig), so hand
-        // over the project context for the plugin to build block-level
-        // verification.
-        projectVerify: projectVerifier,
-      });
-      if (typeof applied === "string") {
-        result = applied;
-      } else {
-        result = applied.text;
-        addTelemetry(telemetry, { ...applied.telemetry, skipped: [...applied.skips] });
-      }
+    if (typeof applied === "string") {
+      result = applied;
     } else {
-      const apply = infer.cstAware ? applyTypesToFileCst : applyTypesToFile;
-      // The language service's program holds every file applied so far; the
-      // one built from disk does not.
-      const current = verify ? (projectVerifier?.service.getProgram() ?? program) : program;
-      result = apply(source, group.entries, { infer, filename: file, verify, telemetry }, current);
+      result = applied.text;
+      addTelemetry(telemetry, { ...applied.telemetry, skipped: [...applied.skips] });
+      for (const skip of applied.skips) located.push(locateSkip(skip, file, source));
     }
+    // Later files are checked against this one as written; `--dry-run` too,
+    // or its preview would list files the real run rejects.
+    if (verify) advanceCurrentSource(verify, result);
+    results.set(file, result);
+  }
 
-    // Tell the shared LanguageService what this file now says, so later
-    // files verify against the project as it actually is rather than
-    // against every earlier file's original text. Without this, an
-    // annotation that is only wrong in combination with an earlier file's
-    // annotation is never seen — six such errors survived a run on
-    // nestjs/nest with `typecheckVerify` on.
-    //
-    // `advanceCurrentSource`, not `commitReplacements`: the cheap variant
-    // swaps the in-memory source without the project-wide re-baseline. The
-    // re-baseline would absorb exactly the cross-file regressions we want
-    // to catch, and costs a full diagnostic scan per applied file.
-    //
-    // `--dry-run` advances too. Nothing here touches disk, and a preview
-    // that judged every file against the project's starting state would
-    // list files the real run then rejects at verify.
-    if (verify) {
-      advanceCurrentSource(verify, result);
-    }
-    for (const skip of telemetry.skipped.slice(firstSkipOfFile)) {
-      located.push(locateSkip(skip, file, source));
-    }
-
+  for (const [file, result] of results) {
+    const source = sources.get(file)!;
     if (result === source) {
       noChange.push(file);
       continue;
