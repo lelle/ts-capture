@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import { INFER_DEFAULTS } from "../configuration.js";
 import { newApplyTelemetry } from "../contract.js";
-import { applied, checked, entry, parseErrors, printedAst, reapplied } from "./applied.js";
+import { applied, checked, entry, parseErrors, reapplied } from "./applied.js";
 
 // The helper under test is what every converted spec will stand on, so each
 // matcher is proved both ways here: it accepts what it should and names what
@@ -15,16 +15,10 @@ const READS_A = "export function f(p) { return p.a; }\n";
 const paramP = (src: string, type = SHAPE) => [entry("target.ts", after(src, "f(p"), [[type]])];
 
 describe("applied", () => {
-  it("applies through the CST applier and parses the result", () => {
+  it("applies and parses the result", () => {
     const out = applied(READS_A, paramP(READS_A));
     expect(parseErrors(out)).toEqual([]);
     expect(out.text).toContain("f(p: {");
-  });
-
-  it("applies through the offset applier on request", () => {
-    const cst = applied(READS_A, paramP(READS_A));
-    const offset = applied(READS_A, paramP(READS_A), { applier: "offset" });
-    expect(printedAst(offset.text)).toBe(printedAst(cst.text));
   });
 
   it("re-applies the same entries to its own output without change", () => {

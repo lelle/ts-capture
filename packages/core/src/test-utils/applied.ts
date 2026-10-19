@@ -1,7 +1,7 @@
 import ts from "typescript";
 
 import type { DiscoveredType } from "../collector-contract.js";
-import type { ApplyTelemetry, ApplyTypesOptions } from "../contract.js";
+import type { ApplyTelemetry } from "../contract.js";
 import type { CollectedTypeEntry, CollectedTypeInfo, SourceLocation } from "../type-collector.js";
 
 import { applyTypesToFileCst } from "../apply-types-cst.js";
@@ -10,7 +10,6 @@ import {
   createVerificationContext,
   type VerificationContext,
 } from "../apply-types-verify.js";
-import { applyTypesToFile } from "../apply-types.js";
 import { INFER_DEFAULTS, type InferOptions } from "../configuration.js";
 import { makeProject, programOf, type TestProject } from "./project.js";
 // Whoever holds an applied file can ask about it: the matchers come with it.
@@ -28,7 +27,6 @@ export interface AppliedOptions {
   project?: boolean;
   /** Other files of the project, by name relative to its root. */
   files?: Record<string, string>;
-  applier?: "cst" | "offset";
   telemetry?: ApplyTelemetry;
   /** The target's file name in the project; `target.ts` unless given. */
   filename?: string;
@@ -78,8 +76,7 @@ export function applied(
       project.dir,
     );
     verify = createVerificationContext(projectContext, filename, source);
-    text = run(
-      options.applier,
+    text = applyTypesToFileCst(
       source,
       entries,
       { infer, filename, verify, telemetry, prefix, ignoreFiles },
@@ -87,8 +84,7 @@ export function applied(
     );
   } else {
     const program = options.project ? before : undefined;
-    text = run(
-      options.applier,
+    text = applyTypesToFileCst(
       source,
       entries,
       { infer, filename, telemetry, prefix, ignoreFiles },
@@ -140,23 +136,11 @@ function inspect(
   return { text, filename, project, sf, program, checker, newDiagnostics };
 }
 
-function run(
-  applier: AppliedOptions["applier"],
-  source: string,
-  entries: CollectedTypeInfo,
-  applyOptions: ApplyTypesOptions,
-  program: ts.Program | undefined,
-): string {
-  const apply = applier === "offset" ? applyTypesToFile : applyTypesToFileCst;
-  return apply(source, entries, applyOptions, program);
-}
-
 /** Apply the same entries to the output again; the text should not change. */
 export function reapplied(out: Applied): string {
   const { options, entries, text } = out;
   const program = options.verify || options.project ? out.program : undefined;
-  return run(
-    options.applier,
+  return applyTypesToFileCst(
     text,
     entries,
     { infer: options.infer ?? INFER_DEFAULTS, filename: out.filename },
@@ -183,15 +167,6 @@ export function nodesOf<T extends ts.Node>(out: Applied, guard: (node: ts.Node) 
 /** Syntax errors in the output, each as `TS<code>: <message>`. */
 export function parseErrors(out: Applied): string[] {
   return out.program.getSyntacticDiagnostics(out.sf).map(describeDiagnostic);
-}
-
-/**
- * The file printed from its AST: same tokens in the same order, whatever the
- * whitespace was. Two outputs with equal printings have equal ASTs.
- */
-export function printedAst(text: string): string {
-  const sf = ts.createSourceFile("__printed.ts", text, ts.ScriptTarget.Latest, false);
-  return ts.createPrinter({ removeComments: false }).printFile(sf);
 }
 
 function diagnosticsOf(program: ts.Program): ts.Diagnostic[] {

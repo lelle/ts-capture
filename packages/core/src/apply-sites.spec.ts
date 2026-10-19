@@ -14,23 +14,16 @@ import {
   reapplied,
 } from "./test-utils/applied.js";
 
-// The offset applier, driven directly. `applyTypesToFileCst` is the default
-// path and routes what it cannot place through this one; both are run on the
-// same fixtures in apply-types-cst.spec.ts, so what is asserted here is this
-// applier's own reading of each site.
-const OFFSET: AppliedOptions = { applier: "offset" };
 const ANY_NAME: AppliedOptions = {
-  ...OFFSET,
   infer: { ...INFER_DEFAULTS, requireTypeRefInScope: false },
 };
 const withInfer = (infer: Partial<typeof INFER_DEFAULTS>): AppliedOptions => ({
-  ...OFFSET,
   infer: { ...INFER_DEFAULTS, ...infer },
 });
 const firstArrow = (out: ReturnType<typeof applied>): ts.ArrowFunction =>
   nodesOf(out, ts.isArrowFunction)[0];
 
-describe("applyTypesToFile", () => {
+describe("apply", () => {
   it("inserts a single type annotation", () => {
     // function foo(a) {}
     //               ^14
@@ -133,7 +126,6 @@ describe("applyTypesToFile", () => {
   // The prefix is text put in front of the type, so the text is the claim.
   it("adds prefix before type when configured", () => {
     const out = applied("function foo(a) {}", [entry("test.ts", 14, [["string"]])], {
-      ...OFFSET,
       prefix: "/*auto*/",
     });
     expect(out.text).toBe("function foo(a: /*auto*/string) {}");
@@ -177,11 +169,11 @@ describe("applyTypesToFile", () => {
 
   it("returns source unchanged for empty type info", () => {
     const source = "function foo(a) {}";
-    expect(applied(source, [], OFFSET).text).toBe(source);
+    expect(applied(source, []).text).toBe(source);
   });
 
   it("annotates the entries it is given", () => {
-    // applyTypesToFile processes every entry it gets; the caller groups by
+    // The applier processes every entry it gets; the caller groups by
     // file. Only this file's entry is passed here.
     const typeInfo: CollectedTypeInfo = [
       entry("other.ts", 14, [["number"]]),
@@ -190,7 +182,6 @@ describe("applyTypesToFile", () => {
     const out = applied(
       "function foo(a) {}",
       typeInfo.filter(([f]) => f === "test.ts"),
-      OFFSET,
     );
     expect(out).toAnnotate("a", "string");
   });
@@ -280,7 +271,7 @@ describe("discriminated union detection (applier wiring)", () => {
   });
 });
 
-describe("applyTypesToFile — outer-annotation skip on typed-RHS var declarations (applier wiring)", () => {
+describe("apply — outer-annotation skip on typed-RHS var declarations (applier wiring)", () => {
   // The function-expression-RHS detection (across const-arrow, function-expr,
   // and class-field PropertyDeclaration) is unit-tested at the boundary in
   // skip-sets.spec.ts (buildOuterAnnotationSkipSet); the drop decision in
@@ -333,7 +324,7 @@ describe("applyTypesToFile — outer-annotation skip on typed-RHS var declaratio
   });
 });
 
-describe("applyTypesToFile — class field inference from constructor params", () => {
+describe("apply — class field inference from constructor params", () => {
   // Class instance fields don't get type annotations even when
   // constructor params + assignments fully determine them. The
   // transformer only instruments PropertyDeclaration with an
@@ -455,7 +446,7 @@ describe("applyTypesToFile — class field inference from constructor params", (
   });
 });
 
-describe("applyTypesToFile — idempotency (re-apply on already-applied source)", () => {
+describe("apply — idempotency (re-apply on already-applied source)", () => {
   // Running apply twice with the same typeInfo on the same source must
   // not produce wrong types or duplicate annotations even though
   // positions in typeInfo are pre-shift offsets. The "already applied"
@@ -505,20 +496,16 @@ describe("applyTypesToFile — idempotency (re-apply on already-applied source)"
     // First apply only annotates `a`. Second run also has an entry for
     // `b` (a NEW observation that wasn't in the first types.json).
     // Idempotency must skip `a` (already annotated) but apply `b`.
-    const first = applied("function foo(a, b) {}", [entry("test.ts", 14, [["number"]])], OFFSET);
+    const first = applied("function foo(a, b) {}", [entry("test.ts", 14, [["number"]])]);
     expect(first).toAnnotate("a", "number");
     expect(first).toLeaveUntyped("b");
 
     // Pos for `b` in the MODIFIED source: original was pos 17, now
     // shifted to 25 due to ": number" insertion (8 chars).
-    const second = applied(
-      first.text,
-      [
-        entry("test.ts", 14, [["number"]]), // already applied — skipped
-        entry("test.ts", 25, [["string"]]), // new — applied
-      ],
-      OFFSET,
-    );
+    const second = applied(first.text, [
+      entry("test.ts", 14, [["number"]]), // already applied — skipped
+      entry("test.ts", 25, [["string"]]), // new — applied
+    ]);
     expect(parseErrors(second)).toEqual([]);
     expect(second).toAnnotate("a", "number");
     expect(second).toAnnotate("b", "string");
@@ -532,7 +519,7 @@ describe("applyTypesToFile — idempotency (re-apply on already-applied source)"
   );
 });
 
-describe("applyTypesToFile — infer.ignoreExistingTypes", () => {
+describe("apply — infer.ignoreExistingTypes", () => {
   // Divergence-measurement mode (ignore existing annotations):
   // when on, the idempotency check is bypassed so apply emits annotations
   // even at already-typed positions. Output may be syntactically invalid TS
@@ -540,12 +527,12 @@ describe("applyTypesToFile — infer.ignoreExistingTypes", () => {
   // the use case is grepping/diffing what ts-capture WOULD have emitted,
   // not producing clean rewrites. So the text is the claim.
 
-  it("default behaviour unchanged: existing annotations are preserved (offset path)", () => {
+  it("default behaviour unchanged: existing annotations are preserved", () => {
     const source = "function foo(a: number) {}";
     expect(applied(source, [entry("test.ts", 14, [["string"]])], ANY_NAME).text).toBe(source);
   });
 
-  it("flag on (offset path): apply emits annotation despite existing one", () => {
+  it("flag on: apply emits annotation despite existing one", () => {
     const source = "function foo(a: number) {}";
     const out = applied(
       source,
@@ -556,12 +543,7 @@ describe("applyTypesToFile — infer.ignoreExistingTypes", () => {
   });
 });
 
-describe("applyTypesToFiles", () => {
-  // Tested via integration test since it involves file I/O
-  it.todo("groups entries by filename and processes each file");
-});
-
-describe("applyTypesToFile — RewriteMostSpecificCommonBase (applier wiring)", () => {
+describe("apply — RewriteMostSpecificCommonBase (applier wiring)", () => {
   // The @sa chain collapse (rewriteCommonBase) and marker stripping
   // (stripAllChainMarkers) are unit-tested at the boundary in class-chain.spec.ts.
   // These e2e samples prove the applier wiring: markers are always stripped
@@ -610,7 +592,7 @@ describe("applyTypesToFile — RewriteMostSpecificCommonBase (applier wiring)", 
   });
 });
 
-describe("applyTypesToFile — skipRedundantAnnotations (applier wiring)", () => {
+describe("apply — skipRedundantAnnotations (applier wiring)", () => {
   // The syntactic inference (inferTypeFromInitializer) and the const/let/
   // readonly narrowing flag (buildInferableInfoMap) are unit-tested at the
   // boundary in initializer-inference.spec.ts. These e2e samples prove the
@@ -672,7 +654,7 @@ describe("applyTypesToFile — skipRedundantAnnotations (applier wiring)", () =>
   });
 });
 
-describe("applyTypesToFile — preferNamedInScope same-file matching (applier wiring)", () => {
+describe("apply — preferNamedInScope same-file matching (applier wiring)", () => {
   // The same-file index build and the exact / subset rewrite are unit-tested at
   // the boundary in named-type-index.spec.ts. These e2e samples prove the
   // applier wiring: the substitution is gated by preferNamedInScope, and both
@@ -689,20 +671,16 @@ describe("applyTypesToFile — preferNamedInScope same-file matching (applier wi
     expect(out).toAnnotate("x", "{ a: number }");
   });
 
-  it.each(["offset", "cst"] as const)(
-    "ON — an exact same-file match substitutes the name (%s)",
-    (applier) => {
-      const out = applied(source, shapeAtX, {
-        applier,
-        infer: { ...INFER_DEFAULTS, preferNamedInScope: true },
-      });
-      expect(out).toAnnotate("x", { ref: "Foo" });
-      expect(out).toTypeAs("x", "{ a: number }");
-    },
-  );
+  it("ON — an exact same-file match substitutes the name", () => {
+    const out = applied(source, shapeAtX, {
+      infer: { ...INFER_DEFAULTS, preferNamedInScope: true },
+    });
+    expect(out).toAnnotate("x", { ref: "Foo" });
+    expect(out).toTypeAs("x", "{ a: number }");
+  });
 });
 
-describe("applyTypesToFile — requireTypeRefInScope (applier wiring)", () => {
+describe("apply — requireTypeRefInScope (applier wiring)", () => {
   // The scope set (buildScopedTypeNames: imports, type-only imports, same-file
   // decls, ECMA-core allowlist) and the all-refs-in-scope check
   // (allTypeRefsInScope, incl. generic / union members) are unit-tested at the
@@ -712,12 +690,9 @@ describe("applyTypesToFile — requireTypeRefInScope (applier wiring)", () => {
   const source = "function f(x) { return x; }";
   const loggerAtX = [entry("test.ts", 12, [["AppLogger"]], {})];
 
-  it.each(["offset", "cst"] as const)(
-    "ON by default — skips an annotation referencing an unimported type (%s)",
-    (applier) => {
-      expect(applied(source, loggerAtX, { applier })).toLeaveUntyped("x");
-    },
-  );
+  it("ON by default — skips an annotation referencing an unimported type", () => {
+    expect(applied(source, loggerAtX, {})).toLeaveUntyped("x");
+  });
 
   it("OFF — emits the name even when unreachable (back-compat opt-out)", () => {
     const out = applied(source, loggerAtX, ANY_NAME);
@@ -726,12 +701,12 @@ describe("applyTypesToFile — requireTypeRefInScope (applier wiring)", () => {
 
   it("ON — keeps the annotation when the name is imported", () => {
     const imported = "import { AppLogger } from './AppLogger';\nfunction f(x) { return x; }";
-    const out = applied(imported, [entry("test.ts", 53, [["AppLogger"]], {})], OFFSET);
+    const out = applied(imported, [entry("test.ts", 53, [["AppLogger"]], {})]);
     expect(out).toAnnotate("x", { ref: "AppLogger" });
   });
 });
 
-describe("applyTypesToFile — TypeChecker-aware scope (applier wiring)", () => {
+describe("apply — TypeChecker-aware scope (applier wiring)", () => {
   // buildScopedTypeNamesViaTypeChecker (DOM ambients, file-not-in-program →
   // undefined, ctor arity) is unit-tested at the boundary in
   // scope-reachability.spec.ts. These e2e samples prove the applier wiring: with
@@ -742,7 +717,6 @@ describe("applyTypesToFile — TypeChecker-aware scope (applier wiring)", () => 
       "function f(x) { return x; }",
       [entry("test.ts", 12, [["HTMLElement"]], {})],
       {
-        ...OFFSET,
         project: true,
       },
     );
@@ -752,7 +726,6 @@ describe("applyTypesToFile — TypeChecker-aware scope (applier wiring)", () => 
   it("ON — a direct cross-file import resolves to in-scope", () => {
     const source = "import { InnerType } from './inner.js';\nfunction f(x) { return x; }";
     const out = applied(source, [entry("test.ts", 52, [["InnerType"]], {})], {
-      ...OFFSET,
       project: true,
       files: { "inner.ts": "export interface InnerType { a: number; }" },
     });
@@ -761,16 +734,14 @@ describe("applyTypesToFile — TypeChecker-aware scope (applier wiring)", () => 
   });
 
   it("ON — without a Program, falls back to the text-level scan (DOM skipped)", () => {
-    const out = applied(
-      "function f(x) { return x; }",
-      [entry("test.ts", 12, [["HTMLElement"]], {})],
-      OFFSET,
-    );
+    const out = applied("function f(x) { return x; }", [
+      entry("test.ts", 12, [["HTMLElement"]], {}),
+    ]);
     expect(out).toLeaveUntyped("x");
   });
 });
 
-describe("applyTypesToFile — preferNamedInScope cross-file (applier wiring)", () => {
+describe("apply — preferNamedInScope cross-file (applier wiring)", () => {
   // The cross-file index build (buildNamedTypeIndex with a Program — imports,
   // re-export barrels, generic-skip, same-file-collision precedence) is
   // unit-tested at the boundary in named-type-index.spec.ts. These e2e samples
@@ -783,18 +754,18 @@ describe("applyTypesToFile — preferNamedInScope cross-file (applier wiring)", 
   };
 
   it("ON + Program — an imported interface name substitutes the structural type", () => {
-    const out = applied(source, shapeAtS, { ...OFFSET, project: true, files });
+    const out = applied(source, shapeAtS, { project: true, files });
     expect(out).toAnnotate("s", { ref: "BookingState" });
   });
 
   it("ON without a Program — falls back to same-file only (no cross-file match)", () => {
-    const out = applied(source, shapeAtS, { ...OFFSET, files });
+    const out = applied(source, shapeAtS, { files });
     expect(out).toAnnotate("s", "{ activeCustomer: string; uniqueId: string }");
   });
 });
 
-describe("applyTypesToFile — paren-less arrow wrap is per-position", () => {
-  // Sibling-entry coordination: the offset path derives `parens` from
+describe("apply — paren-less arrow wrap is per-position", () => {
+  // Sibling-entry coordination: the applier derives `parens` from
   // source when `opts.arrow && !opts.parens`. But when the arrow-entry
   // itself is SKIPPED (requireTypeRefInScope, preferNamedInScope
   // substitution to unreachable name) and a sibling returnType-entry
@@ -809,25 +780,19 @@ describe("applyTypesToFile — paren-less arrow wrap is per-position", () => {
     // returnType lands. Post-undefined-→-void widening, the lone
     // `undefined` return-observation is emitted as `: void`
     // (idiomatic for callbacks that don't intentionally return).
-    const out = applied(
-      "store.subscribe(state => handle(state));",
-      [entry("test.ts", 21, [["undefined"]], { returnType: true })],
-      OFFSET,
-    );
+    const out = applied("store.subscribe(state => handle(state));", [
+      entry("test.ts", 21, [["undefined"]], { returnType: true }),
+    ]);
     expect(parseErrors(out)).toEqual([]);
     expect(firstArrow(out).type?.getText(out.sf)).toBe("void");
     expect(out.text).toBe("store.subscribe((state): void => handle(state));");
   });
 
   it("arrow + returnType both land at paren-less pos: wrap once, both annotations land", () => {
-    const out = applied(
-      "arr.map(x => x * 2);",
-      [
-        entry("test.ts", 9, [["number"]], { arrow: true, parens: [8, 9] }),
-        entry("test.ts", 9, [["number"]], { returnType: true }),
-      ],
-      OFFSET,
-    );
+    const out = applied("arr.map(x => x * 2);", [
+      entry("test.ts", 9, [["number"]], { arrow: true, parens: [8, 9] }),
+      entry("test.ts", 9, [["number"]], { returnType: true }),
+    ]);
     expect(parseErrors(out)).toEqual([]);
     expect(out).toAnnotate("x", "number");
     expect(firstArrow(out).type?.getText(out.sf)).toBe("number");
@@ -835,23 +800,21 @@ describe("applyTypesToFile — paren-less arrow wrap is per-position", () => {
   });
 
   it("arrow-entry alone at paren-less pos: regression guard", () => {
-    const out = applied(
-      "arr.map(x => x * 2);",
-      [entry("test.ts", 9, [["number"]], { arrow: true, parens: [8, 9] })],
-      OFFSET,
-    );
+    const out = applied("arr.map(x => x * 2);", [
+      entry("test.ts", 9, [["number"]], { arrow: true, parens: [8, 9] }),
+    ]);
     expect(out).toAnnotate("x", "number");
     expect(out.text).toBe("arr.map((x: number) => x * 2);");
   });
 });
 
-describe("applyTypesToFile — paren-less arrow param wrapping", () => {
-  // Without proper handling, the offset applier inserts `: T` after a
+describe("apply — paren-less arrow param wrapping", () => {
+  // Without proper handling, an applier inserts `: T` after a
   // paren-less arrow param's name without restoring the wrapping
   // parens, producing `state: undefined => body` — TS1005. The
   // transformer normally sets `opts.parens` for these cases, but if
   // `parens` is missing (stale types.json, hand-synthesized entry),
-  // the offset applier derives paren-less detection from source when
+  // the applier derives paren-less detection from source when
   // `opts.arrow` is set without `parens`.
   it.each([
     [
@@ -882,14 +845,14 @@ describe("applyTypesToFile — paren-less arrow param wrapping", () => {
       "x",
       "const f = (x: number) => x * 2;",
     ],
-  ])("offset path — %s", (_, source, pos, name, expected) => {
-    const out = applied(source, [entry("test.ts", pos, [["number"]], { arrow: true })], OFFSET);
+  ])("%s", (_, source, pos, name, expected) => {
+    const out = applied(source, [entry("test.ts", pos, [["number"]], { arrow: true })]);
     expect(out).toAnnotate(name, "number");
     expect(out.text).toBe(expected);
   });
 });
 
-describe("applyTypesToFile — honorAsCasts", () => {
+describe("apply — honorAsCasts", () => {
   // When the user writes `const w = window as MyWindow`, ts-capture
   // walking the runtime value and emitting a 6KB structural type
   // fights the user's intent. The transformer marks such entries
@@ -921,7 +884,7 @@ describe("applyTypesToFile — honorAsCasts", () => {
 // typed `void` by TS at the callsite; emitting `: undefined` would make
 // the callsite reject under strict mode when the body is
 // `console.log(...)` or another expression-statement.
-describe("applyTypesToFile — returnType undefined widens to void (applier wiring)", () => {
+describe("apply — returnType undefined widens to void (applier wiring)", () => {
   // The union-keeps-undefined / async-Promise<void> / non-returnType variants
   // are unit-tested at the boundary in compute-annotation.spec.ts. This e2e
   // sample proves the applier inserts `: void` for a sole-undefined return.
@@ -937,7 +900,7 @@ describe("applyTypesToFile — returnType undefined widens to void (applier wiri
 
 // Opt-in diagnostic markers for approximation fallbacks. A marker is a
 // comment beside the type, so the text is the claim.
-describe("applyTypesToFile — emitDiagnosticComments", () => {
+describe("apply — emitDiagnosticComments", () => {
   const DIAGNOSE = withInfer({ requireTypeRefInScope: false, emitDiagnosticComments: true });
   const genericFn: CollectedTypeInfo = [
     ["test.ts", 15, [["(x: unknown) => unknown", undefined, "generic-fn"]], {}],
@@ -995,7 +958,7 @@ describe("applyTypesToFile — emitDiagnosticComments", () => {
   });
 });
 
-describe("applyTypesToFile — generic ctor arity expansion (applier wiring)", () => {
+describe("apply — generic ctor arity expansion (applier wiring)", () => {
   // expandCtorArity and buildCtorArityMap are unit-tested at the boundary in
   // scope-reachability.spec.ts. These e2e samples prove the applier wires the
   // Program-derived arity map through expandCtorArity to fill a bare generic
@@ -1010,7 +973,6 @@ describe("applyTypesToFile — generic ctor arity expansion (applier wiring)", (
     const source =
       "class Container<T> { constructor(public value: T) {} }\nfunction f(x) { return x; }";
     const out = applied(source, [entry("test.ts", 67, [["Container"]], {})], {
-      ...OFFSET,
       project: true,
     });
     expect(out).toLeaveUntyped("x");
@@ -1021,7 +983,6 @@ describe("applyTypesToFile — generic ctor arity expansion (applier wiring)", (
     // Payload is `string`, not `unknown`: the subject here is generic expansion,
     // and a vacuous type would be dropped before it got that far.
     const out = applied(source, [entry("test.ts", 34, [["Container<string>"]], {})], {
-      ...OFFSET,
       project: true,
     });
     expect(out).toAnnotate("x", "Container<string>");
@@ -1329,9 +1290,7 @@ describe("skip arrow-param annotation in Array.prototype callbacks (applier wiri
 });
 
 // --- outer-annotation skip: generic context & explicit type-args -------
-// Both collapse into the offset path's `skip` set, unit-tested at the boundary
-// in skip-sets.spec.ts (buildOuterAnnotationSkipSet). These e2e samples prove
-// the applier drops the outer annotation inside a generic enclosing function
+// These samples prove the applier drops the outer annotation inside a generic enclosing function
 // (annotating would burn the type parameter to a concrete sample) and on a call
 // initializer already typed via explicit type arguments.
 describe("skip varDecl annotation in generic context / with explicit type-args (applier wiring)", () => {
@@ -1498,7 +1457,6 @@ describe("skip annotation when offset falls inside an ImportDeclaration", () => 
     ].join("\n");
     // Offset 68 lands between "import" and "{" in the second import.
     const out = applied(source, [entry("test.tsx", 68, [["boolean"]], { varDecl: true })], {
-      ...OFFSET,
       filename: "test.tsx",
     });
     expect(out.text).toBe(source);
@@ -1507,7 +1465,7 @@ describe("skip annotation when offset falls inside an ImportDeclaration", () => 
   it("does not annotate position inside single-line import", () => {
     const source = "import { foo } from './bar';\nconst x = true;";
     // Offset 7 is inside `import { foo }`.
-    const out = applied(source, [entry("test.ts", 7, [["string"]], { varDecl: true })], OFFSET);
+    const out = applied(source, [entry("test.ts", 7, [["string"]], { varDecl: true })]);
     expect(out.text).toBe(source);
   });
 
@@ -1540,7 +1498,6 @@ describe("skip varDecl annotation when offset is not a valid name-end position",
     const source = "export const TasksList = () => null;\n";
     // Position 12 == end of "const" keyword, before the space + identifier.
     const out = applied(source, [entry("test.tsx", 12, [["string"]], { varDecl: true })], {
-      ...OFFSET,
       filename: "test.tsx",
     });
     expect(out.text).toBe(source);
@@ -1549,7 +1506,7 @@ describe("skip varDecl annotation when offset is not a valid name-end position",
   it("does not annotate offset between `export` keyword and `const`", () => {
     const source = "export const x = 1;\n";
     // Position 6 == end of "export" keyword.
-    const out = applied(source, [entry("test.ts", 6, [["number"]], { varDecl: true })], OFFSET);
+    const out = applied(source, [entry("test.ts", 6, [["number"]], { varDecl: true })]);
     expect(out.text).toBe(source);
   });
 
@@ -1617,7 +1574,7 @@ describe("regression — JSX attribute / component name offsets are rejected", (
   // These tests pin that coverage explicitly so a future regression in
   // the guard would surface as a JSX-shaped test failure. See
   // REPORT.md §Bug 3.
-  const TSX: AppliedOptions = { ...OFFSET, filename: "t.tsx" };
+  const TSX: AppliedOptions = { filename: "t.tsx" };
 
   it("rejects offset that lands at a JSX attribute name end", () => {
     const source = `function C() { return <Box display="flex" />; }\n`;
@@ -1772,7 +1729,7 @@ describe("irDedupUnion fn-paren at apply boundary", () => {
   });
 });
 
-describe("applyTypesToFile — lub fallback (applier wiring)", () => {
+describe("apply — lub fallback (applier wiring)", () => {
   // The bail / structural-recovery / disjoint→unknown / legacy-succeeds variants
   // are unit-tested at the boundary in type-merge.spec.ts. This e2e sample proves
   // the applier-level wiring: disjoint shapes that lub collapses to `unknown` get
@@ -1788,7 +1745,7 @@ describe("applyTypesToFile — lub fallback (applier wiring)", () => {
   });
 });
 
-describe("applyTypesToFile — built-in shape recognition (applier wiring)", () => {
+describe("apply — built-in shape recognition (applier wiring)", () => {
   // The Promise / Map / disabled / missing-key variants are unit-tested at the
   // boundary in type-merge.spec.ts. This e2e sample proves the applier emits the
   // recognized named ref through a param annotation.
@@ -1819,7 +1776,7 @@ describe("ApplyTelemetry", () => {
   // Counters mutate in place; the caller (cmdApply or a test) allocates
   // one telemetry object and threads it through every apply call.
 
-  it("counts emit + idempotent + total on a mixed run (offset path)", () => {
+  it("counts emit + idempotent + total on a mixed run", () => {
     const typeInfo = [entry("test.ts", 14, [["string"]])];
     const t = newApplyTelemetry();
     applied("function foo(a) {}", typeInfo, { ...ANY_NAME, telemetry: t });

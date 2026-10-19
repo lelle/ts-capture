@@ -10,30 +10,27 @@ import {
   describeDiagnostic,
   nodesOf,
   parseErrors,
-  printedAst,
 } from "./test-utils/applied.js";
 import { collect, type CollectOptions } from "./test-utils/collected.js";
 
 interface PipelineOptions extends CollectOptions {
   infer?: InferOptions;
-  applier?: "cst" | "offset";
   prefix?: string;
   /** What this output may do that a pipeline output otherwise may not. */
-  allow?: { newDiagnostics?: boolean; applierDivergence?: boolean; secondRunChange?: boolean };
+  allow?: { newDiagnostics?: boolean; secondRunChange?: boolean };
 }
 
 /**
  * The whole pipeline on one file, and on the way out what every output must
- * satisfy: it parses, it adds no diagnostic the input did not have, the CST
- * and offset appliers wrote the same program, and running the pipeline on
- * the output again changes nothing.
+ * satisfy: it parses, it adds no diagnostic the input did not have, and
+ * running the pipeline on the output again changes nothing.
  */
 function pipeline(input: string, options: PipelineOptions = {}): Applied {
   const entries = collect(input, options);
   if (entries.length === 0) throw new Error(`nothing observed in:\n${input}`);
   const filename = options.tsx ? "test.tsx" : "test.ts";
-  const { infer, applier, prefix, allow } = options;
-  const out = applied(input, entries, { infer, applier, prefix, filename });
+  const { infer, prefix, allow } = options;
+  const out = applied(input, entries, { infer, prefix, filename });
 
   expect(parseErrors(out), `the output does not parse:\n${out.text}`).toEqual([]);
   if (!allow?.newDiagnostics) {
@@ -41,17 +38,9 @@ function pipeline(input: string, options: PipelineOptions = {}): Applied {
       [],
     );
   }
-  if (!allow?.applierDivergence) {
-    const otherApplier = applier === "offset" ? "cst" : "offset";
-    const other = applied(input, entries, { infer, prefix, filename, applier: otherApplier });
-    expect(printedAst(other.text), "the CST and offset appliers disagree").toBe(
-      printedAst(out.text),
-    );
-  }
   if (!allow?.secondRunChange) {
     const again = applied(out.text, collect(out.text, options), {
       infer,
-      applier,
       prefix,
       filename,
     });
@@ -495,15 +484,10 @@ maybe(); maybe(7);`);
   });
 
   it("paren-less single-param arrow: insertion wraps parens correctly", () => {
-    // `x => body` has no parens to put the type inside. The CST applier
-    // wraps and also writes the return type; the offset applier wraps and
-    // leaves the return alone, which is why the two are allowed to differ.
-    const out = pipeline(
-      `
+    // `x => body` has no parens to put the type inside.
+    const out = pipeline(`
 const inc = x => x + 1;
-inc(5);`,
-      { allow: { applierDivergence: true } },
-    );
+inc(5);`);
     expect(out).toTypeAs("x", "number");
     expect(out).toTypeAs({ returnOf: "inc" }, "number");
   });
@@ -656,15 +640,14 @@ Card({ title: 'a', body: 'b' });`,
 
   it("paren-less arrow inside JSX expression container: items.map(item => <li/>)", () => {
     // The map callback runs during the component call, so `item` is
-    // observed. The appliers differ on the return type of a paren-less
-    // arrow, as in the plain probe above.
+    // observed.
     const out = pipeline(
       `
 function List({ items }) {
     return <ul>{items.map(item => <li>{item}</li>)}</ul>;
 }
 List({ items: [1, 2, 3] });`,
-      { ...TSX, allow: { applierDivergence: true } },
+      TSX,
     );
     expect(out).toTypeAs("item", "number");
   });

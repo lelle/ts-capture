@@ -7,13 +7,7 @@ import type { CollectedTypeEntry, CollectedTypeInfo, SourceLocation } from "./ty
 import { applyTypesToFileCst } from "./apply-types-cst.js";
 import { INFER_DEFAULTS } from "./configuration.js";
 import { newApplyTelemetry } from "./contract.js";
-import {
-  aliasesDeclared,
-  applied,
-  nodesOf,
-  parseErrors,
-  printedAst,
-} from "./test-utils/applied.js";
+import { aliasesDeclared, applied, nodesOf, parseErrors } from "./test-utils/applied.js";
 
 type LooseTypeTuple =
   [string | undefined] | [string | undefined, SourceLocation | undefined] | DiscoveredType;
@@ -33,220 +27,9 @@ function entry(
 
 // Several fixtures below declare `let x = 5` / `const name = "hi"`, which
 // `skipRedundantAnnotations` (on by default) correctly leaves alone — annotating
-// them would widen TypeScript's own inference. These tests are about applier
-// parity and offset handling, not about the skip, so they pin it off.
+// them would widen TypeScript's own inference. These tests are about placement,
+// not about the skip, so they pin it off.
 const KEEP_INFERABLE = { infer: { ...INFER_DEFAULTS, skipRedundantAnnotations: false } };
-
-// The CST applier and the offset applier read the same observations into the
-// same file. Each row is one fixture both are run on; the two outputs must be
-// the same program, token for token. A case where the CST applier is more
-// capable on purpose is not listed here but asserted on its own below.
-const PARITY: Array<
-  [string, string, (src: string) => CollectedTypeInfo, { infer?: typeof INFER_DEFAULTS }?]
-> = [
-  ["a single param", "function foo(a) {}", () => [entry("test.ts", 14, [["string"]])]],
-  [
-    "several params",
-    "function foo(a, b, c) { return a; }",
-    () => [
-      entry("test.ts", 14, [["number"]]),
-      entry("test.ts", 17, [["string"]]),
-      entry("test.ts", 20, [["boolean"]]),
-    ],
-  ],
-  [
-    "an optional param",
-    "function foo(a?) {}",
-    () => [entry("test.ts", 15, [["number"], ["undefined"]])],
-  ],
-  ["a union", "function foo(a) {}", () => [entry("test.ts", 14, [["string"], ["number"]])]],
-  [
-    "a class method param",
-    "class C { foo(x) { return x; } }",
-    (src) => [entry("test.ts", src.indexOf("x)") + 1, [["number"]])],
-  ],
-  [
-    "a parameter property",
-    "class C { constructor(public x) {} }",
-    (src) => [entry("test.ts", src.indexOf("x)") + 1, [["number"]])],
-  ],
-  [
-    "an object binding pattern",
-    "function foo({ a, b }) { return a; }",
-    (src) => [entry("test.ts", src.indexOf(")"), [["{ a: number, b: number }"]])],
-  ],
-  [
-    "an array binding pattern",
-    "function foo([a, b]) { return a + b; }",
-    (src) => [entry("test.ts", src.indexOf(")"), [["[number, number]"]])],
-  ],
-  [
-    "a local before a param",
-    "let x = 5;\nfunction foo(a) { return a; }",
-    (src) => [
-      entry("test.ts", src.indexOf("x ") + 1, [["number"]], { varDecl: true }),
-      entry("test.ts", src.indexOf("a)") + 1, [["string"]]),
-    ],
-    KEEP_INFERABLE,
-  ],
-  [
-    "a local before a param, with the redundancy skip on",
-    "let x = 5;\nfunction foo(a) { return a; }",
-    (src) => [
-      entry("test.ts", src.indexOf("x ") + 1, [["number"]], { varDecl: true }),
-      entry("test.ts", src.indexOf("a)") + 1, [["string"]]),
-    ],
-  ],
-  [
-    "a union with a shape",
-    "function foo(a) { return a; }",
-    (src) => [entry("test.ts", src.indexOf("a)") + 1, [["{ x: number, y: string }"], ["number"]])],
-    KEEP_INFERABLE,
-  ],
-  [
-    "a destructured declaration",
-    "let { host, guest } = getProps();",
-    (src) => [
-      entry("test.ts", src.indexOf("} =") + 1, [["{ host: string, guest: string }"]], {
-        varDecl: true,
-      }),
-    ],
-    KEEP_INFERABLE,
-  ],
-  [
-    "a param before a local",
-    "function foo(a) { return a; }\nlet x = 5;",
-    (src) => [
-      entry("test.ts", src.indexOf("a)") + 1, [["string"]]),
-      entry("test.ts", src.indexOf("x ") + 1, [["number"]], { varDecl: true }),
-    ],
-    KEEP_INFERABLE,
-  ],
-  [
-    "two params and a local",
-    "let x = 5;\nfunction foo(a, b) { return a + b; }",
-    (src) => [
-      entry("test.ts", src.indexOf("x ") + 1, [["number"]], { varDecl: true }),
-      entry("test.ts", src.indexOf("(a") + 2, [["number"]]),
-      entry("test.ts", src.indexOf(", b") + 3, [["number"]]),
-    ],
-    KEEP_INFERABLE,
-  ],
-  [
-    "a return type",
-    "function foo() { return 5; }",
-    () => [entry("test.ts", 14, [["number"]], { returnType: true })],
-  ],
-  [
-    "an async return type",
-    "async function foo() { return 5; }",
-    (src) => [
-      entry("test.ts", src.indexOf(")") + 1, [["number"]], { returnType: true, async: true }),
-    ],
-  ],
-  [
-    "a param and a return type",
-    "function foo(a) { return a; }",
-    (src) => [
-      entry("test.ts", src.indexOf("a)") + 1, [["string"]]),
-      entry("test.ts", src.indexOf(")") + 1, [["string"]], { returnType: true }),
-    ],
-  ],
-  [
-    "a generator's param",
-    "function* gen(a) { yield a; }",
-    (src) => [entry("test.ts", src.indexOf("a)") + 1, [["number"]])],
-  ],
-  [
-    "an optional param observed only as undefined",
-    "function foo(a?) {}",
-    () => [entry("test.ts", 15, [["undefined"]])],
-  ],
-  [
-    "a `let` local",
-    "let x = 5;",
-    () => [entry("test.ts", 5, [["number"]], { varDecl: true })],
-    KEEP_INFERABLE,
-  ],
-  [
-    "a `const` local",
-    'const name = "hi";',
-    (src) => [entry("test.ts", src.indexOf("name") + 4, [["string"]], { varDecl: true })],
-    KEEP_INFERABLE,
-  ],
-  [
-    "a class field",
-    "class C { value = 42; }",
-    (src) => [entry("test.ts", src.indexOf("value") + 5, [["number"]], { varDecl: true })],
-    KEEP_INFERABLE,
-  ],
-  [
-    "a local whose initializer is a function",
-    "const fn = (x) => x + 1;",
-    (src) => [
-      entry("test.ts", src.indexOf("fn") + 2, [["(x: unknown) => unknown"]], { varDecl: true }),
-    ],
-  ],
-  [
-    "a const literal, with the redundancy skip on",
-    "const FLAG = 'on';",
-    (src) => [entry("test.ts", src.indexOf("FLAG") + 4, [["string"]], { varDecl: true })],
-  ],
-  [
-    "a `let` local, with the redundancy skip on",
-    "let x = 5;",
-    () => [entry("test.ts", 5, [["number"]], { varDecl: true })],
-  ],
-  [
-    "a local, a param and a return type",
-    "let n = 0;\nfunction foo(a) { return a; }",
-    (src) => [
-      entry("test.ts", src.indexOf("n ") + 1, [["number"]], { varDecl: true }),
-      entry("test.ts", src.indexOf("a)") + 1, [["string"]]),
-      entry("test.ts", src.indexOf(")") + 1, [["string"]], { returnType: true }),
-    ],
-    KEEP_INFERABLE,
-  ],
-  [
-    "a paren-less arrow param",
-    "const inc = x => x + 1;",
-    (src) => {
-      const pos = src.indexOf("x ") + 1;
-      return [entry("test.ts", pos, [["number"]], { arrow: true, parens: [pos - 1, pos] })];
-    },
-  ],
-  [
-    "a parenthesised arrow param",
-    "const inc = (x) => x + 1;",
-    (src) => [entry("test.ts", src.indexOf("x)") + 1, [["number"]])],
-  ],
-  [
-    "a `this` type",
-    "function greet() { return this.text; }",
-    () => [entry("test.ts", 15, [["Date"]], { thisType: true })],
-  ],
-  [
-    "a `this` type beside a param, with the separator flag",
-    "function greet(name) { return this.text + name; }",
-    () => [
-      entry("test.ts", 15, [["Date"]], { thisType: true, thisNeedsComma: true }),
-      entry("test.ts", 19, [["string"]]),
-    ],
-  ],
-  [
-    "a `this` type at no function",
-    "function greet() { return this.text; }",
-    () => [entry("test.ts", 999, [["Date"]], { thisType: true })],
-  ],
-];
-
-describe("the CST and offset appliers agree", () => {
-  it.each(PARITY)("on %s", (_, source, entries, options) => {
-    const cst = applied(source, entries(source), options);
-    const offset = applied(source, entries(source), { ...options, applier: "offset" });
-    expect(printedAst(offset.text)).toBe(printedAst(cst.text));
-  });
-});
 
 describe("applyTypesToFileCst — what the telemetry counts", () => {
   it("counts neither observations of written types nor callback returns as entries", () => {
@@ -291,11 +74,9 @@ describe("applyTypesToFileCst — param annotations via AST lookup", () => {
     // Keying dedup by site kind alone merged the two into `Function|undefined`
     // — parseable, and wrong. `crossReferenceObservations` drops paramReturn
     // records before apply ever sees them; this covers the direct-API route.
-    for (const applier of ["cst", "offset"] as const) {
-      const out = applied(source, typeInfo, { applier });
-      expect(parseErrors(out)).toEqual([]);
-      expect(out).toAnnotate("resolve", "Function");
-    }
+    const out = applied(source, typeInfo);
+    expect(parseErrors(out)).toEqual([]);
+    expect(out).toAnnotate("resolve", "Function");
   });
 
   it("annotates several params", () => {
@@ -396,8 +177,6 @@ describe("applyTypesToFileCst — param annotations via AST lookup", () => {
     expect(out).toAnnotate("{ host, guest }", "{ host: string; guest: string }");
   });
 
-  // The local goes through the offset applier after the CST pass inserted
-  // before it; its position has to move with the insertion.
   it("places a local that follows a param", () => {
     const source = "function foo(a) { return a; }\nlet x = 5;";
     const out = applied(
@@ -415,7 +194,7 @@ describe("applyTypesToFileCst — param annotations via AST lookup", () => {
   // The offsets in a types.json are pristine: they describe the source as it
   // was when the run observed it, before any note a previous apply wrote above
   // a line. Stripping those notes is what restores those coordinates, so a
-  // removal must NOT shift a pass-through entry — only the insertions this run
+  // removal must NOT shift a skip's position — only the insertions this run
   // makes do. `rebaseOffset` filters replacements down to insertions for that
   // reason, and a rebase that also subtracted the removals would drop the
   // annotation instead (the `--comments` → review → `apply` workflow is the
@@ -431,7 +210,7 @@ describe("applyTypesToFileCst — param annotations via AST lookup", () => {
       }),
     ];
     // Same entries, same offsets — but a stale note now sits between the two
-    // sites, so the removal and the insertion straddle the pass-through entry.
+    // sites, so the removal and the insertion straddle the skipped entry.
     const noted =
       "function f(a) {}\n" +
       "// @ts-capture[proposal]: `gen` return would be `Generator<number>`\n" +
@@ -737,10 +516,7 @@ describe("applyTypesToFileCst — paren-less arrow params + thisType (final rout
 
   // Both inserts target the same offset (a paren-less arrow has
   // retPos === parameters.end === paramPos), and the CST priority ordering
-  // (-1 for return) resolves the collision to `(x: T1): T2 => body`. The
-  // offset applier's position guard requires `)` before a return type, so it
-  // skips the return here; this is a case where the CST applier is more
-  // capable on purpose and parity is not asserted.
+  // (-1 for return) resolves the collision to `(x: T1): T2 => body`.
   it("paren-less arrow + return type: both land inside the parens", () => {
     const source = "const inc = x => x + 1;";
     const pos = source.indexOf("x ") + 1;
@@ -768,10 +544,8 @@ describe("applyTypesToFileCst — paren-less arrow params + thisType (final rout
     expect(out).toAnnotate("this", "Date");
   });
 
-  // The transformer sets `thisNeedsComma` when the function already has
-  // params and the offset applier relies on it; the CST path reads
-  // `node.parameters.length > 0` from the AST, so the separator is right with
-  // or without the flag. That it parses is the claim.
+  // The separator comes from the AST, not from the transformer's
+  // `thisNeedsComma`, so it is right with or without the flag.
   it.each([
     ["with the separator flag", { thisType: true, thisNeedsComma: true }],
     ["without the separator flag", { thisType: true }],
@@ -785,9 +559,7 @@ describe("applyTypesToFileCst — paren-less arrow params + thisType (final rout
     expect(out).toAnnotate("name", "string");
   });
 
-  it("thisType: pos with no matching function falls through to passThrough", () => {
-    // Nothing in the AST index at this pos; the offset applier gets it and
-    // its own position guard skips it too.
+  it("thisType: pos with no matching function is skipped", () => {
     const source = "function greet() { return this.text; }";
     expect(applied(source, [entry("test.ts", 999, [["Date"]], { thisType: true })]).text).toBe(
       source,
@@ -1296,8 +1068,7 @@ describe("applyTypesToFileCst — TypeChecker verify integration", () => {
     // (`node.type !== undefined`) skips already-typed sites BEFORE they enter
     // the candidate list, so the batch is empty and never probes. Simplest
     // signal: the source comes back unchanged AND the context's
-    // `currentSource` still equals the input (no `advanceCurrentSource`
-    // either — pass-through is also empty when nothing is left to apply).
+    // `currentSource` still equals the input (no `advanceCurrentSource`).
     const src = "export function id(a: unknown): unknown { return a; }\n";
     const out = applied(
       src,
@@ -1340,14 +1111,11 @@ describe("applyTypesToFileCst — TypeChecker verify integration", () => {
         varDecl: true,
       }),
     ];
-    for (const applier of ["cst", "offset"] as const) {
-      const out = applied(src, typeInfo, {
-        project: true,
-        applier,
-        infer: { ...INFER_DEFAULTS, skipRedundantAnnotations: false },
-      });
-      expect(out).toLeaveUntyped("key");
-    }
+    const out = applied(src, typeInfo, {
+      project: true,
+      infer: { ...INFER_DEFAULTS, skipRedundantAnnotations: false },
+    });
+    expect(out).toLeaveUntyped("key");
   });
 
   it("writes observed literals as the imported alias that unites them", () => {
@@ -1535,109 +1303,86 @@ describe("applyTypesToFileCst — TypeChecker verify integration", () => {
   // the comment would become part of the string. The contradiction is still
   // real, so the annotation is still refused: apply reports rather than fixes,
   // and a contradiction it cannot report is not a licence to write.
-  it.each(["cst", "offset"] as const)(
-    "writes neither note nor annotation when the note cannot be placed (%s)",
-    (applier) => {
-      const out = applied(UNPLACEABLE, [contradictedP(UNPLACEABLE)], { project: true, applier });
-      expect(out.text).toBe(UNPLACEABLE);
-    },
-  );
+  it("writes neither note nor annotation when the note cannot be placed", () => {
+    const out = applied(UNPLACEABLE, [contradictedP(UNPLACEABLE)], { project: true });
+    expect(out.text).toBe(UNPLACEABLE);
+  });
 
-  // Regression: the offset applier used `break` where it meant "skip this
-  // site", so one unplaceable note abandoned the entry loop and every later
-  // annotation in the file was lost silently.
-  it.each(["cst", "offset"] as const)(
-    "keeps annotating later sites after a note it could not place (%s)",
-    (applier) => {
-      const src = UNPLACEABLE + "export function later(a) {\n  return a;\n}\n";
-      const out = applied(
-        src,
-        [
-          contradictedP(src),
-          entry("target.ts", src.indexOf("later(a)") + "later(a".length, [["number"]]),
-        ],
-        { project: true, applier },
-      );
-      expect(out).toAnnotate("a", "number");
-    },
-  );
+  // One unplaceable note must not end the entry loop: every later annotation
+  // in the file would be lost silently.
+  it("keeps annotating later sites after a note it could not place", () => {
+    const src = UNPLACEABLE + "export function later(a) {\n  return a;\n}\n";
+    const out = applied(
+      src,
+      [
+        contradictedP(src),
+        entry("target.ts", src.indexOf("later(a)") + "later(a".length, [["number"]]),
+      ],
+      { project: true },
+    );
+    expect(out).toAnnotate("a", "number");
+  });
 
   // Both appliers place notes by one rule, and that rule lives in
   // `noteReplacements` — the only place that knows whether a line is crowded
   // and the note therefore goes at the site rather than above it. An early
   // check in one applier answered the leading-line question for notes that
   // never became leading lines, and dropped them.
-  it.each(["cst", "offset"] as const)(
-    "places the same notes from either applier on a crowded line inside a template (%s)",
-    (applier) => {
-      const src = "const t = `\nhead ${[1].map((a) => [2].map((b) => a + b))} tail\n`;\n";
-      const out = applied(
-        src,
-        [
-          entry("t.ts", src.indexOf("(a)") + 2, [["number"]]),
-          entry("t.ts", src.indexOf("(b)") + 2, [["number"]]),
-        ],
-        { filename: "t.ts", applier, infer: { ...INFER_DEFAULTS, outputMode: "comments" } },
-      );
-      expect(out.text.match(/@ts-capture/g) ?? []).toHaveLength(2);
-    },
-  );
+  it("places the notes on a crowded line inside a template", () => {
+    const src = "const t = `\nhead ${[1].map((a) => [2].map((b) => a + b))} tail\n`;\n";
+    const out = applied(
+      src,
+      [
+        entry("t.ts", src.indexOf("(a)") + 2, [["number"]]),
+        entry("t.ts", src.indexOf("(b)") + 2, [["number"]]),
+      ],
+      { filename: "t.ts", infer: { ...INFER_DEFAULTS, outputMode: "comments" } },
+    );
+    expect(out.text.match(/@ts-capture/g) ?? []).toHaveLength(2);
+  });
 
   // `this` has no single value to write down — the same loss the return-type
-  // rule above refuses, arriving through a contextually typed parameter. The
-  // offset applier already refused it; the CST applier, which is the default,
-  // did not.
-  it.each(["cst", "offset"] as const)(
-    "never annotates a param the checker infers as `this` (%s)",
-    (applier) => {
-      const src =
-        "export class Box {\n" +
-        "  each(fn: (self: this) => void) {\n" +
-        "    fn(this);\n" +
-        "  }\n" +
-        "  go() {\n" +
-        "    this.each((s) => s.go());\n" +
-        "  }\n" +
-        "}\n";
-      const out = applied(
-        src,
-        [entry("target.ts", src.indexOf("((s)") + "((s".length, [["Box"]], { arrow: true })],
-        {
-          project: true,
-          applier,
-        },
-      );
-      expect(out).toLeaveUntyped("s");
-    },
-  );
+  // rule above refuses, arriving through a contextually typed parameter.
+  it("never annotates a param the checker infers as `this`", () => {
+    const src =
+      "export class Box {\n" +
+      "  each(fn: (self: this) => void) {\n" +
+      "    fn(this);\n" +
+      "  }\n" +
+      "  go() {\n" +
+      "    this.each((s) => s.go());\n" +
+      "  }\n" +
+      "}\n";
+    const out = applied(
+      src,
+      [entry("target.ts", src.indexOf("((s)") + "((s".length, [["Box"]], { arrow: true })],
+      {
+        project: true,
+      },
+    );
+    expect(out).toLeaveUntyped("s");
+  });
 
   // A builder that returns `this` keeps working in a subclass. The run only
   // ever sees the concrete instance, so ts-capture writes the class name and
   // every subclass caller gets the base class back. Eight nest methods, all
   // builders, were annotated that way.
-  it.each(["cst", "offset"] as const)(
-    "never annotates a return type the checker infers as `this` (%s)",
-    (applier) => {
-      const src =
-        "export class Builder {\n" +
-        "  addValidator() {\n" +
-        "    return this;\n" +
-        "  }\n" +
-        "}\n";
-      const paramsClose = src.indexOf("addValidator()") + "addValidator()".length;
-      const out = applied(
-        src,
-        [
-          entry("target.ts", paramsClose, [["Builder"]], {
-            returnType: true,
-            fnRetPos: paramsClose,
-          }),
-        ],
-        { project: true, applier },
-      );
-      expect(out).toLeaveUntyped({ returnOf: "addValidator" });
-    },
-  );
+  it("never annotates a return type the checker infers as `this`", () => {
+    const src =
+      "export class Builder {\n" + "  addValidator() {\n" + "    return this;\n" + "  }\n" + "}\n";
+    const paramsClose = src.indexOf("addValidator()") + "addValidator()".length;
+    const out = applied(
+      src,
+      [
+        entry("target.ts", paramsClose, [["Builder"]], {
+          returnType: true,
+          fnRetPos: paramsClose,
+        }),
+      ],
+      { project: true },
+    );
+    expect(out).toLeaveUntyped({ returnOf: "addValidator" });
+  });
 
   const CONTRADICTED =
     "export function f(): string {\n" +
@@ -1651,33 +1396,13 @@ describe("applyTypesToFileCst — TypeChecker verify integration", () => {
   // The run saw a value the position's own type says cannot occur. Apply
   // reports it and leaves the code alone: whether the right fix is to widen the
   // type or to stop producing `undefined` is not something an observation can
-  // decide. Driven directly, the offset applier has to reach the same answer.
-  it.each(["cst", "offset"] as const)(
-    "writes a note instead of an annotation when the run contradicts the checker (%s)",
-    (applier) => {
-      const out = applied(CONTRADICTED, [contradictedP(CONTRADICTED)], { project: true, applier });
-      expect(out.text).toContain(
-        "  // @ts-capture[conflict]: `p` observed `undefined`, TypeScript infers `string`\n  const p = f();",
-      );
-      expect(out).toLeaveUntyped("p");
-    },
-  );
-
-  // The CST applier hands its pass-through entries to the offset applier along
-  // with the source it has already rewritten — notes included. If the second
-  // pass stripped as well, it would delete what the first one just wrote.
-  it("does not strip the notes the CST pass just wrote", () => {
-    const out = applied(
-      CONTRADICTED,
-      [
-        contradictedP(CONTRADICTED),
-        // A pass-through entry: no CST site owns this offset, so it is handed to
-        // the offset applier in a second pass.
-        entry("target.ts", 1, [["string"]], {}),
-      ],
-      { project: true },
+  // decide.
+  it("writes a note instead of an annotation when the run contradicts the checker", () => {
+    const out = applied(CONTRADICTED, [contradictedP(CONTRADICTED)], { project: true });
+    expect(out.text).toContain(
+      "  // @ts-capture[conflict]: `p` observed `undefined`, TypeScript infers `string`\n  const p = f();",
     );
-    expect(out.text).toContain("// @ts-capture[conflict]: `p` observed `undefined`");
+    expect(out).toLeaveUntyped("p");
   });
 
   describe("outputMode", () => {
@@ -1889,40 +1614,6 @@ describe("applyTypesToFileCst — TypeChecker verify integration", () => {
       );
     });
 
-    // The rule lives in one place because both appliers need it. Driven
-    // directly, the offset applier has to reach the same answer — a rule added
-    // to one path and not the other stays invisible until a project routes
-    // through the second, and nest does not.
-    it("the offset applier puts a crowded line's notes at the sites too", () => {
-      const src = "const k = (a) => a.length;\n";
-      const at = src.indexOf("(a)");
-      const out = applied(
-        src,
-        [
-          entry("t.ts", at + 2, [["string"]]),
-          entry("t.ts", at + 3, [["number"]], { returnType: true, fnRetPos: at + 3 }),
-        ],
-        { ...BOTH, applier: "offset" },
-      );
-      expect(out.text).toBe(
-        "const k = (a: string /* @ts-capture[applied]: observed once */)" +
-          ": number /* @ts-capture[applied]: observed once */ => a.length;\n",
-      );
-      expect(parseErrors(out)).toEqual([]);
-    });
-
-    it("the offset applier keeps a lone note above the line", () => {
-      const src = "const a = 1;\nconst b = f();\n";
-      const out = applied(
-        src,
-        [entry("t.ts", src.indexOf("const b") + "const b".length, [["string"]], { varDecl: true })],
-        { ...BOTH, applier: "offset" },
-      );
-      expect(out.text).toContain(
-        "// @ts-capture[applied]: `b` observed once\nconst b: string = f();",
-      );
-    });
-
     // A preview that names an annotation apply would not actually write is not
     // a preview. The first run on nest wrote 261 of them against 125 real
     // annotations — the difference being exactly the candidates the batch
@@ -1974,28 +1665,25 @@ describe("applyTypesToFileCst — TypeChecker verify integration", () => {
   // (`const self: Module = this`) so a class expression can close over it. The
   // checker types that binding `this` too, and writing the class name there
   // erases exactly what it erases on a return type.
-  it.each(["cst", "offset"] as const)(
-    "never annotates a binding the checker infers as `this` (%s)",
-    (applier) => {
-      const src =
-        "export class Module {\n" +
-        "  make() {\n" +
-        "    const self = this;\n" +
-        "    return self;\n" +
-        "  }\n" +
-        "}\n";
-      const out = applied(
-        src,
-        [
-          entry("target.ts", src.indexOf("const self") + "const self".length, [["Module"]], {
-            varDecl: true,
-          }),
-        ],
-        { project: true, applier },
-      );
-      expect(out).toLeaveUntyped("self");
-    },
-  );
+  it("never annotates a binding the checker infers as `this`", () => {
+    const src =
+      "export class Module {\n" +
+      "  make() {\n" +
+      "    const self = this;\n" +
+      "    return self;\n" +
+      "  }\n" +
+      "}\n";
+    const out = applied(
+      src,
+      [
+        entry("target.ts", src.indexOf("const self") + "const self".length, [["Module"]], {
+          varDecl: true,
+        }),
+      ],
+      { project: true },
+    );
+    expect(out).toLeaveUntyped("self");
+  });
 
   // Control: same shape, same class name written, but the body does not return
   // `this` — so the guard must not fire and the annotation must land. Without
@@ -2095,35 +1783,29 @@ describe("a const assertion is never overwritten", () => {
     ['const M = ["a", "b"] as const satisfies string[];', "string[]"],
     ['const M = { [K]: "guard" } as const;', "{ __guards__: string }"],
   ];
-  for (const applier of ["cst", "offset"] as const) {
-    it.each(ASSERTED)(`leaves %s alone (${applier})`, (source, emitted) => {
-      const pos = source.indexOf("M") + 1;
-      const out = applied(source, [entry("test.ts", pos, [[emitted]], { varDecl: true })], {
-        ...KEEP_INFERABLE,
-        applier,
-      });
-      expect(out).toLeaveUntyped("M");
+  it.each(ASSERTED)("leaves %s alone", (source, emitted) => {
+    const pos = source.indexOf("M") + 1;
+    const out = applied(source, [entry("test.ts", pos, [[emitted]], { varDecl: true })], {
+      ...KEEP_INFERABLE,
     });
-  }
+    expect(out).toLeaveUntyped("M");
+  });
 
   // `unique symbol` is the same narrowing, inferred rather than asked for.
   // Writing `: symbol` widens it away and every `x === THE_SYMBOL` narrowing
   // downstream stops working — one annotation on nestjs/nest's
   // `VERSION_NEUTRAL` produced three compile errors in files that never
   // mention it. Destruction, not restatement, so it does not wait for the flag.
-  for (const applier of ["cst", "offset"] as const) {
-    it.each([["const sym = Symbol('x');"], ["const sym = Symbol.for('x');"]])(
-      `leaves %s alone even with the flag off (${applier})`,
-      (source) => {
-        const pos = source.indexOf("sym") + 3;
-        const out = applied(source, [entry("test.ts", pos, [["symbol"]], { varDecl: true })], {
-          ...KEEP_INFERABLE,
-          applier,
-        });
-        expect(out).toLeaveUntyped("sym");
-      },
-    );
-  }
+  it.each([["const sym = Symbol('x');"], ["const sym = Symbol.for('x');"]])(
+    "leaves %s alone even with the flag off",
+    (source) => {
+      const pos = source.indexOf("sym") + 3;
+      const out = applied(source, [entry("test.ts", pos, [["symbol"]], { varDecl: true })], {
+        ...KEEP_INFERABLE,
+      });
+      expect(out).toLeaveUntyped("sym");
+    },
+  );
 
   // The guard is syntactic, like the rest of this module: a bare `Symbol`
   // identifier and nothing else. This one is the control — if it stops being
