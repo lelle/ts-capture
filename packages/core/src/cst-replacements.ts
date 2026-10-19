@@ -507,6 +507,10 @@ export function buildCstReplacements(
         skip("no-information");
         continue;
       }
+      // A paren-less arrow's parameter entry may be skipped or missing before
+      // it asks for the parens; the return still needs them.
+      const parensOpenPos = paramSites.get(pos)?.parensOpenPos;
+      if (parensOpenPos !== undefined) requestParenWrap(parensOpenPos, pos);
       recordPreview(pos, nameAt("returnType", pos), emitted, types.length);
       bufferAnnotation(pos, emitted, annotation(markerSuffix), undefined, -1);
     } else {

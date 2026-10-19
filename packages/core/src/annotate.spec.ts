@@ -54,6 +54,21 @@ describe.each(TIERS)("annotate, oracle %s", (tier) => {
     expect(out).toAnnotate({ returnOf: "f" }, "{ n: number }");
   });
 
+  // The parameter's own entry may be skipped, or missing, before it asks for
+  // the parens; `s: number => …` does not parse.
+  it("wraps a paren-less arrow's parameter when only its return is written", () => {
+    const source = "const parse = s => JSON.parse(s);\nparse('1');\n";
+    const pos = source.indexOf("s =>") + 1;
+    const { result, out } = annotated(tier, source, [
+      entry("target.ts", pos, [["number"]], { returnType: true }),
+    ]);
+    expect(out).toHaveNoNewDiagnostics();
+    // Under `project` the probe lacks the parens, so the candidate is rejected.
+    if (tier !== "project") {
+      expect(result.text).toContain("const parse = (s): number => JSON.parse(s);");
+    }
+  });
+
   it("types a variable TypeScript cannot infer", () => {
     const source = "const data = JSON.parse('{\"n\":1}');\n";
     const { out } = annotated(tier, source, collect(source));
