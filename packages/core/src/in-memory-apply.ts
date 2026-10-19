@@ -1,17 +1,12 @@
 import type ts from "typescript";
 
 import type { CollectedTypeInfo } from "./collector-contract.js";
+import type { InferOptions } from "./configuration.js";
+import type { ApplyTelemetry } from "./contract.js";
 
-import { applyTypesToFileCst } from "./apply-types-cst.js";
-import {
-  advanceCurrentSource,
-  createProjectVerificationContext,
-  createVerificationContext,
-  orderByImports,
-} from "./apply-types-verify.js";
+import { annotateProject } from "./annotate.js";
+import { createProjectVerificationContext } from "./apply-types-verify.js";
 import { type LocatedSkip, locateSkip } from "./cli/apply-report.js";
-import { INFER_DEFAULTS, type InferOptions } from "./configuration.js";
-import { type ApplyTelemetry, newApplyTelemetry } from "./contract.js";
 
 export interface InMemoryApplyInput {
   /** The project's files, as paths `system` can read. */
@@ -41,42 +36,24 @@ export interface InMemoryApplyResult {
  * the same applier behind the same type-check gate, writing nothing.
  */
 export function applyInMemory(input: InMemoryApplyInput): InMemoryApplyResult {
-  const { fileNames, types, compilerOptions, rootDir, system } = input;
-  const infer = input.infer ?? INFER_DEFAULTS;
-  const grouped = new Map<string, CollectedTypeInfo>();
-  for (const entry of types) {
-    const entries = grouped.get(entry[0]);
-    if (entries) entries.push(entry);
-    else grouped.set(entry[0], [entry]);
-  }
-
+  const { fileNames, compilerOptions, rootDir, system } = input;
   const project = createProjectVerificationContext(fileNames, compilerOptions, rootDir, system);
-  const telemetry = newApplyTelemetry();
-  const skips: LocatedSkip[] = [];
+  const sources = new Map<string, string>();
+  const run = annotateProject({
+    types: input.types.filter(([file]) => fileNames.includes(file)),
+    readFile: (file) => {
+      const source = system.readFile(file);
+      if (source !== undefined) sources.set(file, source);
+      return source;
+    },
+    oracle: { kind: "project", project },
+    infer: input.infer,
+  });
   const files: Record<string, string> = {};
-  const observed = [...grouped.keys()].filter((file) => fileNames.includes(file));
-  const ordered = orderByImports(
-    observed,
-    project.reverseImportGraph,
-    system.useCaseSensitiveFileNames,
-  );
-
-  for (const file of ordered) {
-    const source = system.readFile(file);
-    if (source === undefined) continue;
-    const verify = createVerificationContext(project, file, source);
-    const firstSkipOfFile = telemetry.skipped.length;
-    const result = applyTypesToFileCst(
-      source,
-      grouped.get(file)!,
-      { infer, filename: file, verify, telemetry },
-      project.service.getProgram(),
-    );
-    advanceCurrentSource(verify, result);
-    for (const skip of telemetry.skipped.slice(firstSkipOfFile)) {
-      skips.push(locateSkip(skip, file, source));
-    }
-    files[file] = result;
+  const skips: LocatedSkip[] = [];
+  for (const [file, result] of run.files) {
+    files[file] = result.text;
+    for (const skip of result.skips) skips.push(locateSkip(skip, file, sources.get(file)!));
   }
-  return { files, telemetry, skips };
+  return { files, telemetry: run.telemetry, skips };
 }
