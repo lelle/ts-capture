@@ -1,6 +1,8 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
+import { instrumentSource } from "./instrument.js";
 import { instrumented } from "./test-utils/instrumented.js";
+import { makeProject, programOf } from "./test-utils/project.js";
 import "./test-utils/matchers.js";
 
 const BARE = { skipTscptrDeclarations: true };
@@ -22,6 +24,20 @@ describe("instrument", () => {
       const out = instrumented("function foo(a: string) { return a; }", { options: BARE });
       expect(out).toLeaveUntracked("a");
     });
+  });
+
+  // `this` is observed only where the checker says it is implicitly `any`, so
+  // the instrumenter needs a Program. A caller without a tsconfig, such as the
+  // browser, brings its own.
+  it("observes an implicit `this` with a Program the caller gives it", () => {
+    const source = "export function describe() {\n  return this.name;\n}\n";
+    const project = makeProject({ "a.ts": source });
+    const file = project.pathOf("a.ts");
+    const options = { ...BARE, instrumentImplicitThis: true };
+    expect(instrumentSource(source, file, options)).not.toContain('"this"');
+    expect(instrumentSource(source, file, { ...options, program: programOf(project) })).toContain(
+      '"this"',
+    );
   });
 
   it("instruments a function with unannotated parameter", () => {

@@ -18,7 +18,7 @@ export function instrumentSource(
     ...options,
   };
 
-  const program = getProgram(opts);
+  const program = opts.program ?? getProgram(opts);
   const sourceFile = program
     ? program.getSourceFile(fileName)
     : ts.createSourceFile(fileName, source, ts.ScriptTarget.Latest, true);

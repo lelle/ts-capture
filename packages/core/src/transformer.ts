@@ -17,6 +17,11 @@ import {
 export interface InstrumentOptions {
   instrumentCallExpressions?: boolean;
   instrumentImplicitThis?: boolean;
+  /**
+   * The Program to ask where `this` is implicitly `any`, for a caller that
+   * already has one (the browser has no tsconfig). Else built from `tsConfig`.
+   */
+  program?: ts.Program;
   skipTscptrDeclarations?: boolean;
   rootDir?: string;
   tsConfig?: string;
