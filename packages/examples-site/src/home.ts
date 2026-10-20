@@ -1,6 +1,7 @@
 import { escapeHtml } from "./code.js";
 import {
   type BuildInfo,
+  ICON_LINK,
   renderSiteBar,
   renderSiteFooter,
   REPO,
@@ -65,6 +66,7 @@ export function renderHomePage(build: BuildInfo): string {
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+${ICON_LINK}
 <title>ts-capture — runtime values as TypeScript types</title>
 <meta name="description" content="ts-capture watches your code run and writes the types it saw back into your source.">
 <style>${STYLE}</style>

@@ -99,6 +99,15 @@ describe("the site frame", () => {
     expect(docsLinks(pages.docs)).toEqual(["../../../docs/", "../../../docs/"]);
   });
 
+  it.each(Object.entries(pages))(
+    "%s carries its icon inline, so no page asks for /favicon.ico",
+    (_, page) => {
+      expect(page).toMatch(
+        /<link rel="icon" type="image\/svg\+xml" href="data:image\/svg\+xml,[^"]+">/,
+      );
+    },
+  );
+
   it("leaves the commit out when the build does not know it", () => {
     expect(renderHomePage({ version: "0.4.0" })).not.toContain("/commit/");
   });

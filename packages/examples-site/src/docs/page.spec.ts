@@ -112,4 +112,39 @@ describe("renderDocsPage", () => {
     expect(page).toContain('document.querySelectorAll("pre[data-copy]")');
     expect(page).toContain("navigator.clipboard.writeText");
   });
+
+  describe("previous and next", () => {
+    const pager = (html: string): string =>
+      html.slice(
+        html.indexOf('<nav class="pager"'),
+        html.indexOf("</nav>", html.indexOf('<nav class="pager"')),
+      );
+
+    it("leads to the pages either side of this one in the menu, naming their group", () => {
+      expect(pager(page)).toContain(
+        '<a class="prev" href="../use-with-vite-vitest/"><span class="dir">← Previous</span><span class="group">How-to guides</span><span class="name">Use with Vite / Vitest</span></a>',
+      );
+      expect(pager(page)).toContain(
+        '<a class="next" href="../../reference/cli/"><span class="dir">Next →</span><span class="group">Reference</span><span class="name">CLI</span></a>',
+      );
+    });
+
+    it("starts at the overview and stops at the last page", () => {
+      const index = renderDocsPage("README.md", "# Docs\n", MENU, BUILD);
+      expect(pager(index)).not.toContain('class="prev"');
+      expect(pager(index)).toContain(
+        '<span class="name">Use with Vite / Vitest</span>',
+      );
+      const last = renderDocsPage(
+        "reference/cli.md",
+        "# CLI reference\n",
+        MENU,
+        BUILD,
+      );
+      expect(pager(last)).toContain(
+        '<span class="name">Check the types you wrote</span>',
+      );
+      expect(pager(last)).not.toContain('class="next"');
+    });
+  });
 });

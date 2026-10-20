@@ -1,6 +1,7 @@
 import { escapeHtml, renderCode } from "../code.js";
 import {
   type BuildInfo,
+  ICON_LINK,
   pageTitle,
   renderSiteBar,
   renderSiteFooter,
@@ -380,6 +381,7 @@ export function renderDecidesPage(
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+${ICON_LINK}
 <title>${pageTitle("How it decides")}</title>
 <meta name="description" content="Every way ts-capture apply treats a position: what it writes, what it refuses to write, and the code that decides it.">
 <style>${STYLE}${GRID_STYLE}${TOC_STYLE}${SECTION_STYLE}</style>

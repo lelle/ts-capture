@@ -4,6 +4,7 @@ import type { MenuGroup } from "./menu.js";
 import { escapeHtml } from "../code.js";
 import {
   type BuildInfo,
+  ICON_LINK,
   pageTitle,
   renderSiteBar,
   renderSiteFooter,
@@ -40,6 +41,7 @@ export function renderDocsPage(
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+${ICON_LINK}
 <title>${escapeHtml(pageTitle(name))}</title>
 <style>${STYLE}${DOCS_STYLE}</style>
 </head>
@@ -51,6 +53,7 @@ export function renderDocsPage(
 ${renderMenu(file, menu, doc.title, doc.headings)}
 <main class="doc">
 ${doc.html}
+${renderPager(file, menu)}
 </main>
 </div>
 ${renderSiteFooter(build, "docs", root)}
@@ -58,6 +61,24 @@ ${renderSiteFooter(build, "docs", root)}
 </body>
 </html>
 `;
+}
+
+/** The pages either side of this one, in menu order from the overview on. */
+function renderPager(file: string, menu: MenuGroup[]): string {
+  const here = sitePathOf(file);
+  const order = [
+    { file: INDEX, name: "Overview", group: "Docs" },
+    ...menu.flatMap((group) =>
+      group.pages.map((page) => ({ ...page, group: group.name })),
+    ),
+  ];
+  const at = order.findIndex((page) => page.file === file);
+  const link = (side: "prev" | "next", label: string): string => {
+    const page = order[side === "prev" ? at - 1 : at + 1];
+    if (at === -1 || !page) return "";
+    return `<a class="${side}" href="${relativeHref(here, sitePathOf(page.file))}"><span class="dir">${label}</span><span class="group">${escapeHtml(page.group)}</span><span class="name">${escapeHtml(page.name)}</span></a>`;
+  };
+  return `<nav class="pager" aria-label="Previous and next">${link("prev", "← Previous")}${link("next", "Next →")}</nav>`;
 }
 
 function renderMenu(
@@ -163,9 +184,18 @@ main.doc { max-width: 80ch; margin: 0; padding: 0 0 20px; min-width: 0; }
 .doc th, .doc td { border: 1px solid var(--line); padding: 6px 10px; text-align: left; vertical-align: top; }
 .doc td code { overflow-wrap: normal; }
 .doc td:first-child code { white-space: nowrap; }
+.pager { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin: 40px 0 0; }
+.pager a { display: flex; flex-direction: column; gap: 2px; padding: 12px 16px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); color: var(--text); text-decoration: none; }
+.pager a:hover { border-color: var(--accent); }
+.pager .next { grid-column: 2; text-align: right; }
+.pager .dir { font-size: 13px; color: var(--accent); }
+.pager .group { font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); }
+.pager .name { font-weight: 600; }
 .doc blockquote { margin: 0 0 16px; padding: 2px 14px; border-left: 3px solid var(--line); color: var(--muted); }
 @media (max-width: 900px) {
   .docs { display: block; }
+  .pager { grid-template-columns: 1fr; }
+  .pager .next { grid-column: 1; }
   .docs-menu { position: static; max-height: none; padding: 0 0 8px; margin: 0 0 20px; border-bottom: 1px solid var(--line); }
   .docs-menu summary { display: list-item; padding: 8px 0; font-weight: 600; cursor: pointer; }
 }

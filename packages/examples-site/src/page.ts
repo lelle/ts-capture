@@ -1,6 +1,7 @@
 import { escapeHtml, renderCode } from "./code.js";
 import {
   type BuildInfo,
+  ICON_LINK,
   pageTitle,
   renderSiteBar,
   renderSiteFooter,
@@ -164,6 +165,7 @@ export function renderPage(data: ExamplesData, build: BuildInfo): string {
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+${ICON_LINK}
 <title>${pageTitle("Examples")}</title>
 <meta name="description" content="Before and after: what ts-capture wrote into real code, including the results a reviewer should change.">
 <style>${STYLE}</style>

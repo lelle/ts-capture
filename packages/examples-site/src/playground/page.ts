@@ -3,6 +3,7 @@ import type { Starter } from "./starters.js";
 import { escapeHtml } from "../code.js";
 import {
   type BuildInfo,
+  ICON_LINK,
   pageTitle,
   renderSiteBar,
   renderSiteFooter,
@@ -29,6 +30,7 @@ export function renderPlaygroundPage(
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+${ICON_LINK}
 <title>${pageTitle("Playground")}</title>
 <meta name="description" content="Run ts-capture in your browser: write untyped TypeScript, call it, and see the types it observed written back.">
 <style>${STYLE}</style>
