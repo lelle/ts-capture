@@ -9,6 +9,8 @@ import { REPO } from "../frame.js";
 export interface Heading {
   id: string;
   html: string;
+  /** What the menu lists: a CLI command's name alone, else the heading. */
+  menu: string;
 }
 
 export interface RenderedDoc {
@@ -56,7 +58,16 @@ export function renderMarkdown(
         used.set(base, seen + 1);
         const id = seen === 0 ? base : `${base}-${seen}`;
         if (depth === 1 && !title) title = text;
-        if (depth === 2) headings.push({ id, html });
+        if (depth === 2) {
+          const [first, ...rest] = tokens;
+          const command =
+            first?.type === "codespan" &&
+            /^ts-capture ([\w-]+)/.exec((first as Tokens.Codespan).text)?.[1];
+          const menu = command
+            ? `<code>${command}</code>${this.parser.parseInline(rest)}`
+            : html;
+          headings.push({ id, html, menu });
+        }
         return `<h${depth} id="${id}">${html}</h${depth}>\n`;
       },
       link({ href, title: linkTitle, tokens }) {

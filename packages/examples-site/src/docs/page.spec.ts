@@ -95,4 +95,16 @@ describe("renderDocsPage", () => {
   it("leads the menu back to the index", () => {
     expect(menu).toContain('<a href="../../">Overview</a>');
   });
+
+  it("lists a section in the menu under its short name", () => {
+    const cli = renderDocsPage(
+      "reference/cli.md",
+      "# CLI reference\n\n## `ts-capture verify <types.json> --project <tsconfig.json>`\n",
+      MENU,
+      BUILD,
+    );
+    expect(cli).toContain(
+      '<li><a href="#ts-capture-verify-typesjson---project-tsconfigjson"><code>verify</code></a></li>',
+    );
+  });
 });

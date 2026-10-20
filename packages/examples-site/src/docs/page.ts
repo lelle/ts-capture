@@ -71,7 +71,7 @@ function renderMenu(
     const current = target === file;
     const sections =
       current && headings.length > 0
-        ? `<ul class="sections">${headings.map((h) => `<li><a href="#${h.id}">${h.html}</a></li>`).join("")}</ul>`
+        ? `<ul class="sections">${headings.map((h) => `<li><a href="#${h.id}">${h.menu}</a></li>`).join("")}</ul>`
         : "";
     return `<li><a href="${relativeHref(here, sitePathOf(target))}"${current ? ' aria-current="page"' : ""}>${escapeHtml(name)}</a>${sections}</li>`;
   };

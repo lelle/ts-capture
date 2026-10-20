@@ -55,8 +55,23 @@ describe("renderMarkdown", () => {
       {
         id: "what-apply-will-and-wont-do",
         html: "What <code>apply</code> will and won&#39;t do",
+        menu: "What <code>apply</code> will and won&#39;t do",
       },
-      { id: "merge-and-verify", html: "Merge and verify" },
+      {
+        id: "merge-and-verify",
+        html: "Merge and verify",
+        menu: "Merge and verify",
+      },
+    ]);
+  });
+
+  it("names a command's section in the menu by the command alone, keeping its marker", () => {
+    const { headings } = render(
+      "## `ts-capture apply <types.json> [--dry-run]` ✏️\n\n## `ts-capture merge <dir> [--out <path>]`\n",
+    );
+    expect(headings.map((h) => h.menu)).toEqual([
+      "<code>apply</code> ✏️",
+      "<code>merge</code>",
     ]);
   });
 
