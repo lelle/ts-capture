@@ -132,70 +132,145 @@ const GRID_STYLE = `
 .grid .unreachable a { opacity: 0.6; }
 `;
 
-/** Every card, under its kind, in page order. */
+/**
+ * The matrix's two axes. Kind: one selected, the kind of the card being read.
+ * Outcome: every outcome, the ones the selected kind lacks disabled. Rendered
+ * with the first kind selected, so the menu reads right before the script runs.
+ */
 function renderToc(cards: DecidedCell[]): string {
   const kinds = [...new Set(cards.map(({ cell }) => cell.kind))];
-  const groups = kinds.map((kind) => {
-    const items = cards
-      .filter(({ cell }) => cell.kind === kind)
-      .map(
-        ({ cell }) =>
-          `<li><a href="#${anchor(cell)}" data-label="${escapeHtml(`${KINDS[kind]} · ${cell.outcome}`)}">${escapeHtml(cell.outcome)}</a></li>`,
-      )
-      .join("");
-    return `<p class="toc-kind">${escapeHtml(KINDS[kind])}</p><ul>${items}</ul>`;
-  });
-  return `<nav class="toc" aria-label="Cards">
-  <button type="button" class="toc-toggle" aria-expanded="false" aria-controls="toc-list"><span class="toc-current">Cards</span></button>
-  <div id="toc-list" class="toc-list">${groups.join("")}</div>
+  const outcomesOf = (kind: SiteKind): Outcome[] =>
+    OUTCOMES.filter((o) =>
+      cards.some(({ cell }) => cell.kind === kind && cell.outcome === o),
+    );
+  const first = kinds[0];
+  const kindItems = kinds
+    .map(
+      (kind) =>
+        `<li><a href="#${kind}-${outcomesOf(kind)[0]}" data-kind="${kind}" data-outcomes="${outcomesOf(kind).join(" ")}"${kind === first ? ' aria-current="true"' : ""}>${escapeHtml(KINDS[kind])}</a></li>`,
+    )
+    .join("");
+  const outcomeItems = OUTCOMES.map((outcome) => {
+    const has = first !== undefined && outcomesOf(first).includes(outcome);
+    return has
+      ? `<li><a data-outcome="${outcome}" href="#${first}-${outcome}">${escapeHtml(outcome)}</a></li>`
+      : `<li><a data-outcome="${outcome}" aria-disabled="true">${escapeHtml(outcome)}</a></li>`;
+  }).join("");
+  return `<nav class="toc" aria-label="Kinds and outcomes">
+  <button type="button" class="toc-toggle" aria-expanded="false" aria-controls="toc-list"><span class="toc-current">Kinds and outcomes</span></button>
+  <div id="toc-list" class="toc-list">
+    <p class="toc-kind">Kind</p><ul id="kinds">${kindItems}</ul>
+    <p class="toc-kind" id="outcome-heading">Outcome${first ? ` — ${escapeHtml(KINDS[first])}` : ""}</p><ul id="outcomes">${outcomeItems}</ul>
+  </div>
 </nav>`;
 }
 
-// Marks in the menu every card on screen, and keeps the first of them in
-// view inside the menu without moving the page. On a narrow screen the menu
-// folds behind a button that names where the reader is.
+// The selected kind is the kind of the card being read, or of the card a click
+// pinned while that card is on screen; at the bottom of the page, the last
+// card. Outcome marks the selected kind's cards on screen. On a narrow screen
+// the menu folds behind a bar that names the card being read.
 const TOC_SCRIPT = `
 const toc = document.querySelector(".toc");
 const toggle = toc.querySelector(".toc-toggle");
 const current = toc.querySelector(".toc-current");
-const list = document.getElementById("toc-list");
-const links = new Map([...list.querySelectorAll("a")].map((a) => [a.getAttribute("href").slice(1), a]));
+const heading = document.getElementById("outcome-heading");
+const kindLinks = [...document.querySelectorAll("#kinds a")];
+const outcomeLinks = [...document.querySelectorAll("#outcomes a")];
+const cards = [...document.querySelectorAll("main .example")];
+const ids = cards.map((card) => card.id);
+const kindOf = (id) => id.slice(0, id.indexOf("-"));
+const titleOf = (id) =>
+  kindLinks.find((link) => link.dataset.kind === kindOf(id)).textContent +
+  " · " +
+  id.slice(id.indexOf("-") + 1);
 const fold = (open) => {
   toggle.setAttribute("aria-expanded", String(open));
   toc.classList.toggle("open", open);
 };
 toggle.addEventListener("click", () => fold(toggle.getAttribute("aria-expanded") !== "true"));
-list.addEventListener("click", (event) => {
-  if (event.target.closest("a")) fold(false);
-});
 // On a narrow screen the folded menu is a bar over the top of the page: what
 // is under it is not on screen.
-const bar = getComputedStyle(toggle).display === "none" ? 0 : toc.offsetHeight;
+const bar = () => (getComputedStyle(toggle).display === "none" ? 0 : toc.offsetHeight);
+let pinned = null;
+let arriving = false;
+let settle = 0;
+const go = (id) => {
+  // Fold first: open, the menu pushes the page down on a narrow screen, and a
+  // jump measured with it open lands one menu too far once it closes.
+  fold(false);
+  pinned = id;
+  arriving = true;
+  clearTimeout(settle);
+  settle = setTimeout(() => {
+    arriving = false;
+    update();
+  }, 1200);
+  document.getElementById(id).scrollIntoView({ behavior: "smooth" });
+  history.replaceState(null, "", "#" + id);
+  update();
+};
+for (const link of kindLinks) {
+  link.addEventListener("click", (event) => {
+    event.preventDefault();
+    go(link.dataset.kind + "-" + link.dataset.outcomes.split(" ")[0]);
+  });
+}
+for (const link of outcomeLinks) {
+  link.addEventListener("click", (event) => {
+    event.preventDefault();
+    if (link.getAttribute("aria-disabled") !== "true") go(selected + "-" + link.dataset.outcome);
+  });
+}
+let selected = kindLinks[0]?.dataset.kind;
+const select = (kind) => {
+  if (kind === selected) return;
+  selected = kind;
+  const has = new Set();
+  for (const link of kindLinks) {
+    const on = link.dataset.kind === kind;
+    link.toggleAttribute("aria-current", on);
+    if (on) {
+      heading.textContent = "Outcome — " + link.textContent;
+      for (const outcome of link.dataset.outcomes.split(" ")) has.add(outcome);
+    }
+  }
+  for (const link of outcomeLinks) {
+    if (has.has(link.dataset.outcome)) {
+      link.href = "#" + kind + "-" + link.dataset.outcome;
+      link.removeAttribute("aria-disabled");
+    } else {
+      link.removeAttribute("href");
+      link.setAttribute("aria-disabled", "true");
+    }
+  }
+};
 // The observer only says which cards are near the screen. Whether one shows
 // more than a sliver is measured from where it is now, every frame the page
 // scrolls: an observer reports a card once, as it crosses the edge, and a card
 // that crossed by two pixels during a fast scroll would never count.
 const near = new Set();
 const update = () => {
+  const top = bar();
   const onScreen = new Set();
   for (const id of near) {
     const r = document.getElementById(id).getBoundingClientRect();
-    if (Math.min(r.bottom, innerHeight) - Math.max(r.top, bar) > 4) onScreen.add(id);
+    if (Math.min(r.bottom, innerHeight) - Math.max(r.top, top) > 4) onScreen.add(id);
   }
-  for (const [id, link] of links) link.classList.toggle("on-screen", onScreen.has(id));
-  // The card being read: the first one on screen with more than a sliver of it
-  // left above the fold.
-  const shown = [...links.keys()].filter((id) => onScreen.has(id));
-  const reading =
-    shown.find((id) => document.getElementById(id).getBoundingClientRect().bottom > bar + 80) ??
+  if (pinned && !onScreen.has(pinned) && !arriving) pinned = null;
+  const shown = ids.filter((id) => onScreen.has(id));
+  let reading =
+    shown.find((id) => document.getElementById(id).getBoundingClientRect().bottom > top + 80) ??
     shown[0];
-  if (!reading) return;
-  const link = links.get(reading);
-  current.textContent = link.dataset.label;
-  const top = link.offsetTop;
-  if (top < list.scrollTop || top + link.offsetHeight > list.scrollTop + list.clientHeight) {
-    list.scrollTop = top - list.clientHeight / 3;
+  // The last card can never reach the top: at the bottom it is the one being
+  // read, unless a click pinned another.
+  const atBottom = scrollY + innerHeight >= document.documentElement.scrollHeight - 2;
+  if (atBottom && !pinned) reading = ids[ids.length - 1];
+  const shownFor = pinned ?? reading;
+  if (shownFor) select(kindOf(shownFor));
+  for (const link of outcomeLinks) {
+    link.classList.toggle("on-screen", onScreen.has(selected + "-" + link.dataset.outcome));
   }
+  if (shownFor) current.textContent = titleOf(shownFor);
 };
 const observer = new IntersectionObserver((entries) => {
   for (const entry of entries) {
@@ -208,33 +283,35 @@ let frame = 0;
 addEventListener(
   "scroll",
   () => {
-    if (!frame) frame = requestAnimationFrame(() => {
-      frame = 0;
-      update();
-    });
+    if (!frame) {
+      frame = requestAnimationFrame(() => {
+        frame = 0;
+        update();
+      });
+    }
   },
   { passive: true },
 );
-for (const id of links.keys()) {
-  const card = document.getElementById(id);
-  if (card) observer.observe(card);
-}
+for (const card of cards) observer.observe(card);
 `;
 
 const TOC_STYLE = `
-.layout { display: grid; grid-template-columns: 220px minmax(0, 1fr); }
-.toc { position: sticky; top: 0; align-self: start; max-height: 100vh; display: flex; flex-direction: column; border-right: 1px solid var(--line); font-size: 13px; }
+.layout { display: grid; grid-template-columns: 230px minmax(0, 1fr); }
+.toc { position: sticky; top: 0; align-self: start; height: 100vh; box-sizing: border-box; display: flex; flex-direction: column; border-right: 1px solid var(--line); font-size: 13px; }
 .toc-toggle { display: none; }
-.toc-list { position: relative; overflow-y: auto; padding: 24px 12px 24px 20px; }
-.toc-kind { margin: 14px 0 4px; font-weight: 600; }
+.toc-list { overflow-y: auto; padding: 24px 12px 24px 20px; }
+.toc-kind { margin: 18px 0 6px; font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); }
 .toc-kind:first-child { margin-top: 0; }
 .toc ul { list-style: none; margin: 0; padding: 0; }
-.toc a { display: block; padding: 1px 8px; border-left: 2px solid transparent; color: var(--muted); text-decoration: none; font-family: ui-monospace, monospace; }
+.toc a { display: block; padding: 1px 8px; border-left: 2px solid transparent; color: var(--muted); text-decoration: none; font-family: ui-monospace, monospace; cursor: pointer; }
 .toc a:hover { color: var(--text); }
-.toc a.on-screen { color: var(--text); border-left-color: var(--accent); background: var(--code-bg); }
+#kinds a[aria-current] { color: var(--text); font-weight: 600; border-left-color: var(--accent); }
+#kinds a[aria-current]::before { content: "◉ "; color: var(--accent); }
+#outcomes a.on-screen { color: var(--text); border-left-color: var(--accent); background: var(--code-bg); }
+#outcomes a[aria-disabled="true"] { opacity: 0.4; text-decoration: line-through; cursor: default; pointer-events: none; }
 @media (max-width: 900px) {
   .layout { display: block; }
-  .toc { z-index: 2; max-height: none; border-right: 0; border-bottom: 1px solid var(--line); background: var(--bg); }
+  .toc { z-index: 2; height: auto; border-right: 0; border-bottom: 1px solid var(--line); background: var(--bg); }
   .toc-toggle { display: block; width: 100%; padding: 10px 20px; text-align: left; font: inherit; color: var(--text); background: var(--bg); border: 0; cursor: pointer; }
   .toc-toggle::after { content: " ▾"; color: var(--muted); }
   .toc-list { display: none; max-height: 60vh; padding-top: 4px; }
@@ -245,9 +322,17 @@ const TOC_STYLE = `
 
 /** `real` maps a real example's id to its title. */
 export function renderDecidesPage(
-  cards: DecidedCell[],
+  given: DecidedCell[],
   real: ReadonlyMap<string, string>,
 ): string {
+  // Each kind's cards in the order of the outcome list, so the menu and the
+  // page agree.
+  const kindOrder = [...new Set(given.map(({ cell }) => cell.kind))];
+  const cards = [...given].sort(
+    (a, b) =>
+      kindOrder.indexOf(a.cell.kind) - kindOrder.indexOf(b.cell.kind) ||
+      OUTCOMES.indexOf(a.cell.outcome) - OUTCOMES.indexOf(b.cell.outcome),
+  );
   return `<!doctype html>
 <html lang="en">
 <head>

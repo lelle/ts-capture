@@ -24,7 +24,9 @@ through the same applier as the playground when the page is built;
 `cells.spec.ts` checks that every card still ends where it says, and names
 the function in `packages/core/src` that decides it. A card links to that
 function, to the test, to the real examples in its cell, and opens in the
-playground. Every kind of position is mapped: parameters, return types, variables, class fields, callbacks and `this`, and every card runs: a card about code that changed after the run, or about observations applied twice, shows the text the last apply was given.
+playground. Every kind of position is mapped: parameters, return types, variables, class fields, callbacks and `this`, and every card runs: a card about code that changed after the run, or about observations applied twice, shows the text the last apply was given. A menu down the side
+follows the two axes: the kind being read (one at a time) and its outcomes,
+with the cards on screen marked.
 
 ## Playground
 

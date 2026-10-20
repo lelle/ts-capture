@@ -1,7 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import type { Cell } from "./cells.js";
-
+import { type Cell, OUTCOMES } from "./cells.js";
 import { type DecidedCell, renderDecidesPage } from "./page.js";
 
 const written: Cell = {
@@ -133,30 +132,76 @@ describe("renderDecidesPage", () => {
     expect(page).not.toContain("open in the playground");
   });
 
-  it("lists every card in a menu, under its kind, in page order", () => {
-    const menu = page.slice(
-      page.indexOf('<nav class="toc"'),
-      page.indexOf("</nav>"),
+  // Two axes of the matrix: one kind selected, and the outcomes, with the ones
+  // the selected kind does not have disabled.
+  describe("the menu", () => {
+    const returnWritten: Cell = {
+      ...written,
+      kind: "return",
+      name: "return type",
+    };
+    const twoKinds = renderDecidesPage(
+      [
+        { cell: unreachable },
+        { cell: returnWritten, after: written.code! },
+        CARDS[0]!,
+      ],
+      REAL,
     );
-    expect(menu).toContain('<p class="toc-kind">Parameter</p>');
-    const links = [...menu.matchAll(/href="#([^"]+)"/g)].map((m) => m[1]);
-    expect(links).toEqual([
-      "parameter-written",
-      "parameter-redundant",
-      "parameter-no-site",
-    ]);
-  });
-
-  it("folds the menu behind a button on a narrow screen", () => {
-    expect(page).toContain(
-      '<button type="button" class="toc-toggle" aria-expanded="false" aria-controls="toc-list">',
+    const menu = twoKinds.slice(
+      twoKinds.indexOf('<nav class="toc"'),
+      twoKinds.indexOf("</nav>"),
     );
-    expect(page).toContain('id="toc-list"');
-  });
+    const between = (from: string, to: string): string =>
+      menu.slice(menu.indexOf(from), menu.indexOf(to, menu.indexOf(from)));
 
-  it("marks in the menu the cards that are on screen", () => {
-    expect(page).toContain("IntersectionObserver");
-    expect(page).toContain(".toc a.on-screen");
+    it("lists the kinds, the first one selected", () => {
+      const kinds = between('id="kinds"', "</ul>");
+      expect(
+        [...kinds.matchAll(/data-kind="([^"]+)"/g)].map((m) => m[1]),
+      ).toEqual(["parameter", "return"]);
+      expect(kinds).toMatch(/data-kind="parameter"[^>]*aria-current="true"/);
+    });
+
+    it("lists every outcome, and disables the ones the selected kind lacks", () => {
+      const outcomes = between('id="outcomes"', "</ul>");
+      expect(
+        [...outcomes.matchAll(/data-outcome="([^"]+)"/g)].map((m) => m[1]),
+      ).toEqual(OUTCOMES);
+      expect(outcomes).toContain(
+        'data-outcome="written" href="#parameter-written"',
+      );
+      expect(outcomes).toMatch(
+        /data-outcome="redundant"[^>]*aria-disabled="true"/,
+      );
+    });
+
+    it("tells the script which outcomes each kind has", () => {
+      expect(menu).toContain('data-outcomes="written no-site"');
+    });
+
+    it("puts each kind's cards in the order of the outcome list", () => {
+      const order = [...twoKinds.matchAll(/<article id="([^"]+)"/g)].map(
+        (m) => m[1],
+      );
+      expect(order).toEqual([
+        "parameter-written",
+        "parameter-no-site",
+        "return-written",
+      ]);
+    });
+
+    it("folds behind a button on a narrow screen", () => {
+      expect(menu).toContain(
+        '<button type="button" class="toc-toggle" aria-expanded="false" aria-controls="toc-list">',
+      );
+    });
+
+    it("marks what is on screen, lets a click pin a card, and takes the last at the bottom", () => {
+      expect(twoKinds).toContain("IntersectionObserver");
+      expect(twoKinds).toContain("pinned");
+      expect(twoKinds).toContain("atBottom");
+    });
   });
 
   it("says why a cell has no example, and offers no playground", () => {
