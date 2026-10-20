@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
 
+import type { BuildInfo } from "./frame.js";
+
 import { renderHomePage } from "./home.js";
 import { renderDecidesPage } from "./how-it-decides/page.js";
 import { type ExamplesData, renderPage } from "./page.js";
@@ -83,5 +85,29 @@ describe("the site frame", () => {
 
   it("leaves the commit out when the build does not know it", () => {
     expect(renderHomePage({ version: "0.4.0" })).not.toContain("/commit/");
+  });
+
+  // The site is built from main, which runs ahead of npm until the next release.
+  const builtFrom = (build: BuildInfo): string =>
+    /<p>(Built from[\s\S]*?)<\/p>/
+      .exec(renderHomePage(build))![1]!
+      .replaceAll(/<[^>]+>/g, "");
+
+  it("says main is past the version while changes wait for a release", () => {
+    expect(
+      builtFrom({ version: "0.3.0", commit: "abc1234", unreleased: true }),
+    ).toBe("Built from main at abc1234, after ts-capture 0.3.0");
+  });
+
+  it("names the version alone when main is that release", () => {
+    expect(builtFrom({ version: "0.4.0", commit: "abc1234" })).toBe(
+      "Built from ts-capture 0.4.0 · abc1234",
+    );
+  });
+
+  it("says the same without a commit", () => {
+    expect(builtFrom({ version: "0.3.0", unreleased: true })).toBe(
+      "Built from main, after ts-capture 0.3.0",
+    );
   });
 });

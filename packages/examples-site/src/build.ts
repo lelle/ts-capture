@@ -1,7 +1,13 @@
 import { createDefaultMapFromNodeModules } from "@typescript/vfs";
 import { build } from "esbuild";
 import { execFileSync } from "node:child_process";
-import { copyFileSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import {
+  copyFileSync,
+  mkdirSync,
+  readdirSync,
+  readFileSync,
+  writeFileSync,
+} from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import ts from "typescript";
@@ -34,6 +40,10 @@ const buildInfo: BuildInfo = {
     ) as { version: string }
   ).version,
   commit: currentCommit(),
+  // The version PR consumes the changesets, so any left mean main is ahead.
+  unreleased: readdirSync(resolve(root, ".changeset")).some(
+    (name) => name.endsWith(".md") && name !== "README.md",
+  ),
 };
 mkdirSync(playgroundDir, { recursive: true });
 mkdirSync(examplesDir, { recursive: true });

@@ -4,10 +4,14 @@ export const REPO = "https://github.com/lelle/ts-capture";
 const DOCS = `${REPO}/tree/main/docs`;
 const NPM = "https://www.npmjs.com/package/@ts-capture/core";
 
-/** What the site was built from; the commit is left out when git is not there. */
+/**
+ * What the site was built from; the commit is left out when git is not there.
+ * `unreleased` is set while changesets wait: main is then past `version`.
+ */
 export interface BuildInfo {
   version: string;
   commit?: string;
+  unreleased?: boolean;
 }
 
 export type PageId = "home" | "examples" | "how-it-decides" | "playground";
@@ -35,11 +39,15 @@ export function renderSiteBar(current: PageId): string {
 }
 
 export function renderSiteFooter(build: BuildInfo): string {
-  const commit = build.commit
-    ? ` · <a href="${REPO}/commit/${escapeHtml(build.commit)}">${escapeHtml(build.commit)}</a>`
-    : "";
+  const commit =
+    build.commit &&
+    `<a href="${REPO}/commit/${escapeHtml(build.commit)}">${escapeHtml(build.commit)}</a>`;
+  const version = `ts-capture ${escapeHtml(build.version)}`;
+  const builtFrom = build.unreleased
+    ? `Built from main${commit ? ` at ${commit}` : ""}, after ${version}`
+    : `Built from ${version}${commit ? ` · ${commit}` : ""}`;
   return `<footer class="site">
   <p><a href="${REPO}">GitHub</a> · <a href="${NPM}">npm</a> · <a href="${DOCS}">Docs</a> · MIT licence</p>
-  <p>Built from ts-capture ${escapeHtml(build.version)}${commit}</p>
+  <p>${builtFrom}</p>
 </footer>`;
 }
