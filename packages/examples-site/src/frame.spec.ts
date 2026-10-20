@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import type { BuildInfo } from "./frame.js";
 
+import { renderDocsPage } from "./docs/page.js";
 import { renderHomePage } from "./home.js";
 import { renderDecidesPage } from "./how-it-decides/page.js";
 import { type ExamplesData, renderPage } from "./page.js";
@@ -19,6 +20,12 @@ const pages = {
   "how-it-decides": renderDecidesPage([], new Map(), BUILD),
   playground: renderPlaygroundPage(
     [{ id: "a", title: "A", code: "f();\n" }],
+    BUILD,
+  ),
+  docs: renderDocsPage(
+    "how-to/check-your-types.md",
+    "# Check the types you wrote\n",
+    [],
     BUILD,
   ),
 };
@@ -44,7 +51,7 @@ describe("the site frame", () => {
         "Examples",
         "How it decides",
         "Playground",
-        "Docs ↗",
+        "Docs",
         "GitHub ↗",
       ]);
     },
@@ -55,6 +62,7 @@ describe("the site frame", () => {
     ["examples", "Examples"],
     ["how-it-decides", "How it decides"],
     ["playground", "Playground"],
+    ["docs", "Docs"],
   ] as const)("%s marks itself in the bar", (id, name) => {
     expect(marked(pages[id])).toEqual([name]);
   });
@@ -82,6 +90,14 @@ describe("the site frame", () => {
       expect(footer).toContain("MIT licence");
     },
   );
+
+  it("links every page to the site's own docs, from wherever the page sits", () => {
+    const docsLinks = (page: string): string[] =>
+      [...page.matchAll(/<a href="([^"]*)"[^>]*>Docs<\/a>/g)].map((m) => m[1]!);
+    expect(docsLinks(pages.home)).toEqual(["docs/", "docs/"]);
+    expect(docsLinks(pages.examples)).toEqual(["../docs/", "../docs/"]);
+    expect(docsLinks(pages.docs)).toEqual(["../../../docs/", "../../../docs/"]);
+  });
 
   it("leaves the commit out when the build does not know it", () => {
     expect(renderHomePage({ version: "0.4.0" })).not.toContain("/commit/");

@@ -398,7 +398,7 @@ ${renderToc(cards)}
 <main>
 ${renderSections(cards, real)}
 </main>
-${renderSiteFooter(build)}
+${renderSiteFooter(build, "how-it-decides")}
 </div>
 </div>
 <script>${TOC_SCRIPT}</script>

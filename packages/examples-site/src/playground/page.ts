@@ -61,7 +61,7 @@ export function renderPlaygroundPage(
     <li>This runs the same applier and type-check as the <code>ts-capture</code> CLI. A real project also gets its test runner, several files and its own <code>tsconfig.json</code>.</li>
   </ul>
 </main>
-${renderSiteFooter(build)}
+${renderSiteFooter(build, "playground")}
 <script type="application/json" id="starters">${embeddedJson(starters)}</script>
 <script type="module" src="main.js"></script>
 </body>

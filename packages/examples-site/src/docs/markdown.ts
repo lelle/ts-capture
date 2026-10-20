@@ -76,6 +76,12 @@ export function renderMarkdown(source: string, file: string): RenderedDoc {
   return { title, html, headings };
 }
 
+/** A link from one site path to another, both relative to the site's root. */
+export function relativeHref(from: string, to: string): string {
+  const relative = posix.relative(`/${from}`, `/${to}`);
+  return relative ? `${relative}/` : "./";
+}
+
 function siteHref(href: string, file: string): string {
   if (/^[a-z][a-z+.-]*:/i.test(href) || href.startsWith("#")) return href;
   const hashAt = href.indexOf("#");
@@ -84,10 +90,7 @@ function siteHref(href: string, file: string): string {
   const inRepo = posix.normalize(posix.join("docs", posix.dirname(file), path));
 
   if (inRepo.startsWith("docs/") && inRepo.endsWith(".md")) {
-    const from = sitePathOf(file);
-    const to = sitePathOf(inRepo.slice("docs/".length));
-    const relative = posix.relative(from, to);
-    return `${relative ? `${relative}/` : "./"}${hash}`;
+    return `${relativeHref(sitePathOf(file), sitePathOf(inRepo.slice("docs/".length)))}${hash}`;
   }
   const kind = posix.extname(inRepo) ? "blob" : "tree";
   return `${REPO}/${kind}/main/${inRepo}${hash}`;

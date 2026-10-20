@@ -14,6 +14,7 @@ import ts from "typescript";
 
 import type { BuildInfo } from "./frame.js";
 
+import { renderDocsSite } from "./docs/site.js";
 import { renderHomePage } from "./home.js";
 import { CELLS } from "./how-it-decides/cells.js";
 import { decide } from "./how-it-decides/decide.js";
@@ -26,7 +27,8 @@ import { STARTERS } from "./playground/starters.js";
 
 const packageDir = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const root = resolve(packageDir, "../..");
-const dataPath = resolve(root, "docs/examples/examples.json");
+const docsDir = resolve(root, "docs");
+const dataPath = resolve(docsDir, "examples/examples.json");
 const outDir = resolve(root, "site");
 const examplesDir = resolve(outDir, "examples");
 const playgroundDir = resolve(outDir, "playground");
@@ -79,6 +81,16 @@ writeFileSync(
   ),
 );
 process.stdout.write(`${decided.length} cells -> ${decidesDir}/index.html\n`);
+
+const docs = renderDocsSite(
+  (file) => readFileSync(resolve(docsDir, file), "utf-8"),
+  buildInfo,
+);
+for (const [path, html] of docs) {
+  mkdirSync(resolve(outDir, path), { recursive: true });
+  writeFileSync(resolve(outDir, path, "index.html"), html);
+}
+process.stdout.write(`${docs.size} docs pages -> ${outDir}/docs/\n`);
 await build({
   entryPoints: {
     main: resolve(packageDir, "src/playground/main.ts"),

@@ -1,7 +1,6 @@
 import { escapeHtml } from "./code.js";
 
 export const REPO = "https://github.com/lelle/ts-capture";
-const DOCS = `${REPO}/tree/main/docs`;
 const NPM = "https://www.npmjs.com/package/@ts-capture/core";
 
 /**
@@ -14,31 +13,39 @@ export interface BuildInfo {
   unreleased?: boolean;
 }
 
-export type PageId = "home" | "examples" | "how-it-decides" | "playground";
+export type PageId =
+  "home" | "examples" | "how-it-decides" | "playground" | "docs";
 
 // In the order a reader learns it: what it writes, why, then try it.
 const PAGES: { id: Exclude<PageId, "home">; name: string }[] = [
   { id: "examples", name: "Examples" },
   { id: "how-it-decides", name: "How it decides" },
   { id: "playground", name: "Playground" },
+  { id: "docs", name: "Docs" },
 ];
+
+/** From a page to the site's root; docs pages sit deeper and pass their own. */
+const rootOf = (current: PageId): string => (current === "home" ? "" : "../");
 
 export function pageTitle(name: string): string {
   return `${name} · ts-capture`;
 }
 
-export function renderSiteBar(current: PageId): string {
-  const base = current === "home" ? "" : "../";
+export function renderSiteBar(current: PageId, root = rootOf(current)): string {
   const link = (id: PageId, href: string, name: string): string =>
     `<a href="${href}"${id === current ? ' aria-current="page"' : ""}>${name}</a>`;
-  return `<nav class="site" aria-label="Site">${link("home", base || "./", "ts-capture")}<span class="pages">${PAGES.map(
-    ({ id, name }) => link(id, `${base}${id}/`, name),
+  return `<nav class="site" aria-label="Site">${link("home", root || "./", "ts-capture")}<span class="pages">${PAGES.map(
+    ({ id, name }) => link(id, `${root}${id}/`, name),
   ).join(
     "",
-  )}</span><span class="out"><a href="${DOCS}">Docs ↗</a><a href="${REPO}">GitHub ↗</a></span></nav>`;
+  )}</span><span class="out"><a href="${REPO}">GitHub ↗</a></span></nav>`;
 }
 
-export function renderSiteFooter(build: BuildInfo): string {
+export function renderSiteFooter(
+  build: BuildInfo,
+  current: PageId,
+  root = rootOf(current),
+): string {
   const commit =
     build.commit &&
     `<a href="${REPO}/commit/${escapeHtml(build.commit)}">${escapeHtml(build.commit)}</a>`;
@@ -47,7 +54,7 @@ export function renderSiteFooter(build: BuildInfo): string {
     ? `Built from main${commit ? ` at ${commit}` : ""}, after ${version}`
     : `Built from ${version}${commit ? ` · ${commit}` : ""}`;
   return `<footer class="site">
-  <p><a href="${REPO}">GitHub</a> · <a href="${NPM}">npm</a> · <a href="${DOCS}">Docs</a> · MIT licence</p>
+  <p><a href="${REPO}">GitHub</a> · <a href="${NPM}">npm</a> · <a href="${root}docs/">Docs</a> · MIT licence</p>
   <p>${builtFrom}</p>
 </footer>`;
 }

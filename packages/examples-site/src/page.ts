@@ -188,7 +188,7 @@ ${renderSources(data)}
   <p>A type is only as good as what the tests passed in. The examples marked “needs review” are not bugs: they describe the test run exactly, which is why nothing flags them. See <a href="${REPO}/blob/main/docs/explanation/what-it-cannot-infer.md">what it cannot infer</a> and <a href="${REPO}/blob/main/docs/how-to/review-and-apply-safely.md">review and apply safely</a>.</p>
 </section>
 </main>
-${renderSiteFooter(build)}
+${renderSiteFooter(build, "examples")}
 <script>${SCRIPT}</script>
 </body>
 </html>
