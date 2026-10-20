@@ -1,3 +1,5 @@
+import { setFlagsFromString } from "node:v8";
+import { runInNewContext } from "node:vm";
 import ts from "typescript";
 import { describe, expect, it, vi } from "vitest";
 
@@ -1439,6 +1441,42 @@ describe("CollectionContext.revision", () => {
       revision = nextRevision;
     }
     expect(changes).toBeGreaterThanOrEqual(5);
+  });
+});
+
+describe("CollectionContext → functions observed as values", () => {
+  // Node exposes gc() only behind a flag; the flag can be set at runtime.
+  setFlagsFromString("--expose-gc");
+  const gc = runInNewContext("gc") as () => void;
+  const nextTurn = () => new Promise<void>((resolve) => setTimeout(resolve, 0));
+  const typeAt = (ctx: CollectionContext, pos: number) =>
+    ctx.getCollectedTypes().find((e) => e[1] === pos)?.[2][0][0];
+
+  it("upgrades a function registered only after it was passed", () => {
+    const ctx = createCollectionContext();
+    const callback = (count: number) => String(count);
+    ctx.record("format", callback, 10, "/receiver.ts", { fnRetPos: 20 });
+    ctx.record("count", 1, 90, "/callback.ts", { fnRetPos: 100 });
+    ctx.record("(return)", "1", 100, "/callback.ts", { returnType: true });
+    ctx.registerFn(callback, 100, "/callback.ts");
+    expect(typeAt(ctx, 10)).toBe("(count: number) => string");
+  });
+
+  it.each([
+    ["registered before it is passed", true],
+    ["never registered", false],
+  ])("lets go of a closure %s once the program does", async (_, registered) => {
+    const ctx = createCollectionContext();
+    const observe = (): WeakRef<Function> => {
+      const callback = (count: number) => String(count);
+      if (registered) ctx.registerFn(callback, 100, "/callback.ts");
+      ctx.record("format", callback, 10, "/receiver.ts", { fnRetPos: 20 });
+      return new WeakRef(callback);
+    };
+    const refs = Array.from({ length: 3 }, observe);
+    await nextTurn();
+    gc();
+    expect(refs.map((ref) => ref.deref())).toEqual([undefined, undefined, undefined]);
   });
 });
 

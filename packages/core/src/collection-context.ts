@@ -37,8 +37,10 @@ export function createCollectionContextWith(
   const logs = new Map<string, Set<string>>();
   const trackedObjects = new WeakMap<object, SourceLocation>();
   const registeredFns = new WeakMap<Function, { retPos: number; filename: string }>();
-  // Store function refs recorded as values: logKey → fn ref[]
-  const recordedFunctions = new Map<string, Function[]>();
+  // The positions each function was observed at as a value. Weak: a closure
+  // passed once must not outlive the program's last reference to it, and a
+  // function declaration registers only when first called, often after that.
+  const storedAt = new WeakMap<Function, Set<string>>();
   // Store registered-fn refs that appear as object property values:
   // logKey → Map<memberName, fn>
   const objectMemberFns = new Map<string, Map<string, Function>>();
@@ -62,7 +64,6 @@ export function createCollectionContextWith(
   // site already seen at a position changes nothing.
   const seenFnKeys = new Map<string, Set<string>>();
   const seenMemberFnKeys = new Map<string, string>();
-  const recordedAsValue = new WeakSet<Function>();
   // Returned promises whose settlement has not been observed yet. Bounded: a
   // hot loop returning promises that never settle must not grow memory.
   const pendingPromises: Array<{
@@ -78,7 +79,18 @@ export function createCollectionContextWith(
     const known = registeredFns.get(fn);
     if (known?.retPos === retPos && known.filename === filename) return;
     registeredFns.set(fn, { retPos, filename });
-    if (recordedAsValue.has(fn)) revision++;
+    for (const key of storedAt.get(fn) ?? []) addFnKey(key, `${filename}:${retPos}`);
+  }
+
+  function addFnKey(key: string, fnKey: string): void {
+    let fnKeys = seenFnKeys.get(key);
+    if (!fnKeys) {
+      fnKeys = new Set();
+      seenFnKeys.set(key, fnKeys);
+    }
+    const known = fnKeys.size;
+    fnKeys.add(fnKey);
+    if (fnKeys.size !== known) revision++;
   }
 
   /**
@@ -139,23 +151,13 @@ export function createCollectionContextWith(
         }
       }
 
-      // Store function refs for deferred cross-referencing
+      // Resolved to the function's key now if it is registered, else when it is.
       if (typeof value === "function") {
-        const existing = recordedFunctions.get(key);
-        if (existing) existing.push(value);
-        else recordedFunctions.set(key, [value]);
-        recordedAsValue.add(value);
+        const keys = storedAt.get(value);
+        if (keys) keys.add(key);
+        else storedAt.set(value, new Set([key]));
         const info = registeredFns.get(value);
-        if (info) {
-          let fnKeys = seenFnKeys.get(key);
-          if (!fnKeys) {
-            fnKeys = new Set();
-            seenFnKeys.set(key, fnKeys);
-          }
-          const known = fnKeys.size;
-          fnKeys.add(`${info.filename}:${info.retPos}`);
-          if (fnKeys.size !== known) revision++;
-        }
+        if (info) addFnKey(key, `${info.filename}:${info.retPos}`);
       }
 
       // Store registered-fn refs found as object property values
@@ -266,18 +268,7 @@ export function createCollectionContextWith(
     },
 
     getCollectedTypes(): CollectedTypeInfo {
-      // Resolve live function identity to stable `${filename}:${retPos}` keys
-      // at this recording boundary (the only place the WeakMap is consulted),
-      // so the cross-reference engine runs on plain, serializable data.
-      const recordedFnKeys = new Map<string, string[]>();
-      for (const [key, fns] of recordedFunctions) {
-        const keys: string[] = [];
-        for (const fn of fns) {
-          const info = registeredFns.get(fn);
-          if (info) keys.push(`${info.filename}:${info.retPos}`);
-        }
-        if (keys.length > 0) recordedFnKeys.set(key, keys);
-      }
+      const recordedFnKeys = new Map([...seenFnKeys].map(([key, fnKeys]) => [key, [...fnKeys]]));
       const objectMemberFnKeys = new Map<string, Array<{ member: string; fnKey: string }>>();
       for (const [key, memberFns] of objectMemberFns) {
         const members: Array<{ member: string; fnKey: string }> = [];
