@@ -1,0 +1,109 @@
+import { Marked, type Tokens } from "marked";
+import { posix } from "node:path";
+
+import { escapeHtml, renderCode } from "../code.js";
+import { REPO } from "../frame.js";
+
+export interface Heading {
+  id: string;
+  html: string;
+}
+
+export interface RenderedDoc {
+  title: string;
+  html: string;
+  /** The second-level headings, in order: what the menu lists under the page. */
+  headings: Heading[];
+}
+
+// The tokenizer reads TypeScript; JSX and Svelte markup would scan as noise.
+const COLOURED = new Set(["ts", "js"]);
+
+/** The anchor GitHub gives a heading, so links written for GitHub still land. */
+export function slugify(text: string): string {
+  return text
+    .toLowerCase()
+    .replaceAll(/[^\p{L}\p{M}\p{N}\p{Pc} -]/gu, "")
+    .replaceAll(" ", "-");
+}
+
+/** Where a file under docs/ is served on the site, relative to its root. */
+export function sitePathOf(file: string): string {
+  if (file === "examples/README.md") return "examples/";
+  if (file === "README.md") return "docs/";
+  return `docs/${file.replace(/\.md$/, "")}/`;
+}
+
+/** `file` is the page's path under docs/; it decides where its links lead. */
+export function renderMarkdown(source: string, file: string): RenderedDoc {
+  const headings: Heading[] = [];
+  const used = new Map<string, number>();
+  let title = "";
+
+  const marked = new Marked({
+    renderer: {
+      heading({ tokens, depth }) {
+        const html = this.parser.parseInline(tokens);
+        const text = unescapeHtml(html.replaceAll(/<[^>]*>/g, ""));
+        const base = slugify(text);
+        const seen = used.get(base) ?? 0;
+        used.set(base, seen + 1);
+        const id = seen === 0 ? base : `${base}-${seen}`;
+        if (depth === 1 && !title) title = text;
+        if (depth === 2) headings.push({ id, html });
+        return `<h${depth} id="${id}">${html}</h${depth}>\n`;
+      },
+      link({ href, title: linkTitle, tokens }) {
+        const titled = linkTitle ? ` title="${escapeHtml(linkTitle)}"` : "";
+        return `<a href="${escapeHtml(siteHref(href, file))}"${titled}>${this.parser.parseInline(tokens)}</a>`;
+      },
+      code({ text, lang }: Tokens.Code) {
+        const info = lang ?? "";
+        const language = /^\S*/.exec(info)![0];
+        const caption = /\btitle="([^"]*)"/.exec(info)?.[1];
+        const body = COLOURED.has(language)
+          ? renderCode(text, text)
+          : escapeHtml(text);
+        const pre = `<pre><code>${body}</code></pre>`;
+        return caption === undefined
+          ? `${pre}\n`
+          : `<figure><figcaption>${escapeHtml(caption)}</figcaption>${pre}</figure>\n`;
+      },
+    },
+  });
+
+  const html = marked.parse(source, { async: false });
+  return { title, html, headings };
+}
+
+function siteHref(href: string, file: string): string {
+  if (/^[a-z][a-z+.-]*:/i.test(href) || href.startsWith("#")) return href;
+  const hashAt = href.indexOf("#");
+  const path = hashAt === -1 ? href : href.slice(0, hashAt);
+  const hash = hashAt === -1 ? "" : href.slice(hashAt);
+  const inRepo = posix.normalize(posix.join("docs", posix.dirname(file), path));
+
+  if (inRepo.startsWith("docs/") && inRepo.endsWith(".md")) {
+    const from = sitePathOf(file);
+    const to = sitePathOf(inRepo.slice("docs/".length));
+    const relative = posix.relative(from, to);
+    return `${relative ? `${relative}/` : "./"}${hash}`;
+  }
+  const kind = posix.extname(inRepo) ? "blob" : "tree";
+  return `${REPO}/${kind}/main/${inRepo}${hash}`;
+}
+
+const ENTITIES: Record<string, string> = {
+  "&#39;": "'",
+  "&amp;": "&",
+  "&gt;": ">",
+  "&lt;": "<",
+  "&quot;": '"',
+};
+
+function unescapeHtml(text: string): string {
+  return text.replaceAll(
+    /&(?:#39|amp|gt|lt|quot);/g,
+    (entity) => ENTITIES[entity]!,
+  );
+}
