@@ -14,6 +14,18 @@ diff of an actual `apply` run, with the project, its commit and the ts-capture
 revision recorded beside it. The file is regenerated from those runs, not
 edited: a change to what ts-capture writes shows up as a diff in this file.
 
+## How it decides
+
+`site/how-it-decides/` is a map of what `apply` does to a position: one card
+per outcome (written, or each reason it leaves a position alone), for each
+kind of position. Each card is a small file from
+[`cells.ts`](../../packages/examples-site/src/how-it-decides/cells.ts), run
+through the same applier as the playground when the page is built;
+`cells.spec.ts` checks that every card still ends where it says, and names
+the function in `packages/core/src` that decides it. A card links to that
+function, to the test, to the real examples in its cell, and opens in the
+playground. Only parameters are mapped so far.
+
 ## Playground
 
 `site/playground/` runs ts-capture in the visitor's browser, with no server

@@ -2,6 +2,8 @@ import type { RunMessage, RunRequest } from "./messages.js";
 import type { PlaygroundResult } from "./run.js";
 import type { Starter } from "./starters.js";
 
+import { codeFromHash } from "./link.js";
+
 const TIMEOUT_MS = 10_000;
 
 const code = document.querySelector<HTMLTextAreaElement>("#code")!;
@@ -89,6 +91,13 @@ button.addEventListener("click", run);
 code.addEventListener("keydown", (event) => {
   if (event.key === "Enter" && (event.metaKey || event.ctrlKey)) run();
 });
+// A link from another page (how it decides) brings its own code.
+const linked = codeFromHash(window.location.hash);
+if (linked !== undefined) {
+  code.value = linked;
+  starter.value = "";
+}
+
 starter.addEventListener("change", () => {
   const chosen = starters.find((candidate) => candidate.id === starter.value);
   if (!chosen) return;

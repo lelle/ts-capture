@@ -66,7 +66,7 @@ export function renderHomePage(): string {
 </head>
 <body>
 <div class="top">
-  <p class="links"><a href="examples/">Examples</a><a href="playground/">Playground</a><a href="${REPO}/tree/main/docs">Documentation</a><a href="${REPO}">GitHub</a></p>
+  <p class="links"><a href="examples/">Examples</a><a href="playground/">Playground</a><a href="how-it-decides/">How it decides</a><a href="${REPO}/tree/main/docs">Documentation</a><a href="${REPO}">GitHub</a></p>
   <h1>ts-capture</h1>
   <p class="lede">Capture runtime values, shape them as TypeScript types. ts-capture watches how your code is called — in tests, in dev, in the browser — and writes the types it saw back into your source.</p>
 </div>

@@ -164,7 +164,7 @@ export function renderPage(data: ExamplesData): string {
 </head>
 <body>
 <div class="top">
-  <p class="links"><a href="../">ts-capture</a><a href="../playground/">Playground</a><a href="https://github.com/lelle/ts-capture">ts-capture on GitHub</a><a href="https://github.com/lelle/ts-capture/tree/main/docs">Documentation</a></p>
+  <p class="links"><a href="../">ts-capture</a><a href="../playground/">Playground</a><a href="../how-it-decides/">How it decides</a><a href="https://github.com/lelle/ts-capture">ts-capture on GitHub</a><a href="https://github.com/lelle/ts-capture/tree/main/docs">Documentation</a></p>
   <h1>What ts-capture writes</h1>
   <p class="lede">ts-capture watches your code run under its tests and writes the types it saw back into the source. These are annotations it wrote into real code: the ones you would have written yourself, the ones a reviewer should change, and the places it chose to leave alone.</p>
   <p class="how">Nothing here was typed by hand. Each example is cut from the diff of an actual run; the highlighted parts are what <code>apply</code> added.</p>

@@ -6,6 +6,9 @@ import { fileURLToPath } from "node:url";
 import ts from "typescript";
 
 import { renderHomePage } from "./home.js";
+import { CELLS } from "./how-it-decides/cells.js";
+import { decide } from "./how-it-decides/decide.js";
+import { renderDecidesPage } from "./how-it-decides/page.js";
 import { type ExamplesData, renderPage } from "./page.js";
 import { reachableLibs } from "./playground/libs.js";
 import { renderPlaygroundPage } from "./playground/page.js";
@@ -18,6 +21,7 @@ const dataPath = resolve(root, "docs/examples/examples.json");
 const outDir = resolve(root, "site");
 const examplesDir = resolve(outDir, "examples");
 const playgroundDir = resolve(outDir, "playground");
+const decidesDir = resolve(outDir, "how-it-decides");
 
 const data = JSON.parse(readFileSync(dataPath, "utf-8")) as ExamplesData;
 mkdirSync(playgroundDir, { recursive: true });
@@ -41,6 +45,18 @@ writeFileSync(
   resolve(playgroundDir, "index.html"),
   renderPlaygroundPage(STARTERS),
 );
+
+// Each card is run when the page is built, the same way the playground runs a file.
+const decided = await Promise.all(CELLS.map((cell) => decide(cell, libs)));
+mkdirSync(decidesDir, { recursive: true });
+writeFileSync(
+  resolve(decidesDir, "index.html"),
+  renderDecidesPage(
+    decided,
+    new Map(data.examples.map((example) => [example.id, example.title])),
+  ),
+);
+process.stdout.write(`${decided.length} cells -> ${decidesDir}/index.html\n`);
 await build({
   entryPoints: {
     main: resolve(packageDir, "src/playground/main.ts"),

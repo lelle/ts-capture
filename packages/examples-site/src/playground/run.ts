@@ -2,6 +2,7 @@ import {
   applyInMemory,
   createObserver,
   instrumentSource,
+  type LocatedSkip,
   reportLines,
   summaryLines,
 } from "@ts-capture/core/browser";
@@ -19,6 +20,8 @@ export type PlaygroundResult =
       html: string;
       summary: string[];
       report: string[];
+      /** What apply observed and did not write, and why. */
+      skips: LocatedSkip[];
     };
 
 export const COMPILER_OPTIONS: ts.CompilerOptions = {
@@ -65,6 +68,7 @@ export async function runPlayground(
       html: renderCode(code, code),
       summary: [NOTHING_OBSERVED],
       report: [],
+      skips: [],
     };
   }
 
@@ -86,5 +90,6 @@ export async function runPlayground(
     html: renderCode(code, after),
     summary: summaryLines(telemetry, after === code ? 0 : 1, skips, false),
     report: reportLines(telemetry, skips, () => SHOWN_AS),
+    skips,
   };
 }
