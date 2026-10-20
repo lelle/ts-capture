@@ -90,6 +90,27 @@ pick([{ sku: "a", price: 2 }], "sku");
     ]);
   });
 
+  it("applies what one version of the code showed to another", async () => {
+    const ran =
+      'function greet(user) {\n  return user.name;\n}\ngreet({ name: "Ada" });\n';
+    const edited = `// a line added after the run\n${ran}`;
+    const result = await runPlayground(ran, libs, { applyTo: edited });
+    if (!result.ok) throw new Error(result.error);
+    // The observation points where `user` was, which is now inside the comment.
+    expect(result.after).toBe(edited);
+    expect(result.skips.map((skip) => skip.reason)).toContain("no-site");
+  });
+
+  it("observes an implicit this when asked to", async () => {
+    const code =
+      'function describe() {\n  return this.name;\n}\ndescribe.call({ name: "Ada" });\n';
+    const plain = await runPlayground(code, libs);
+    const withThis = await runPlayground(code, libs, { implicitThis: true });
+    if (!plain.ok || !withThis.ok) throw new Error("did not run");
+    expect(plain.after).not.toContain("this: ");
+    expect(withThis.after).toContain("describe(this: { name: string })");
+  });
+
   it.each(STARTERS)(
     "annotates the starter $title without adding a type error",
     async (starter) => {

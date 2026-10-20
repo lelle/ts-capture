@@ -6,7 +6,13 @@ import { type Cell, type Outcome, OUTCOMES, type SiteKind } from "./cells.js";
 export interface DecidedCell {
   cell: Cell;
   after?: string;
-  skip?: { observed: string | undefined; detail: string | undefined };
+  /** The text the last apply was given, when it was not the code that ran. */
+  appliedTo?: string;
+  skip?: {
+    reason: string;
+    observed: string | undefined;
+    detail: string | undefined;
+  };
 }
 
 const REPO = "https://github.com/lelle/ts-capture";
@@ -28,6 +34,16 @@ const anchor = (cell: Cell): string => `${cell.kind}-${cell.outcome}`;
 const prose = (text: string): string =>
   escapeHtml(text).replace(/`([^`]+)`/g, "<code>$1</code>");
 
+/** What the grid's marks mean, for the marks it has. */
+function legend(cards: DecidedCell[]): string {
+  const parts = ["● an example you can run"];
+  if (cards.some(({ cell }) => !cell.code)) {
+    parts.push("○ running code cannot get there; the card says why");
+  }
+  parts.push("empty: not an outcome for that kind");
+  return parts.join(" · ");
+}
+
 function renderGrid(cards: DecidedCell[]): string {
   const kinds = [...new Set(cards.map(({ cell }) => cell.kind))];
   const head = OUTCOMES.map(
@@ -48,11 +64,11 @@ function renderGrid(cards: DecidedCell[]): string {
   <thead><tr><td></td>${head}</tr></thead>
   <tbody>${rows.join("")}</tbody>
 </table></div>
-<p class="how">● an example you can run · ○ running code cannot get there; the card says why · empty: not an outcome for that kind, or no example found yet.</p>`;
+<p class="how">${legend(cards)}</p>`;
 }
 
 function renderCard(
-  { cell, after, skip }: DecidedCell,
+  { cell, after, appliedTo, skip }: DecidedCell,
   real: ReadonlyMap<string, string>,
 ): string {
   const outcome =
@@ -61,7 +77,13 @@ function renderCard(
       : `Not written: <code>${escapeHtml(cell.outcome)}</code>`;
   const panes =
     cell.code && after !== undefined
-      ? `<div class="panes">
+      ? appliedTo !== undefined
+        ? `<div class="panes three">
+        <figure><figcaption>Run</figcaption><pre><code>${renderCode(cell.code, cell.code)}</code></pre></figure>
+        <figure><figcaption>${cell.twice ? "After the first apply" : "Changed before apply"}</figcaption><pre><code>${renderCode(cell.code, appliedTo)}</code></pre></figure>
+        <figure><figcaption>After <code>ts-capture apply</code></figcaption><pre><code>${renderCode(appliedTo, after)}</code></pre></figure>
+      </div>`
+        : `<div class="panes">
         <figure><figcaption>Before</figcaption><pre><code>${renderCode(cell.code, cell.code)}</code></pre></figure>
         <figure><figcaption>After <code>ts-capture apply</code></figcaption><pre><code>${renderCode(cell.code, after)}</code></pre></figure>
       </div>`
@@ -78,7 +100,8 @@ function renderCard(
   const links = [
     `<a href="${CORE}/${escapeHtml(cell.decidedBy.file)}">${escapeHtml(cell.decidedBy.file)}</a> <code>${escapeHtml(cell.decidedBy.symbol)}</code>`,
     cell.code ? `<a href="${TEST}">the test that checks this card</a>` : "",
-    cell.code
+    // The playground runs one text, as written, without looking for `this`.
+    cell.code && !cell.applyTo && !cell.twice && !cell.implicitThis
       ? `<a href="../playground/#code=${encodeURIComponent(cell.code)}">open in the playground</a>`
       : "",
   ].filter(Boolean);
@@ -98,6 +121,8 @@ function renderCard(
 }
 
 const GRID_STYLE = `
+.panes.three { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+@media (max-width: 760px) { .panes.three { grid-template-columns: minmax(0, 1fr); } }
 .grid-scroll { overflow-x: auto; }
 .grid { border-collapse: collapse; font-size: 0.85rem; }
 .grid th, .grid td { padding: 0.35rem 0.5rem; text-align: center; }

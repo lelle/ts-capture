@@ -23,6 +23,12 @@ export interface Cell {
   code?: string;
   /** Why ordinary code cannot reach this cell, when it cannot. */
   unreachable?: string;
+  /** Apply to this text instead of `code`: what the file became after the run. */
+  applyTo?: string;
+  /** Apply the observations twice: the second time to what the first wrote. */
+  twice?: boolean;
+  /** Observe `this` where TypeScript says it is implicitly `any`. */
+  implicitThis?: boolean;
   /** Examples from real runs (`docs/examples/examples.json` ids) in this cell. */
   real?: string[];
 }
@@ -163,12 +169,12 @@ modes.forEach((mode) => mode.length);
   {
     kind: "parameter",
     outcome: "already-annotated",
-    name: "",
+    name: "user",
     title: "A type is written already",
-    why: "Apply never replaces a type someone wrote.",
+    why: "The same observations applied a second time meet the type the first apply wrote. Apply never replaces a type that is there, its own or anyone else's.",
     decidedBy: { file: "cst-routing.ts", symbol: "routeEntries" },
-    unreachable:
-      "A parameter with a type is not observed in a normal run, so there is nothing to skip. It happens when the same observations are applied twice, or with `TS_CAPTURE_OBSERVE_ANNOTATED`.",
+    code: 'function greet(user) {\n  return "Hello " + user.name;\n}\n\ngreet({ name: "Ada" });\n',
+    twice: true,
   },
   {
     kind: "parameter",
@@ -190,10 +196,11 @@ parse('{"a":1}');
     outcome: "no-site",
     name: "",
     title: "The code moved",
-    why: "The observation points at a position where there is no parameter any more, because the file changed after the run.",
+    why: "A line was added above the code after the run. Every recorded position now points one line too early, at no parameter, so apply writes nothing there and says so.",
     decidedBy: { file: "cst-routing.ts", symbol: "routeEntries" },
-    unreachable:
-      "Only stale observations end here: the file changed between the run and apply.",
+    code: 'function greet(user) {\n  return "Hello " + user.name;\n}\n\ngreet({ name: "Ada" });\n',
+    applyTo:
+      '// A line added after the run moves everything below it.\nfunction greet(user) {\n  return "Hello " + user.name;\n}\n\ngreet({ name: "Ada" });\n',
   },
   {
     kind: "return",
@@ -320,12 +327,12 @@ pick(true);
   {
     kind: "return",
     outcome: "already-annotated",
-    name: "",
+    name: "return type",
     title: "A type is written already",
-    why: "Apply never replaces a type someone wrote.",
+    why: "The same observations applied a second time meet the type the first apply wrote. Apply never replaces a type that is there, its own or anyone else's.",
     decidedBy: { file: "cst-routing.ts", symbol: "routeEntries" },
-    unreachable:
-      "A return with a type is not observed in a normal run, so there is nothing to skip. It happens when the same observations are applied twice, or with `TS_CAPTURE_OBSERVE_ANNOTATED`.",
+    code: "function load() {\n  return JSON.parse('{\"a\": 1}');\n}\n\nload();\n",
+    twice: true,
   },
   {
     kind: "return",
@@ -347,10 +354,11 @@ load('{"a":1}');
     outcome: "no-site",
     name: "",
     title: "The code moved",
-    why: "The observation points at a position where there is no function any more, because the file changed after the run.",
+    why: "A line was added above the code after the run. Every recorded position now points one line too early, at no function, so apply writes nothing there and says so.",
     decidedBy: { file: "cst-routing.ts", symbol: "routeEntries" },
-    unreachable:
-      "Only stale observations end here: the file changed between the run and apply.",
+    code: "function load() {\n  return JSON.parse('{\"a\": 1}');\n}\n\nload();\n",
+    applyTo:
+      "// A line added after the run moves everything below it.\nfunction load() {\n  return JSON.parse('{\"a\": 1}');\n}\n\nload();\n",
   },
   {
     kind: "variable",
@@ -455,22 +463,23 @@ for (const i of [0, 1]) {
   {
     kind: "variable",
     outcome: "already-annotated",
-    name: "",
+    name: "data",
     title: "A type is written already",
-    why: "Apply never replaces a type someone wrote.",
+    why: "The same observations applied a second time meet the type the first apply wrote. Apply never replaces a type that is there, its own or anyone else's.",
     decidedBy: { file: "cst-routing.ts", symbol: "routeEntries" },
-    unreachable:
-      "A variable with a type is not observed in a normal run, so there is nothing to skip. It happens when the same observations are applied twice, or with `TS_CAPTURE_OBSERVE_ANNOTATED`.",
+    code: "const data = JSON.parse('{\"id\": 1}');\n",
+    twice: true,
   },
   {
     kind: "variable",
     outcome: "no-site",
     name: "",
     title: "The code moved",
-    why: "The observation points at a position where there is no variable any more, because the file changed after the run.",
+    why: "A line was added above the code after the run. Every recorded position now points one line too early, at no variable, so apply writes nothing there and says so.",
     decidedBy: { file: "cst-routing.ts", symbol: "routeEntries" },
-    unreachable:
-      "Only stale observations end here: the file changed between the run and apply.",
+    code: "const data = JSON.parse('{\"id\": 1}');\n",
+    applyTo:
+      "// A line added after the run moves everything below it.\nconst data = JSON.parse('{\"id\": 1}');\n",
   },
   {
     kind: "field",
@@ -550,12 +559,12 @@ for (const i of [0, 1]) {
   {
     kind: "field",
     outcome: "already-annotated",
-    name: "",
+    name: "items",
     title: "A type is written already",
-    why: "Apply never replaces a type someone wrote.",
+    why: "The same observations applied a second time meet the type the first apply wrote. Apply never replaces a type that is there, its own or anyone else's.",
     decidedBy: { file: "cst-routing.ts", symbol: "routeEntries" },
-    unreachable:
-      "A field with a type is not observed in a normal run, so there is nothing to skip. It happens when the same observations are applied twice, or with `TS_CAPTURE_OBSERVE_ANNOTATED`.",
+    code: 'class Store {\n  items = JSON.parse("[1, 2]");\n}\n\nnew Store();\n',
+    twice: true,
   },
   {
     kind: "field",
@@ -583,10 +592,11 @@ for (const i of [0, 1]) {
     outcome: "no-site",
     name: "",
     title: "The code moved",
-    why: "The observation points at a position where there is no field any more, because the file changed after the run.",
+    why: "A line was added above the code after the run. Every recorded position now points one line too early, at no field, so apply writes nothing there and says so.",
     decidedBy: { file: "cst-routing.ts", symbol: "routeEntries" },
-    unreachable:
-      "Only stale observations end here: the file changed between the run and apply.",
+    code: 'class Store {\n  items = JSON.parse("[1, 2]");\n}\n\nnew Store();\n',
+    applyTo:
+      '// A line added after the run moves everything below it.\nclass Store {\n  items = JSON.parse("[1, 2]");\n}\n\nnew Store();\n',
   },
   {
     kind: "callback",
@@ -670,12 +680,12 @@ for (const i of [0, 1]) {
   {
     kind: "callback",
     outcome: "already-annotated",
-    name: "",
+    name: "clock",
     title: "A type is written already",
-    why: "Apply never replaces a type someone wrote.",
+    why: "The same observations applied a second time meet the type the first apply wrote. Apply never replaces a type that is there, its own or anyone else's.",
     decidedBy: { file: "cst-routing.ts", symbol: "routeEntries" },
-    unreachable:
-      "A parameter with a type is not observed in a normal run, so there is nothing to skip. It happens when the same observations are applied twice, or with `TS_CAPTURE_OBSERVE_ANNOTATED`.",
+    code: "function stamp(clock) {\n  clock();\n}\n\nstamp(() => new Date());\n",
+    twice: true,
   },
   {
     kind: "callback",
@@ -691,19 +701,20 @@ for (const i of [0, 1]) {
     outcome: "no-site",
     name: "",
     title: "The code moved",
-    why: "The observation points at a position where there is no parameter any more, because the file changed after the run.",
+    why: "A line was added above the code after the run. Every recorded position now points one line too early, at no parameter, so apply writes nothing there and says so.",
     decidedBy: { file: "cst-routing.ts", symbol: "routeEntries" },
-    unreachable:
-      "Only stale observations end here: the file changed between the run and apply.",
+    code: "function stamp(clock) {\n  clock();\n}\n\nstamp(() => new Date());\n",
+    applyTo:
+      "// A line added after the run moves everything below it.\nfunction stamp(clock) {\n  clock();\n}\n\nstamp(() => new Date());\n",
   },
   {
     kind: "this",
     outcome: "written",
-    name: "",
+    name: "this",
     title: "`this` in a plain function",
-    why: "A function that reads `this` without being a method has an implicit `any` this. Apply can write `this: T` as the first parameter, typed from what the run saw.",
+    why: "A function that reads `this` without being a method has an implicit `any` this. With the instrumenter asked to look for it, the run sees what `this` was and apply writes it as the first parameter.",
     decidedBy: { file: "transformer.ts", symbol: "needsThisInstrumentation" },
-    unreachable:
-      "`this` is observed only with the instrumenter's `instrumentImplicitThis` option, which asks the type checker where `this` is implicitly `any` while instrumenting. The playground does not turn it on, so no card here can run.",
+    code: 'function describe() {\n  return this.name;\n}\n\ndescribe.call({ name: "Ada" });\n',
+    implicitThis: true,
   },
 ];

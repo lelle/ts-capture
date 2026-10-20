@@ -45,7 +45,7 @@ const CARDS: DecidedCell[] = [
   {
     cell: redundant,
     after: redundant.code!,
-    skip: { observed: "string", detail: undefined },
+    skip: { reason: "redundant", observed: "string", detail: undefined },
   },
   { cell: unreachable },
 ];
@@ -115,6 +115,22 @@ describe("renderDecidesPage", () => {
       REAL,
     );
     expect(page).toContain("Typed as <code>Mode</code>, never &lt;b&gt;.");
+  });
+
+  it("shows the text the last apply was given, when the code changed after the run", () => {
+    const moved: Cell = {
+      ...unreachable,
+      unreachable: undefined,
+      code: "f(1);\n",
+      applyTo: "// added\nf(1);\n",
+    };
+    const page = renderDecidesPage(
+      [{ cell: moved, after: moved.applyTo!, appliedTo: moved.applyTo! }],
+      REAL,
+    );
+    expect(page).toContain('class="panes three"');
+    expect(page).toContain("Changed before apply");
+    expect(page).not.toContain("open in the playground");
   });
 
   it("says why a cell has no example, and offers no playground", () => {
