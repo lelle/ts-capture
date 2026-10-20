@@ -132,6 +132,16 @@ describe("renderDecidesPage", () => {
     expect(page).not.toContain("open in the playground");
   });
 
+  it("groups each kind's cards in a section under the kind's heading", () => {
+    const section = page.slice(
+      page.indexOf('<section class="kind"'),
+      page.indexOf("</section>"),
+    );
+    expect(section).toContain('<h2 class="kind-heading">Parameter</h2>');
+    expect(section).toContain('<article id="parameter-written"');
+    expect(section).toContain('<h3><a href="#parameter-written">');
+  });
+
   // Two axes of the matrix: one kind selected, and the outcomes, with the ones
   // the selected kind does not have disabled.
   describe("the menu", () => {

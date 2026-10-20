@@ -107,8 +107,8 @@ function renderCard(
   ].filter(Boolean);
   return `<article id="${anchor(cell)}" class="example">
       <header>
-        <h2><a href="#${anchor(cell)}">${escapeHtml(cell.title)}</a></h2>
-        <p class="meta"><span class="source">${escapeHtml(KINDS[cell.kind])}${cell.name ? ` <code>${escapeHtml(cell.name)}</code>` : ""}</span> <span>${outcome}</span></p>
+        <h3><a href="#${anchor(cell)}">${escapeHtml(cell.title)}</a></h3>
+        <p class="meta"><span class="source">${escapeHtml(KINDS[cell.kind])}${named(cell) ? ` <code>${escapeHtml(cell.name)}</code>` : ""}</span> <span>${outcome}</span></p>
       </header>
       ${panes}
       <p class="caption">${prose(cell.why)}</p>
@@ -320,6 +320,41 @@ const TOC_STYLE = `
 }
 `;
 
+/** A return or `this` has no name of its own beyond the kind. */
+const named = (cell: Cell): boolean =>
+  cell.name !== "" && cell.kind !== "return" && cell.kind !== "this";
+
+/** Each kind's cards in a section under the kind's name. */
+function renderSections(
+  cards: DecidedCell[],
+  real: ReadonlyMap<string, string>,
+): string {
+  const kinds = [...new Set(cards.map(({ cell }) => cell.kind))];
+  return kinds
+    .map(
+      (kind) => `<section class="kind" id="kind-${kind}">
+  <h2 class="kind-heading">${escapeHtml(KINDS[kind])}</h2>
+${cards
+  .filter(({ cell }) => cell.kind === kind)
+  .map((card) => renderCard(card, real))
+  .join("\n")}
+</section>`,
+    )
+    .join("\n");
+}
+
+const SECTION_STYLE = `
+.kind { padding-top: 56px; }
+.kind:first-child { padding-top: 32px; }
+.kind-heading { margin: 0 0 18px; font-size: 13px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); }
+.kind .example { scroll-margin-top: 16px; background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 24px 28px 22px; margin: 0 0 24px; }
+.kind .example h3 { font-size: 21px; line-height: 1.3; margin: 0 0 8px; text-wrap: balance; }
+.kind .example h3 a { color: inherit; text-decoration: none; }
+.kind .example h3 a:hover { text-decoration: underline; }
+@media (max-width: 900px) { .kind .example { scroll-margin-top: 56px; } }
+@media (max-width: 760px) { .kind .example { padding: 18px 16px; } }
+`;
+
 /** `real` maps a real example's id to its title. */
 export function renderDecidesPage(
   given: DecidedCell[],
@@ -340,7 +375,7 @@ export function renderDecidesPage(
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>ts-capture — how it decides</title>
 <meta name="description" content="Every way ts-capture apply treats a position: what it writes, what it refuses to write, and the code that decides it.">
-<style>${STYLE}${GRID_STYLE}${TOC_STYLE}</style>
+<style>${STYLE}${GRID_STYLE}${TOC_STYLE}${SECTION_STYLE}</style>
 </head>
 <body>
 <div class="layout">
@@ -354,7 +389,7 @@ ${renderToc(cards)}
   ${renderGrid(cards)}
 </div>
 <main>
-${cards.map((card) => renderCard(card, real)).join("\n")}
+${renderSections(cards, real)}
 </main>
 </div>
 </div>
