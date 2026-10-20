@@ -4,14 +4,14 @@ import type { ApplySkipReason } from "@ts-capture/core/browser";
 // cell with `code` is checked by cells.spec.ts and rendered by running that
 // same code, so what the page says is what the applier does.
 
-export type SiteKind = "parameter" | "return";
+export type SiteKind = "parameter" | "return" | "variable";
 
 export type Outcome = "written" | ApplySkipReason;
 
 export interface Cell {
   kind: SiteKind;
   outcome: Outcome;
-  /** The position the cell is about: the parameter's name, or `return type`. */
+  /** The position the cell is about: the parameter's or variable's name, or `return type`. */
   name: string;
   title: string;
   /** Why apply does this, in the reader's terms. */
@@ -347,6 +347,126 @@ load('{"a":1}');
     name: "",
     title: "The code moved",
     why: "The observation points at a position where there is no function any more, because the file changed after the run.",
+    decidedBy: { file: "cst-routing.ts", symbol: "routeEntries" },
+    unreachable:
+      "Only stale observations end here: the file changed between the run and apply.",
+  },
+  {
+    kind: "variable",
+    outcome: "written",
+    name: "data",
+    title: "What the value turned out to be",
+    why: "`JSON.parse` returns `any`, so TypeScript knows nothing about `data`. The run saw the object it held.",
+    decidedBy: { file: "cst-replacements.ts", symbol: "buildCstReplacements" },
+    code: 'const data = JSON.parse(\'{"id": 1, "name": "Ada"}\');\n\ndata.name;\n',
+  },
+  {
+    kind: "variable",
+    outcome: "type-error",
+    name: "current",
+    title: "A later assignment would not compile",
+    why: "The run saw `current` hold `{ n: number }`. Written, that type would make the assignment of `null` further down an error, so apply drops it.",
+    decidedBy: {
+      file: "apply-types-verify.ts",
+      symbol: "filterAcceptedReplacements",
+    },
+    code: "let current = JSON.parse('{\"n\": 1}');\ncurrent = null;\n",
+  },
+  {
+    kind: "variable",
+    outcome: "no-information",
+    name: "blank",
+    title: "Nothing worth writing",
+    why: "All the run saw was an empty object, which says nothing about what `blank` is for.",
+    decidedBy: {
+      file: "compute-annotation.ts",
+      symbol: "carriesNoInformation",
+    },
+    code: 'const blank = JSON.parse("{}");\n',
+  },
+  {
+    kind: "variable",
+    outcome: "out-of-scope",
+    name: "made",
+    title: "A name the code cannot see",
+    why: "The value was an instance of a class declared inside the callback. Its name means nothing where `made` is declared.",
+    decidedBy: { file: "scope-reachability.ts", symbol: "allTypeRefsInScope" },
+    code: "function build(factory) {\n  const made = factory();\n  return made;\n}\n\nbuild(() => {\n  class Box {\n    size = 1;\n  }\n  return new Box();\n});\n",
+  },
+  {
+    kind: "variable",
+    outcome: "contradiction",
+    name: "word",
+    title: "The run disagrees with TypeScript",
+    why: "TypeScript types an element of a `string[]` as `string`. The loop read one past the end, so the run saw `undefined` too. Apply reports the disagreement instead of writing either.",
+    decidedBy: {
+      file: "redundant-annotation.ts",
+      symbol: "observedBeyondInferred",
+    },
+    code: `const words = ["a"];
+for (const i of [0, 1]) {
+  const word = words[i];
+}
+`,
+  },
+  {
+    kind: "variable",
+    outcome: "redundant",
+    name: "largest",
+    title: "TypeScript already knows",
+    why: "TypeScript infers `number` from the call, which is what the run saw.",
+    decidedBy: {
+      file: "redundant-annotation.ts",
+      symbol: "isRedundantAnnotation",
+    },
+    code: "const largest = Math.max(1, 2);\n",
+  },
+  {
+    kind: "variable",
+    outcome: "kept-existing",
+    name: "mode",
+    title: "A name would be replaced by what it is made of",
+    why: "TypeScript infers the enum `Mode`. The run only sees the string underneath, and writing `string` would throw the enum away.",
+    decidedBy: { file: "redundant-annotation.ts", symbol: "erasesEnum" },
+    code: 'enum Mode {\n  Fast = "fast",\n  Slow = "slow",\n}\n\nconst mode = [Mode.Fast, Mode.Slow][0];\n',
+  },
+  {
+    kind: "variable",
+    outcome: "ignored",
+    name: "settings",
+    title: "Asked to stay out",
+    why: "A `@ts-capture-ignore` comment above a declaration keeps apply away from all of it.",
+    decidedBy: { file: "cst-site-index.ts", symbol: "buildCstSiteIndex" },
+    code: "// @ts-capture-ignore\nconst settings = JSON.parse('{\"dark\": true}');\n",
+  },
+  {
+    kind: "variable",
+    outcome: "left-to-typescript",
+    name: "label",
+    title: "Only one branch was seen",
+    why: "The initializer can give either side of `??`, and the run only ever saw one. Writing what it saw would forbid the other, so the type is left to TypeScript, which knows both.",
+    decidedBy: {
+      file: "annotation-eligibility.ts",
+      symbol: "decideVarDeclSite",
+    },
+    code: 'const words = ["a", "b"];\nconst label = words.find((w) => w === "a") ?? "none";\n',
+  },
+  {
+    kind: "variable",
+    outcome: "already-annotated",
+    name: "",
+    title: "A type is written already",
+    why: "Apply never replaces a type someone wrote.",
+    decidedBy: { file: "cst-routing.ts", symbol: "routeEntries" },
+    unreachable:
+      "A variable with a type is not observed in a normal run, so there is nothing to skip. It happens when the same observations are applied twice, or with `TS_CAPTURE_OBSERVE_ANNOTATED`.",
+  },
+  {
+    kind: "variable",
+    outcome: "no-site",
+    name: "",
+    title: "The code moved",
+    why: "The observation points at a position where there is no variable any more, because the file changed after the run.",
     decidedBy: { file: "cst-routing.ts", symbol: "routeEntries" },
     unreachable:
       "Only stale observations end here: the file changed between the run and apply.",

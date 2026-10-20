@@ -16,6 +16,7 @@ const TEST = `${REPO}/blob/main/packages/examples-site/src/how-it-decides/cells.
 const KINDS: Record<SiteKind, string> = {
   parameter: "Parameter",
   return: "Return type",
+  variable: "Variable",
 };
 
 const anchor = (cell: Cell): string => `${cell.kind}-${cell.outcome}`;
