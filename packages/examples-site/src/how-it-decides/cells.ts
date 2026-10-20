@@ -4,14 +4,14 @@ import type { ApplySkipReason } from "@ts-capture/core/browser";
 // cell with `code` is checked by cells.spec.ts and rendered by running that
 // same code, so what the page says is what the applier does.
 
-export type SiteKind = "parameter";
+export type SiteKind = "parameter" | "return";
 
 export type Outcome = "written" | ApplySkipReason;
 
 export interface Cell {
   kind: SiteKind;
   outcome: Outcome;
-  /** The position the cell is about: the parameter's name. */
+  /** The position the cell is about: the parameter's name, or `return type`. */
   name: string;
   title: string;
   /** Why apply does this, in the reader's terms. */
@@ -190,6 +190,163 @@ parse('{"a":1}');
     name: "",
     title: "The code moved",
     why: "The observation points at a position where there is no parameter any more, because the file changed after the run.",
+    decidedBy: { file: "cst-routing.ts", symbol: "routeEntries" },
+    unreachable:
+      "Only stale observations end here: the file changed between the run and apply.",
+  },
+  {
+    kind: "return",
+    outcome: "written",
+    name: "return type",
+    title: "What came back, where TypeScript knows nothing",
+    why: "The function hands back an element of a parameter TypeScript has no type for, so it infers `any`. The run saw what actually came back.",
+    decidedBy: { file: "cst-replacements.ts", symbol: "buildCstReplacements" },
+    code: `function first(list) {
+  return list[0];
+}
+
+first([{ id: 1, name: "Ada" }]);
+`,
+    real: ["params-and-return"],
+  },
+  {
+    kind: "return",
+    outcome: "type-error",
+    name: "return type",
+    title: "A branch the tests never took",
+    why: "Every call returned the object, so that is what the run saw. But the other branch returns `null`, and written, the type would make that line an error.",
+    decidedBy: {
+      file: "apply-types-verify.ts",
+      symbol: "filterAcceptedReplacements",
+    },
+    code: `function find(id) {
+  if (id > 0) return { id };
+  return null;
+}
+
+find(1);
+`,
+  },
+  {
+    kind: "return",
+    outcome: "no-information",
+    name: "return type",
+    title: "Nothing worth writing",
+    why: "All that came back was an empty object, which says nothing about what the function returns.",
+    decidedBy: {
+      file: "compute-annotation.ts",
+      symbol: "carriesNoInformation",
+    },
+    code: `function parse(text) {
+  return JSON.parse(text);
+}
+
+parse("{}");
+`,
+  },
+  {
+    kind: "return",
+    outcome: "out-of-scope",
+    name: "return type",
+    title: "A name the function cannot see",
+    why: "What came back was an instance of a class declared inside the callback. Its name means nothing at `build`, so writing it would not compile.",
+    decidedBy: { file: "scope-reachability.ts", symbol: "allTypeRefsInScope" },
+    code: `function build(factory) {
+  return factory();
+}
+
+build(() => {
+  class Box {
+    size = 1;
+  }
+  return new Box();
+});
+`,
+  },
+  {
+    kind: "return",
+    outcome: "contradiction",
+    name: "return type",
+    title: "The run disagrees with TypeScript",
+    why: "TypeScript reads the return as `string` from the parameter's type. The run got `undefined`, because a test passed an object without the field. Apply reports that instead of writing either.",
+    decidedBy: {
+      file: "redundant-annotation.ts",
+      symbol: "observedBeyondInferred",
+    },
+    code: `function nameOf(user: { name: string }) {
+  return user.name;
+}
+
+nameOf(JSON.parse("{}"));
+`,
+  },
+  {
+    kind: "return",
+    outcome: "redundant",
+    name: "return type",
+    title: "TypeScript already knows",
+    why: "TypeScript infers `number` from the body, which is what the run saw.",
+    decidedBy: {
+      file: "redundant-annotation.ts",
+      symbol: "isRedundantAnnotation",
+    },
+    code: `function double(n: number) {
+  return n * 2;
+}
+
+double(2);
+`,
+  },
+  {
+    kind: "return",
+    outcome: "kept-existing",
+    name: "return type",
+    title: "A name would be replaced by what it is made of",
+    why: "TypeScript infers the enum `Mode`. The run only sees the string underneath, and writing `string` would throw the enum away.",
+    decidedBy: { file: "redundant-annotation.ts", symbol: "erasesEnum" },
+    code: `enum Mode {
+  Fast = "fast",
+  Slow = "slow",
+}
+
+function pick(quick) {
+  return quick ? Mode.Fast : Mode.Slow;
+}
+
+pick(true);
+`,
+  },
+  {
+    kind: "return",
+    outcome: "already-annotated",
+    name: "",
+    title: "A type is written already",
+    why: "Apply never replaces a type someone wrote.",
+    decidedBy: { file: "cst-routing.ts", symbol: "routeEntries" },
+    unreachable:
+      "A return with a type is not observed in a normal run, so there is nothing to skip. It happens when the same observations are applied twice, or with `TS_CAPTURE_OBSERVE_ANNOTATED`.",
+  },
+  {
+    kind: "return",
+    outcome: "ignored",
+    name: "return type",
+    title: "Asked to stay out",
+    why: "A `@ts-capture-ignore` comment above a declaration keeps apply away from all of it.",
+    decidedBy: { file: "cst-site-index.ts", symbol: "buildCstSiteIndex" },
+    code: `// @ts-capture-ignore
+function load(text) {
+  return JSON.parse(text);
+}
+
+load('{"a":1}');
+`,
+  },
+  {
+    kind: "return",
+    outcome: "no-site",
+    name: "",
+    title: "The code moved",
+    why: "The observation points at a position where there is no function any more, because the file changed after the run.",
     decidedBy: { file: "cst-routing.ts", symbol: "routeEntries" },
     unreachable:
       "Only stale observations end here: the file changed between the run and apply.",

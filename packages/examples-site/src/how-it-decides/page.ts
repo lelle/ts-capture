@@ -13,7 +13,10 @@ const REPO = "https://github.com/lelle/ts-capture";
 const CORE = `${REPO}/blob/main/packages/core/src`;
 const TEST = `${REPO}/blob/main/packages/examples-site/src/how-it-decides/cells.spec.ts`;
 
-const KINDS: Record<SiteKind, string> = { parameter: "Parameter" };
+const KINDS: Record<SiteKind, string> = {
+  parameter: "Parameter",
+  return: "Return type",
+};
 
 const anchor = (cell: Cell): string => `${cell.kind}-${cell.outcome}`;
 

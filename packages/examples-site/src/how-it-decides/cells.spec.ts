@@ -33,12 +33,16 @@ describe("how it decides: each cell is what the applier does", () => {
     const result = await runPlayground(cell.code!, libs);
     if (!result.ok) throw new Error(result.error);
     const skip = result.skips.find((s) => s.name === cell.name);
+    // A parameter is written as `name: T`, a return as `): T`.
+    const writtenAt =
+      cell.kind === "return" ? /\): / : new RegExp(`\\b${cell.name}: `);
     if (cell.outcome === "written") {
       expect(skip).toBeUndefined();
-      expect(result.after).toMatch(new RegExp(`\\b${cell.name}: `));
+      expect(result.after).not.toBe(cell.code);
+      expect(result.after).toMatch(writtenAt);
     } else {
       expect(skip?.reason).toBe(cell.outcome);
-      expect(result.after).not.toMatch(new RegExp(`\\b${cell.name}: `));
+      expect(result.after).not.toMatch(writtenAt);
     }
   });
 

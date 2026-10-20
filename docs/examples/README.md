@@ -24,7 +24,7 @@ through the same applier as the playground when the page is built;
 `cells.spec.ts` checks that every card still ends where it says, and names
 the function in `packages/core/src` that decides it. A card links to that
 function, to the test, to the real examples in its cell, and opens in the
-playground. Only parameters are mapped so far.
+playground. Parameters and return types are mapped so far.
 
 ## Playground
 
