@@ -70,7 +70,7 @@ describe("renderCode", () => {
 });
 
 describe("renderPage", () => {
-  const html = renderPage(DATA);
+  const html = renderPage(DATA, { version: "0.4.0" });
 
   it("has a card for every example, in the order given", () => {
     expect(

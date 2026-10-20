@@ -50,7 +50,8 @@ const CARDS: DecidedCell[] = [
 ];
 const REAL = new Map([["params-and-return", "Parameters and a return type"]]);
 
-const page = renderDecidesPage(CARDS, REAL);
+const BUILD = { version: "0.4.0" };
+const page = renderDecidesPage(CARDS, REAL, BUILD);
 const card = (id: string): string => {
   const start = page.indexOf(`<article id="${id}"`);
   return page.slice(start, page.indexOf("</article>", start));
@@ -112,6 +113,7 @@ describe("renderDecidesPage", () => {
         },
       ],
       REAL,
+      BUILD,
     );
     expect(page).toContain("Typed as <code>Mode</code>, never &lt;b&gt;.");
   });
@@ -126,6 +128,7 @@ describe("renderDecidesPage", () => {
     const page = renderDecidesPage(
       [{ cell: moved, after: moved.applyTo!, appliedTo: moved.applyTo! }],
       REAL,
+      BUILD,
     );
     expect(page).toContain('class="panes three"');
     expect(page).toContain("Changed before apply");
@@ -157,6 +160,7 @@ describe("renderDecidesPage", () => {
         CARDS[0]!,
       ],
       REAL,
+      BUILD,
     );
     const menu = twoKinds.slice(
       twoKinds.indexOf('<nav class="toc"'),

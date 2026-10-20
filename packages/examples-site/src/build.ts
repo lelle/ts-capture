@@ -1,9 +1,12 @@
 import { createDefaultMapFromNodeModules } from "@typescript/vfs";
 import { build } from "esbuild";
+import { execFileSync } from "node:child_process";
 import { copyFileSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import ts from "typescript";
+
+import type { BuildInfo } from "./frame.js";
 
 import { renderHomePage } from "./home.js";
 import { CELLS } from "./how-it-decides/cells.js";
@@ -24,14 +27,22 @@ const playgroundDir = resolve(outDir, "playground");
 const decidesDir = resolve(outDir, "how-it-decides");
 
 const data = JSON.parse(readFileSync(dataPath, "utf-8")) as ExamplesData;
+const buildInfo: BuildInfo = {
+  version: (
+    JSON.parse(
+      readFileSync(resolve(root, "packages/core/package.json"), "utf-8"),
+    ) as { version: string }
+  ).version,
+  commit: currentCommit(),
+};
 mkdirSync(playgroundDir, { recursive: true });
 mkdirSync(examplesDir, { recursive: true });
-writeFileSync(resolve(outDir, "index.html"), renderHomePage());
+writeFileSync(resolve(outDir, "index.html"), renderHomePage(buildInfo));
 copyFileSync(
   resolve(root, "docs/assets/demo.mp4"),
   resolve(outDir, "demo.mp4"),
 );
-writeFileSync(resolve(examplesDir, "index.html"), renderPage(data));
+writeFileSync(resolve(examplesDir, "index.html"), renderPage(data, buildInfo));
 process.stdout.write(
   `${data.examples.length} examples -> ${examplesDir}/index.html\n`,
 );
@@ -43,7 +54,7 @@ const libs = reachableLibs(
 writeFileSync(resolve(playgroundDir, "libs.json"), JSON.stringify([...libs]));
 writeFileSync(
   resolve(playgroundDir, "index.html"),
-  renderPlaygroundPage(STARTERS),
+  renderPlaygroundPage(STARTERS, buildInfo),
 );
 
 // Each card is run when the page is built, the same way the playground runs a file.
@@ -54,6 +65,7 @@ writeFileSync(
   renderDecidesPage(
     decided,
     new Map(data.examples.map((example) => [example.id, example.title])),
+    buildInfo,
   ),
 );
 process.stdout.write(`${decided.length} cells -> ${decidesDir}/index.html\n`);
@@ -75,3 +87,15 @@ await build({
 process.stdout.write(
   `${STARTERS.length} starters -> ${playgroundDir}/index.html\n`,
 );
+
+function currentCommit(): string | undefined {
+  try {
+    return execFileSync("git", ["rev-parse", "--short", "HEAD"], {
+      cwd: root,
+      encoding: "utf-8",
+      stdio: ["ignore", "pipe", "ignore"],
+    }).trim();
+  } catch {
+    return undefined;
+  }
+}

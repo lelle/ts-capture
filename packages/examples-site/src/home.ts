@@ -1,7 +1,12 @@
 import { escapeHtml } from "./code.js";
+import {
+  type BuildInfo,
+  renderSiteBar,
+  renderSiteFooter,
+  REPO,
+} from "./frame.js";
 import { STYLE } from "./style.js";
 
-const REPO = "https://github.com/lelle/ts-capture";
 const DOCS = `${REPO}/blob/main/docs`;
 
 export interface Integration {
@@ -54,7 +59,7 @@ const video = document.querySelector(".demo video");
 if (!matchMedia("(prefers-reduced-motion: reduce)").matches) video.play().catch(() => {});
 `;
 
-export function renderHomePage(): string {
+export function renderHomePage(build: BuildInfo): string {
   return `<!doctype html>
 <html lang="en">
 <head>
@@ -66,7 +71,7 @@ export function renderHomePage(): string {
 </head>
 <body>
 <div class="top">
-  <p class="links"><a href="examples/">Examples</a><a href="playground/">Playground</a><a href="how-it-decides/">How it decides</a><a href="${REPO}/tree/main/docs">Documentation</a><a href="${REPO}">GitHub</a></p>
+  ${renderSiteBar("home")}
   <h1>ts-capture</h1>
   <p class="lede">Capture runtime values, shape them as TypeScript types. ts-capture watches how your code is called — in tests, in dev, in the browser — and writes the types it saw back into your source.</p>
 </div>
@@ -84,9 +89,7 @@ export function renderHomePage(): string {
   <p class="how">Already typed? Run the tests with <code>TS_CAPTURE_OBSERVE_ANNOTATED=1</code> and <code>npx ts-capture verify</code> lists the types you wrote that the run contradicts. See <a href="${DOCS}/how-to/check-your-types.md">check the types you wrote</a>.</p>
   <p class="note">ts-capture rewrites your source files, runs your getters while observing, and writes what it observed to disk. Commit your work first, and read <a href="${DOCS}/how-to/review-and-apply-safely.md">review and apply safely</a> before pointing it at a real codebase. The packages are 0.x: the API may change between minor versions.</p>
 </main>
-<footer>
-  <p><a href="${REPO}">ts-capture on GitHub</a> · <a href="https://www.npmjs.com/package/@ts-capture/core">npm</a> · MIT licence</p>
-</footer>
+${renderSiteFooter(build)}
 <script>${SCRIPT}</script>
 </body>
 </html>

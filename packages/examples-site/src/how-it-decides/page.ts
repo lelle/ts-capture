@@ -1,4 +1,11 @@
 import { escapeHtml, renderCode } from "../code.js";
+import {
+  type BuildInfo,
+  pageTitle,
+  renderSiteBar,
+  renderSiteFooter,
+  REPO,
+} from "../frame.js";
 import { STYLE } from "../style.js";
 import { type Cell, type Outcome, OUTCOMES, type SiteKind } from "./cells.js";
 
@@ -15,7 +22,6 @@ export interface DecidedCell {
   };
 }
 
-const REPO = "https://github.com/lelle/ts-capture";
 const CORE = `${REPO}/blob/main/packages/core/src`;
 const TEST = `${REPO}/blob/main/packages/examples-site/src/how-it-decides/cells.spec.ts`;
 
@@ -359,6 +365,7 @@ const SECTION_STYLE = `
 export function renderDecidesPage(
   given: DecidedCell[],
   real: ReadonlyMap<string, string>,
+  build: BuildInfo,
 ): string {
   // Each kind's cards in the order of the outcome list, so the menu and the
   // page agree.
@@ -373,7 +380,7 @@ export function renderDecidesPage(
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>ts-capture — how it decides</title>
+<title>${pageTitle("How it decides")}</title>
 <meta name="description" content="Every way ts-capture apply treats a position: what it writes, what it refuses to write, and the code that decides it.">
 <style>${STYLE}${GRID_STYLE}${TOC_STYLE}${SECTION_STYLE}</style>
 </head>
@@ -382,7 +389,7 @@ export function renderDecidesPage(
 ${renderToc(cards)}
 <div class="content">
 <div class="top">
-  <p class="links"><a href="../">ts-capture</a><a href="../examples/">Examples</a><a href="../playground/">Playground</a><a href="${REPO}">ts-capture on GitHub</a></p>
+  ${renderSiteBar("how-it-decides")}
   <h1>How it decides</h1>
   <p class="lede">For every position the tests passed through, <code>apply</code> either writes the type it saw or leaves the position alone, and says why. Each card below is one of those outcomes: a small file, run and applied, and the code that made the call.</p>
   <p class="how">The cards are not written by hand: each is run through the same applier as the playground when the page is built, and a test checks that it still ends where the card says.</p>
@@ -391,6 +398,7 @@ ${renderToc(cards)}
 <main>
 ${renderSections(cards, real)}
 </main>
+${renderSiteFooter(build)}
 </div>
 </div>
 <script>${TOC_SCRIPT}</script>

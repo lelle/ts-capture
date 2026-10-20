@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import { INTEGRATIONS, renderHomePage } from "./home.js";
 
 describe("renderHomePage", () => {
-  const html = renderHomePage();
+  const html = renderHomePage({ version: "0.4.0" });
 
   it("links to the examples and the playground beside it", () => {
     expect(html).toContain('<a href="examples/">');

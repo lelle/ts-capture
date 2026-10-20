@@ -1,6 +1,13 @@
 import type { Starter } from "./starters.js";
 
 import { escapeHtml } from "../code.js";
+import {
+  type BuildInfo,
+  pageTitle,
+  renderSiteBar,
+  renderSiteFooter,
+  REPO,
+} from "../frame.js";
 import { STYLE } from "../style.js";
 
 /** JSON that can sit inside a `script` element: no `<` to end the element with. */
@@ -8,7 +15,10 @@ function embeddedJson(value: unknown): string {
   return JSON.stringify(value).replaceAll("<", "\\u003c");
 }
 
-export function renderPlaygroundPage(starters: Starter[]): string {
+export function renderPlaygroundPage(
+  starters: Starter[],
+  build: BuildInfo,
+): string {
   const options = starters
     .map(
       (starter) =>
@@ -20,14 +30,14 @@ export function renderPlaygroundPage(starters: Starter[]): string {
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>ts-capture — playground</title>
+<title>${pageTitle("Playground")}</title>
 <meta name="description" content="Run ts-capture in your browser: write untyped TypeScript, call it, and see the types it observed written back.">
 <style>${STYLE}</style>
 </head>
 <body>
 <div class="top">
-  <p class="links"><a href="../">ts-capture</a><a href="../examples/">Examples</a><a href="https://github.com/lelle/ts-capture">ts-capture on GitHub</a><a href="https://github.com/lelle/ts-capture/tree/main/docs">Documentation</a></p>
-  <h1>Try ts-capture</h1>
+  ${renderSiteBar("playground")}
+  <h1>Playground</h1>
   <p class="lede">Write untyped TypeScript, call it at the end of the file, and run. ts-capture watches the calls and writes the types it saw back into the code.</p>
   <p class="how">Everything happens in this tab: the code runs in your browser and is sent nowhere. The calls play the part your test suite plays in a real project.</p>
 </div>
@@ -47,11 +57,11 @@ export function renderPlaygroundPage(starters: Starter[]): string {
   <ul class="limits">
     <li>One file, no imports, and only the JavaScript standard library: no DOM and no Node.</li>
     <li>An annotation that would not compile is not written. The report under the result says which, and why.</li>
-    <li>A type is only as good as the calls behind it. See <a href="https://github.com/lelle/ts-capture/blob/main/docs/explanation/what-it-cannot-infer.md">what it cannot infer</a>.</li>
+    <li>A type is only as good as the calls behind it. See <a href="${REPO}/blob/main/docs/explanation/what-it-cannot-infer.md">what it cannot infer</a>.</li>
     <li>This runs the same applier and type-check as the <code>ts-capture</code> CLI. A real project also gets its test runner, several files and its own <code>tsconfig.json</code>.</li>
   </ul>
 </main>
-<footer></footer>
+${renderSiteFooter(build)}
 <script type="application/json" id="starters">${embeddedJson(starters)}</script>
 <script type="module" src="main.js"></script>
 </body>

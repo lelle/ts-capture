@@ -8,7 +8,7 @@ const starters = [
 ];
 
 describe("renderPlaygroundPage", () => {
-  const html = renderPlaygroundPage(starters);
+  const html = renderPlaygroundPage(starters, { version: "0.4.0" });
 
   it("offers every starter, and opens with the first one in the editor", () => {
     expect(html).toContain('<option value="one">First &lt;one&gt;</option>');

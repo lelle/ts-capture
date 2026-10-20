@@ -1,4 +1,11 @@
 import { escapeHtml, renderCode } from "./code.js";
+import {
+  type BuildInfo,
+  pageTitle,
+  renderSiteBar,
+  renderSiteFooter,
+  REPO,
+} from "./frame.js";
 import { STYLE } from "./style.js";
 
 export interface ExampleSource {
@@ -149,7 +156,7 @@ nav.addEventListener("click", (event) => {
 });
 `;
 
-export function renderPage(data: ExamplesData): string {
+export function renderPage(data: ExamplesData, build: BuildInfo): string {
   const examples = data.examples
     .map((example) => renderExample(example, data.sources[example.source]))
     .join("\n");
@@ -158,14 +165,14 @@ export function renderPage(data: ExamplesData): string {
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>ts-capture — what it writes</title>
+<title>${pageTitle("Examples")}</title>
 <meta name="description" content="Before and after: what ts-capture wrote into real code, including the results a reviewer should change.">
 <style>${STYLE}</style>
 </head>
 <body>
 <div class="top">
-  <p class="links"><a href="../">ts-capture</a><a href="../playground/">Playground</a><a href="../how-it-decides/">How it decides</a><a href="https://github.com/lelle/ts-capture">ts-capture on GitHub</a><a href="https://github.com/lelle/ts-capture/tree/main/docs">Documentation</a></p>
-  <h1>What ts-capture writes</h1>
+  ${renderSiteBar("examples")}
+  <h1>Examples</h1>
   <p class="lede">ts-capture watches your code run under its tests and writes the types it saw back into the source. These are annotations it wrote into real code: the ones you would have written yourself, the ones a reviewer should change, and the places it chose to leave alone.</p>
   <p class="how">Nothing here was typed by hand. Each example is cut from the diff of an actual run; the highlighted parts are what <code>apply</code> added.</p>
   ${renderFilters(data)}
@@ -173,14 +180,15 @@ export function renderPage(data: ExamplesData): string {
 <main>
 ${examples}
 <p class="empty" hidden>No example matches both filters.</p>
-</main>
-<footer>
+<section class="sources">
   <h2>Where these come from</h2>
   <ul>
 ${renderSources(data)}
   </ul>
-  <p>A type is only as good as what the tests passed in. The examples marked “needs review” are not bugs: they describe the test run exactly, which is why nothing flags them. See <a href="https://github.com/lelle/ts-capture/blob/main/docs/explanation/what-it-cannot-infer.md">what it cannot infer</a> and <a href="https://github.com/lelle/ts-capture/blob/main/docs/how-to/review-and-apply-safely.md">review and apply safely</a>.</p>
-</footer>
+  <p>A type is only as good as what the tests passed in. The examples marked “needs review” are not bugs: they describe the test run exactly, which is why nothing flags them. See <a href="${REPO}/blob/main/docs/explanation/what-it-cannot-infer.md">what it cannot infer</a> and <a href="${REPO}/blob/main/docs/how-to/review-and-apply-safely.md">review and apply safely</a>.</p>
+</section>
+</main>
+${renderSiteFooter(build)}
 <script>${SCRIPT}</script>
 </body>
 </html>

@@ -25,8 +25,15 @@ main, .top, footer { max-width: 1180px; margin: 0 auto; padding: 0 20px; }
 a { color: var(--accent); }
 code, pre { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; }
 .top { padding-top: 44px; padding-bottom: 8px; }
-.top p.links { margin: 0 0 28px; font-size: 14px; }
-.top p.links a { margin-right: 16px; }
+nav.site { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 22px; margin: 0 0 28px; font-size: 14px; }
+nav.site a { text-decoration: none; }
+nav.site a:hover { text-decoration: underline; }
+nav.site > a { font-weight: 650; color: var(--text); }
+nav.site .pages, nav.site .out { display: flex; flex-wrap: wrap; gap: 6px 16px; }
+nav.site .out { margin-left: auto; }
+nav.site a[aria-current="page"] { color: var(--text); font-weight: 650; text-decoration: underline; text-decoration-thickness: 2px; text-underline-offset: 5px; }
+footer.site { background: linear-gradient(var(--line), var(--line)) 20px 0 / calc(100% - 40px) 1px no-repeat; margin-top: 40px; padding-top: 20px; padding-bottom: 48px; }
+footer.site p { margin: 0 0 4px; }
 h1 { font-size: clamp(28px, 4.5vw, 42px); line-height: 1.15; margin: 0 0 14px; letter-spacing: -0.01em; text-wrap: balance; }
 .lede { font-size: 18px; max-width: 68ch; margin: 0 0 12px; }
 .how { color: var(--muted); max-width: 68ch; margin: 0 0 8px; }
@@ -66,11 +73,12 @@ ins { text-decoration: none; background: var(--add-bg); border-radius: 3px; padd
 .left-alone { border-left-color: var(--left); display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 4px 14px; }
 .left-alone dd { margin: 0; overflow-wrap: anywhere; }
 .empty { padding: 30px 0; color: var(--muted); }
-footer { padding-top: 30px; padding-bottom: 60px; color: var(--muted); font-size: 14.5px; }
-footer h2 { font-size: 16px; color: var(--text); margin: 0 0 8px; }
-footer ul { padding-left: 18px; margin: 0 0 14px; }
-footer li { margin-bottom: 6px; max-width: 86ch; }
-footer code { font-size: 13px; }
+footer, .sources { color: var(--muted); font-size: 14.5px; }
+.sources { padding-top: 30px; }
+.sources h2 { font-size: 16px; color: var(--text); margin: 0 0 8px; }
+.sources ul { padding-left: 18px; margin: 0 0 14px; }
+.sources li { margin-bottom: 6px; max-width: 86ch; }
+.sources code { font-size: 13px; }
 .controls { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 14px; padding: 18px 0 14px; }
 .controls label { font-size: 14px; color: var(--muted); }
 .controls select, .controls button {
