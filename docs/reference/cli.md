@@ -124,30 +124,29 @@ type wider than what ran is a match: `string | null` that only ever saw a
   match, as a ratio (`--threshold=0.9`). When any written type was observed,
   only written types count. Without it the exit code is 0.
 
-Every mismatch is printed with its location, then one line of totals:
+Every mismatch is printed with its location, then one line of totals and the
+reasons for any unverifiable position. A run with no mismatch, from a small
+cart module:
 
 ```text title="Current"
-src/account.ts:12:17  balance
-  declared  string
-  observed  number
-
-120 observed positions: 10 match, 1 mismatch, 104 unverifiable, 5 without a declaration.
-  unverifiable: 98 declared any, 6 generic declared type
+9 observed positions: 8 match, 0 mismatch, 1 unverifiable, 0 without a declaration.
+  unverifiable: 1 declared any
 ```
 
 When written types were observed, they get a section of their own, ahead of
 the inferred ones:
 
 ```text title="Current"
-Written types (42 checked)
-src/cart.ts:12:21  qty
+Written types (21 checked)
+src/cart.ts:17:52  qty
   declared  string
   observed  number
-  40 match, 1 mismatch, 1 unverifiable, 0 without a declaration.
+  18 match, 1 mismatch, 2 unverifiable, 0 without a declaration.
+  unverifiable: 1 literal declared type, 1 declared any
 
-Inferred types (310 checked)
-  305 match, 0 mismatch, 5 unverifiable, 0 without a declaration.
-  unverifiable: 5 declared any
+Inferred types (9 checked)
+  8 match, 0 mismatch, 1 unverifiable, 0 without a declaration.
+  unverifiable: 1 declared any
 ```
 
 When none were, `verify` says so on stderr, so a run without the variable does

@@ -4,15 +4,21 @@ Goal: find the parameters and return types whose written type disagrees with
 what your tests actually pass in and get back. Nothing in your source changes.
 
 ```ts
-export function addToCart(qty: string) { … }   // the tests call addToCart(2)
+export function addToCart(cart: Cart, sku: string, qty: string, unitPrice: number): Cart { … }
+// the tests call addToCart(cart, "apple", 2, 1.5)
 ```
 
 ```text title="Current"
-Written types (42 checked)
-src/cart.ts:12:21  qty
+Written types (21 checked)
+src/cart.ts:17:52  qty
   declared  string
   observed  number
-  40 match, 1 mismatch, 1 unverifiable, 0 without a declaration.
+  18 match, 1 mismatch, 2 unverifiable, 0 without a declaration.
+  unverifiable: 1 literal declared type, 1 declared any
+
+Inferred types (9 checked)
+  8 match, 0 mismatch, 1 unverifiable, 0 without a declaration.
+  unverifiable: 1 declared any
 ```
 
 It works with any setup that already collects types: [Vite / Vitest](use-with-vite-vitest.md),
@@ -71,12 +77,14 @@ test passes something the code was never meant to get. `verify` cannot tell
 which; the location takes you to the line to decide.
 
 _Unverifiable_ means the comparison would be a guess, and the line under the
-totals says why: a type of `any` or `unknown`; a named type (an interface,
-alias, class or type parameter) the value may well be; a literal type such as
-`"GET" | "POST"`, which the run records as `string`; or a generic the text
-comparison cannot reason about. On hono and nest about half of the written
-types end up here. A high count is a limit of the check, not a sign that your
-types are right.
+totals says why. The common reasons are `declared any` and `declared unknown`,
+which every value fits; `literal declared type`, such as `"GET" | "POST"`,
+which the run records as `string`; `generic declared type`, a type parameter
+or a type built on one, which a run cannot pin down; and `declared narrower
+than observable`, such as a brand the runtime value does not carry. Interfaces,
+aliases and classes are compared by TypeScript and are mostly settled. On hono
+and nest about a fifth of the written types end up here. A high count is a
+limit of the check, not a sign that your types are right.
 
 ## Fail CI on a mismatch
 
