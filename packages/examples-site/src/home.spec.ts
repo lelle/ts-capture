@@ -42,9 +42,7 @@ describe("renderHomePage", () => {
 
   it("points an already typed codebase to checking its types with verify", () => {
     expect(html).toContain("TS_CAPTURE_OBSERVE_ANNOTATED=1");
-    expect(html).toContain(
-      'href="https://github.com/lelle/ts-capture/blob/main/docs/how-to/check-your-types.md"',
-    );
+    expect(html).toContain('href="docs/how-to/check-your-types/"');
   });
 
   it("names the integration in each guide link, so the links differ when read out of context", () => {

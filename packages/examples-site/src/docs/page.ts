@@ -24,10 +24,14 @@ export function renderDocsPage(
   menu: MenuGroup[],
   build: BuildInfo,
 ): string {
-  const doc = renderMarkdown(source, file);
+  // The index is "Docs" on the site, as in the bar; GitHub keeps its own title.
+  const doc = renderMarkdown(
+    file === INDEX ? source.replace(/^# .*$/m, "# Docs") : source,
+    file,
+  );
   const here = sitePathOf(file);
   const root = relativeHref(here, "");
-  const name = file === INDEX ? "Docs" : doc.title;
+  const name = doc.title;
   return `<!doctype html>
 <html lang="en">
 <head>

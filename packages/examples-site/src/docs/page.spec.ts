@@ -48,7 +48,7 @@ describe("renderDocsPage", () => {
     );
   });
 
-  it("calls the index Docs", () => {
+  it("calls the index Docs, in the title and the heading alike", () => {
     const index = renderDocsPage(
       "README.md",
       "# ts-capture documentation\n",
@@ -56,6 +56,8 @@ describe("renderDocsPage", () => {
       BUILD,
     );
     expect(index).toContain("<title>Docs · ts-capture</title>");
+    expect(index).toContain('<h1 id="docs">Docs</h1>');
+    expect(index).not.toContain("ts-capture documentation");
   });
 
   it("lists every page in the menu under its group, relative to this page", () => {

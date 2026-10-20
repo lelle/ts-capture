@@ -7,7 +7,7 @@ import {
 } from "./frame.js";
 import { STYLE } from "./style.js";
 
-const DOCS = `${REPO}/blob/main/docs`;
+const DOCS = "docs";
 
 export interface Integration {
   guide: string;
@@ -19,17 +19,17 @@ export const INTEGRATIONS: Integration[] = [
   {
     name: "Vite or Vitest",
     packages: ["@ts-capture/vite", "@ts-capture/core"],
-    guide: `${DOCS}/how-to/use-with-vite-vitest.md`,
+    guide: `${DOCS}/how-to/use-with-vite-vitest/`,
   },
   {
     name: "Svelte 5",
     packages: ["@ts-capture/svelte", "@ts-capture/vite", "@ts-capture/core"],
-    guide: `${DOCS}/how-to/use-with-svelte.md`,
+    guide: `${DOCS}/how-to/use-with-svelte/`,
   },
   {
     name: "Jest (Babel)",
     packages: ["@ts-capture/babel-plugin", "@ts-capture/core"],
-    guide: `${DOCS}/how-to/use-with-jest-babel.md`,
+    guide: `${DOCS}/how-to/use-with-jest-babel/`,
   },
   {
     name: "esbuild or tsup",
@@ -39,7 +39,7 @@ export const INTEGRATIONS: Integration[] = [
   {
     name: "Plain Node, no bundler",
     packages: ["@ts-capture/core"],
-    guide: `${DOCS}/how-to/use-without-a-bundler.md`,
+    guide: `${DOCS}/how-to/use-without-a-bundler/`,
   },
 ];
 
@@ -85,9 +85,9 @@ export function renderHomePage(build: BuildInfo): string {
   <ul class="install">
     ${INTEGRATIONS.map(renderIntegration).join("\n    ")}
   </ul>
-  <p class="how">Then run your tests, and <code>npx ts-capture apply types.json --dry-run</code> to see what it would write. The <a href="${DOCS}/tutorials/getting-started.md">getting started tutorial</a> takes a first run from install to <code>apply</code>.</p>
-  <p class="how">Already typed? Run the tests with <code>TS_CAPTURE_OBSERVE_ANNOTATED=1</code> and <code>npx ts-capture verify</code> lists the types you wrote that the run contradicts. See <a href="${DOCS}/how-to/check-your-types.md">check the types you wrote</a>.</p>
-  <p class="note">ts-capture rewrites your source files, runs your getters while observing, and writes what it observed to disk. Commit your work first, and read <a href="${DOCS}/how-to/review-and-apply-safely.md">review and apply safely</a> before pointing it at a real codebase. The packages are 0.x: the API may change between minor versions.</p>
+  <p class="how">Then run your tests, and <code>npx ts-capture apply types.json --dry-run</code> to see what it would write. The <a href="${DOCS}/tutorials/getting-started/">getting started tutorial</a> takes a first run from install to <code>apply</code>.</p>
+  <p class="how">Already typed? Run the tests with <code>TS_CAPTURE_OBSERVE_ANNOTATED=1</code> and <code>npx ts-capture verify</code> lists the types you wrote that the run contradicts. See <a href="${DOCS}/how-to/check-your-types/">check the types you wrote</a>.</p>
+  <p class="note">ts-capture rewrites your source files, runs your getters while observing, and writes what it observed to disk. Commit your work first, and read <a href="${DOCS}/how-to/review-and-apply-safely/">review and apply safely</a> before pointing it at a real codebase. The packages are 0.x: the API may change between minor versions.</p>
 </main>
 ${renderSiteFooter(build, "home")}
 <script>${SCRIPT}</script>

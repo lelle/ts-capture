@@ -6,7 +6,6 @@ import {
   pageTitle,
   renderSiteBar,
   renderSiteFooter,
-  REPO,
 } from "../frame.js";
 import { STYLE } from "../style.js";
 
@@ -57,7 +56,7 @@ export function renderPlaygroundPage(
   <ul class="limits">
     <li>One file, no imports, and only the JavaScript standard library: no DOM and no Node.</li>
     <li>An annotation that would not compile is not written. The report under the result says which, and why.</li>
-    <li>A type is only as good as the calls behind it. See <a href="${REPO}/blob/main/docs/explanation/what-it-cannot-infer.md">what it cannot infer</a>.</li>
+    <li>A type is only as good as the calls behind it. See <a href="../docs/explanation/what-it-cannot-infer/">what it cannot infer</a>.</li>
     <li>This runs the same applier and type-check as the <code>ts-capture</code> CLI. A real project also gets its test runner, several files and its own <code>tsconfig.json</code>.</li>
   </ul>
 </main>

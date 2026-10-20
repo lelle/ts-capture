@@ -4,7 +4,6 @@ import {
   pageTitle,
   renderSiteBar,
   renderSiteFooter,
-  REPO,
 } from "./frame.js";
 import { STYLE } from "./style.js";
 
@@ -185,7 +184,7 @@ ${examples}
   <ul>
 ${renderSources(data)}
   </ul>
-  <p>A type is only as good as what the tests passed in. The examples marked “needs review” are not bugs: they describe the test run exactly, which is why nothing flags them. See <a href="${REPO}/blob/main/docs/explanation/what-it-cannot-infer.md">what it cannot infer</a> and <a href="${REPO}/blob/main/docs/how-to/review-and-apply-safely.md">review and apply safely</a>.</p>
+  <p>A type is only as good as what the tests passed in. The examples marked “needs review” are not bugs: they describe the test run exactly, which is why nothing flags them. See <a href="../docs/explanation/what-it-cannot-infer/">what it cannot infer</a> and <a href="../docs/how-to/review-and-apply-safely/">review and apply safely</a>.</p>
 </section>
 </main>
 ${renderSiteFooter(build, "examples")}

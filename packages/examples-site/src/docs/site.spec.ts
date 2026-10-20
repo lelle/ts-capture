@@ -3,6 +3,9 @@ import { dirname, posix, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 
+import { renderHomePage } from "../home.js";
+import { renderPage } from "../page.js";
+import { renderPlaygroundPage } from "../playground/page.js";
 import { readMenu } from "./menu.js";
 import { renderDocsSite } from "./site.js";
 
@@ -19,6 +22,16 @@ const pages = renderDocsSite(read, { version: "0.4.0" });
 
 // The pages built beside the docs, which a docs page may link to.
 const OTHER_PAGES = ["", "examples/", "how-it-decides/", "playground/"];
+
+const BUILD = { version: "0.4.0" };
+const others = {
+  "": renderHomePage(BUILD),
+  "examples/": renderPage({ examples: [], sources: {} }, BUILD),
+  "playground/": renderPlaygroundPage(
+    [{ id: "a", title: "A", code: "f();\n" }],
+    BUILD,
+  ),
+};
 
 describe("the docs on the site", () => {
   it("lists every page under docs/ in the menu", () => {
@@ -53,6 +66,18 @@ describe("the docs on the site", () => {
           broken.push(href!);
       }
       expect(broken).toEqual([]);
+    },
+  );
+
+  it.each(Object.entries(others))(
+    "the page at '%s' links to docs on the site, and to pages that exist",
+    (path, html) => {
+      const hrefs = [...html.matchAll(/href="([^"]*)"/g)].map((m) => m[1]!);
+      expect(hrefs.filter((href) => /\/docs\/.*\.md/.test(href))).toEqual([]);
+      const missing = hrefs
+        .filter((href) => !/^[a-z]+:/i.test(href) && href.includes("docs/"))
+        .filter((href) => !pages.has(posix.join(path, href.split("#")[0]!)));
+      expect(missing).toEqual([]);
     },
   );
 });

@@ -1,16 +1,15 @@
 name: Project site
 
 # Builds the front page with the README recording, the examples page from
-# docs/examples/examples.json and the playground from the engine in
-# packages/core, and publishes them to GitHub Pages. It does nothing until Pages
-# is switched on for the repository with "GitHub Actions" as its source
-# (Settings → Pages).
+# docs/examples/examples.json, the playground from the engine in packages/core
+# and the docs from docs/*.md, and publishes them to GitHub Pages. It does
+# nothing until Pages is switched on for the repository with "GitHub Actions"
+# as its source (Settings → Pages).
 on:
   push:
     branches: [main]
     paths:
-      - docs/examples/**
-      - docs/assets/demo.mp4
+      - docs/**
       - packages/examples-site/**
       - packages/core/**
       - .github/workflows/pages.yml
