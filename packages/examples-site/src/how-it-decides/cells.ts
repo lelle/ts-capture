@@ -4,7 +4,8 @@ import type { ApplySkipReason } from "@ts-capture/core/browser";
 // cell with `code` is checked by cells.spec.ts and rendered by running that
 // same code, so what the page says is what the applier does.
 
-export type SiteKind = "parameter" | "return" | "variable";
+export type SiteKind =
+  "parameter" | "return" | "variable" | "field" | "callback" | "this";
 
 export type Outcome = "written" | ApplySkipReason;
 
@@ -470,5 +471,215 @@ for (const i of [0, 1]) {
     decidedBy: { file: "cst-routing.ts", symbol: "routeEntries" },
     unreachable:
       "Only stale observations end here: the file changed between the run and apply.",
+  },
+  {
+    kind: "field",
+    outcome: "written",
+    name: "items",
+    title: "What the field turned out to hold",
+    why: "`JSON.parse` returns `any`, so TypeScript knows nothing about `items`. The run saw the array it held.",
+    decidedBy: { file: "cst-replacements.ts", symbol: "buildCstReplacements" },
+    code: 'class Store {\n  items = JSON.parse("[1, 2]");\n}\n\nnew Store();\n',
+  },
+  {
+    kind: "field",
+    outcome: "type-error",
+    name: "data",
+    title: "A method would not compile",
+    why: "The run saw `{ a: number }`, but `reset` sets the field to `null`. Written, the type would make that line an error, so apply drops it.",
+    decidedBy: {
+      file: "apply-types-verify.ts",
+      symbol: "filterAcceptedReplacements",
+    },
+    code: "class Store {\n  data = JSON.parse('{\"a\": 1}');\n  reset() {\n    this.data = null;\n  }\n}\n\nnew Store();\n",
+  },
+  {
+    kind: "field",
+    outcome: "no-information",
+    name: "blank",
+    title: "Nothing worth writing",
+    why: "All the run saw was an empty object, which says nothing about what the field is for.",
+    decidedBy: {
+      file: "compute-annotation.ts",
+      symbol: "carriesNoInformation",
+    },
+    code: 'class Note {\n  blank = JSON.parse("{}");\n}\n\nnew Note();\n',
+  },
+  {
+    kind: "field",
+    outcome: "out-of-scope",
+    name: "made",
+    title: "A name the class cannot see",
+    why: "The field held an instance of a class declared inside a callback. Its name means nothing in `Holder`.",
+    decidedBy: { file: "scope-reachability.ts", symbol: "allTypeRefsInScope" },
+    code: "function build(factory) {\n  return factory();\n}\n\nclass Holder {\n  made = build(() => {\n    class Box {\n      size = 1;\n    }\n    return new Box();\n  });\n}\n\nnew Holder();\n",
+  },
+  {
+    kind: "field",
+    outcome: "contradiction",
+    name: "word",
+    title: "The run disagrees with TypeScript",
+    why: "TypeScript types an element of a `string[]` as `string`. The second instance read one past the end, so the run saw `undefined` too.",
+    decidedBy: {
+      file: "redundant-annotation.ts",
+      symbol: "observedBeyondInferred",
+    },
+    code: 'const words = ["a"];\nlet next = 0;\n\nclass Slot {\n  word = words[next++];\n}\n\nnew Slot();\nnew Slot();\n',
+  },
+  {
+    kind: "field",
+    outcome: "redundant",
+    name: "count",
+    title: "TypeScript already knows, from the constructor",
+    why: "Once the constructor's parameter has a type, TypeScript infers the field from the assignment in the constructor. Writing it again adds nothing.",
+    decidedBy: {
+      file: "redundant-annotation.ts",
+      symbol: "isRedundantAnnotation",
+    },
+    code: "class Counter {\n  count;\n  constructor(start) {\n    this.count = start;\n  }\n}\n\nnew Counter(5);\n",
+  },
+  {
+    kind: "field",
+    outcome: "kept-existing",
+    name: "mode",
+    title: "A name would be replaced by what it is made of",
+    why: "TypeScript infers the enum `Mode`. The run only sees the string underneath, and writing `string` would throw the enum away.",
+    decidedBy: { file: "redundant-annotation.ts", symbol: "erasesEnum" },
+    code: 'enum Mode {\n  Fast = "fast",\n  Slow = "slow",\n}\n\nclass Runner {\n  mode = [Mode.Fast, Mode.Slow][0];\n}\n\nnew Runner();\n',
+  },
+  {
+    kind: "field",
+    outcome: "already-annotated",
+    name: "",
+    title: "A type is written already",
+    why: "Apply never replaces a type someone wrote.",
+    decidedBy: { file: "cst-routing.ts", symbol: "routeEntries" },
+    unreachable:
+      "A field with a type is not observed in a normal run, so there is nothing to skip. It happens when the same observations are applied twice, or with `TS_CAPTURE_OBSERVE_ANNOTATED`.",
+  },
+  {
+    kind: "field",
+    outcome: "ignored",
+    name: "settings",
+    title: "Asked to stay out",
+    why: "A `@ts-capture-ignore` comment above a declaration keeps apply away from all of it.",
+    decidedBy: { file: "cst-site-index.ts", symbol: "buildCstSiteIndex" },
+    code: "class Panel {\n  // @ts-capture-ignore\n  settings = JSON.parse('{\"dark\": true}');\n}\n\nnew Panel();\n",
+  },
+  {
+    kind: "field",
+    outcome: "left-to-typescript",
+    name: "label",
+    title: "Only one branch was seen",
+    why: "The initializer can give either side of `??`, and the run only ever saw one. Writing what it saw would forbid the other, so the type is left to TypeScript.",
+    decidedBy: {
+      file: "annotation-eligibility.ts",
+      symbol: "decideVarDeclSite",
+    },
+    code: 'const labels = ["a", "b"];\n\nclass Badge {\n  label = labels.find((l) => l === "a") ?? "none";\n}\n\nnew Badge();\n',
+  },
+  {
+    kind: "field",
+    outcome: "no-site",
+    name: "",
+    title: "The code moved",
+    why: "The observation points at a position where there is no field any more, because the file changed after the run.",
+    decidedBy: { file: "cst-routing.ts", symbol: "routeEntries" },
+    unreachable:
+      "Only stale observations end here: the file changed between the run and apply.",
+  },
+  {
+    kind: "callback",
+    outcome: "written",
+    name: "clock",
+    title: "A function, typed from what it returned",
+    why: "The parameter received a function. The run saw it called and saw what came back, so it is written as a function type.",
+    decidedBy: { file: "cst-replacements.ts", symbol: "buildCstReplacements" },
+    code: "function stamp(clock) {\n  return clock().getTime();\n}\n\nstamp(() => new Date());\n",
+    real: ["callback"],
+  },
+  {
+    kind: "callback",
+    outcome: "type-error",
+    name: "job",
+    title: "A later assignment would not compile",
+    why: "The run saw a function returning `number`. The body later sets `job` to `null`, which that type would make an error.",
+    decidedBy: {
+      file: "apply-types-verify.ts",
+      symbol: "filterAcceptedReplacements",
+    },
+    code: "function retry(job) {\n  const result = job();\n  job = null;\n  return result;\n}\n\nretry(() => 1);\n",
+  },
+  {
+    kind: "callback",
+    outcome: "no-information",
+    name: "job",
+    title: "Nothing worth writing",
+    why: "The function came back with an empty object, so all the run knows is `() => {}`, which says nothing about what the callback is for.",
+    decidedBy: {
+      file: "compute-annotation.ts",
+      symbol: "carriesNoInformation",
+    },
+    code: 'function schedule(job) {\n  return job();\n}\n\nschedule(() => JSON.parse("{}"));\n',
+  },
+  {
+    kind: "callback",
+    outcome: "out-of-scope",
+    name: "factory",
+    title: "A name the function cannot see",
+    why: "The parameter received a class declared at the call. Its name means nothing where the parameter is.",
+    decidedBy: { file: "scope-reachability.ts", symbol: "allTypeRefsInScope" },
+    code: "function later(factory) {\n  return new factory();\n}\n\nlater(class Job {});\n",
+  },
+  {
+    kind: "callback",
+    outcome: "redundant",
+    name: "task",
+    title: "TypeScript already knows",
+    why: "The array's type says what each element is, so TypeScript types the callback's parameter already.",
+    decidedBy: {
+      file: "redundant-annotation.ts",
+      symbol: "isRedundantAnnotation",
+    },
+    code: "const tasks = [() => 1];\ntasks.forEach((task) => task());\n",
+  },
+  {
+    kind: "callback",
+    outcome: "already-annotated",
+    name: "",
+    title: "A type is written already",
+    why: "Apply never replaces a type someone wrote.",
+    decidedBy: { file: "cst-routing.ts", symbol: "routeEntries" },
+    unreachable:
+      "A parameter with a type is not observed in a normal run, so there is nothing to skip. It happens when the same observations are applied twice, or with `TS_CAPTURE_OBSERVE_ANNOTATED`.",
+  },
+  {
+    kind: "callback",
+    outcome: "ignored",
+    name: "handler",
+    title: "Asked to stay out",
+    why: "A `@ts-capture-ignore` comment above a declaration keeps apply away from all of it.",
+    decidedBy: { file: "cst-site-index.ts", symbol: "buildCstSiteIndex" },
+    code: "// @ts-capture-ignore\nfunction on(handler) {\n  return handler();\n}\n\non(() => 1);\n",
+  },
+  {
+    kind: "callback",
+    outcome: "no-site",
+    name: "",
+    title: "The code moved",
+    why: "The observation points at a position where there is no parameter any more, because the file changed after the run.",
+    decidedBy: { file: "cst-routing.ts", symbol: "routeEntries" },
+    unreachable:
+      "Only stale observations end here: the file changed between the run and apply.",
+  },
+  {
+    kind: "this",
+    outcome: "written",
+    name: "",
+    title: "`this` in a plain function",
+    why: "A function that reads `this` without being a method has an implicit `any` this. Apply can write `this: T` as the first parameter, typed from what the run saw.",
+    decidedBy: { file: "transformer.ts", symbol: "needsThisInstrumentation" },
+    unreachable:
+      "`this` is observed only with the instrumenter's `instrumentImplicitThis` option, which asks the type checker where `this` is implicitly `any` while instrumenting. The playground does not turn it on, so no card here can run.",
   },
 ];

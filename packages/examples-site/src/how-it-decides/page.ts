@@ -17,6 +17,9 @@ const KINDS: Record<SiteKind, string> = {
   parameter: "Parameter",
   return: "Return type",
   variable: "Variable",
+  field: "Class field",
+  callback: "Callback",
+  this: "this",
 };
 
 const anchor = (cell: Cell): string => `${cell.kind}-${cell.outcome}`;
@@ -45,7 +48,7 @@ function renderGrid(cards: DecidedCell[]): string {
   <thead><tr><td></td>${head}</tr></thead>
   <tbody>${rows.join("")}</tbody>
 </table></div>
-<p class="how">● an example you can run · ○ running code cannot get there; the card says why.</p>`;
+<p class="how">● an example you can run · ○ running code cannot get there; the card says why · empty: not an outcome for that kind, or no example found yet.</p>`;
 }
 
 function renderCard(
