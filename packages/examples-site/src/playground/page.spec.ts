@@ -31,4 +31,18 @@ describe("renderPlaygroundPage", () => {
     expect(html).toContain('<a href="../examples/">Examples</a>');
     expect(html).toContain('<script type="module" src="main.js"></script>');
   });
+
+  it("offers naming repeated shapes, ticked when the first starter asks for it", () => {
+    const box = (page: string) =>
+      /<input type="checkbox" id="name-shapes"[^>]*>/.exec(page)?.[0] ?? "";
+    expect(box(html)).not.toContain("checked");
+    expect(html).toContain(
+      '<label for="name-shapes">Name repeated shapes</label>',
+    );
+    const naming = renderPlaygroundPage(
+      [{ ...starters[0]!, nameShapes: true }, starters[1]!],
+      { version: "0.4.0" },
+    );
+    expect(box(naming)).toContain("checked");
+  });
 });

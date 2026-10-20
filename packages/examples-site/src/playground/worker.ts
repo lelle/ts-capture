@@ -11,12 +11,12 @@ const libs: Promise<Map<string, string>> = fetch(
 const send = (message: RunMessage): void => self.postMessage(message);
 
 self.onmessage = async (event: MessageEvent<RunRequest>) => {
-  const { id, code } = event.data;
+  const { id, code, nameShapes } = event.data;
   let result: PlaygroundResult;
   try {
     const loaded = await libs;
     send({ id, type: "started" });
-    result = await runPlayground(code, loaded);
+    result = await runPlayground(code, loaded, { nameShapes });
   } catch (error) {
     result = { ok: false, error: String(error) };
   }

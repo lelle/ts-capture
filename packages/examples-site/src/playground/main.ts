@@ -5,9 +5,12 @@ import type { Starter } from "./starters.js";
 import { codeFromHash } from "./link.js";
 
 const TIMEOUT_MS = 10_000;
+const stacked = matchMedia("(max-width: 760px)");
+const stillMotion = matchMedia("(prefers-reduced-motion: reduce)");
 
 const code = document.querySelector<HTMLTextAreaElement>("#code")!;
 const starter = document.querySelector<HTMLSelectElement>("#starter")!;
+const nameShapes = document.querySelector<HTMLInputElement>("#name-shapes")!;
 const button = document.querySelector<HTMLButtonElement>("#run")!;
 const status = document.querySelector<HTMLElement>("#status")!;
 const output = document.querySelector<HTMLElement>("#result")!;
@@ -49,6 +52,13 @@ function show(result: PlaygroundResult): void {
   output.innerHTML = result.html;
   report.textContent = [...result.summary, ...result.report].join("\n");
   say("");
+  // Stacked under the editor, the result is off screen when it arrives.
+  if (stacked.matches) {
+    output.closest("figure")!.scrollIntoView({
+      behavior: stillMotion.matches ? "auto" : "smooth",
+      block: "start",
+    });
+  }
 }
 
 function startWorker(): Worker {
@@ -83,7 +93,11 @@ function run(): void {
   button.disabled = true;
   say(worker ? "Running…" : "Loading the TypeScript compiler…");
   worker ??= startWorker();
-  const request: RunRequest = { id: current, code: code.value };
+  const request: RunRequest = {
+    id: current,
+    code: code.value,
+    nameShapes: nameShapes.checked,
+  };
   worker.postMessage(request);
 }
 
@@ -96,12 +110,14 @@ const linked = codeFromHash(window.location.hash);
 if (linked !== undefined) {
   code.value = linked;
   starter.value = "";
+  nameShapes.checked = false;
 }
 
 starter.addEventListener("change", () => {
   const chosen = starters.find((candidate) => candidate.id === starter.value);
   if (!chosen) return;
   code.value = chosen.code;
+  nameShapes.checked = chosen.nameShapes ?? false;
   clear();
   say("");
 });

@@ -1,6 +1,7 @@
 import {
   applyInMemory,
   createObserver,
+  INFER_DEFAULTS,
   instrumentSource,
   type LocatedSkip,
   reportLines,
@@ -43,6 +44,8 @@ export interface RunOptions {
   applyTo?: string;
   /** Observe `this` where the checker says it is implicitly `any`. */
   implicitThis?: boolean;
+  /** Declare a shape written more than once as a named type (`infer.aliasRepeatedShapes`). */
+  nameShapes?: boolean;
 }
 
 /**
@@ -94,6 +97,10 @@ export async function runPlayground(
   };
   const { files, telemetry, skips } = applyInMemory({
     fileNames: [FILE],
+    infer: {
+      ...INFER_DEFAULTS,
+      aliasRepeatedShapes: options.nameShapes ?? false,
+    },
     types,
     compilerOptions: COMPILER_OPTIONS,
     rootDir: "/",

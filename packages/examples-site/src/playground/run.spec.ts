@@ -111,10 +111,42 @@ pick([{ sku: "a", price: 2 }], "sku");
     expect(withThis.after).toContain("describe(this: { name: string })");
   });
 
+  it("names a shape it writes more than once, when asked", async () => {
+    const code = `function city(address) {
+  return address.city;
+}
+
+function ship(order) {
+  return city(order.address);
+}
+
+ship({ id: 1, address: { city: "Oslo", zip: "0150" } });
+`;
+    const named = await runPlayground(code, libs, { nameShapes: true });
+    const plain = await runPlayground(code, libs);
+    if (!named.ok || !plain.ok) throw new Error("did not run");
+    expect(named.after).toContain(
+      "type Address = { city: string; zip: string };",
+    );
+    expect(named.after).toContain("function city(address: Address)");
+    expect(plain.after).not.toContain("type Address");
+  });
+
+  it("opens with an API response typed as named shapes, the case the playground leads with", async () => {
+    const first = STARTERS[0]!;
+    expect(first.nameShapes).toBe(true);
+    const result = await runPlayground(first.code, libs, { nameShapes: true });
+    if (!result.ok) throw new Error(result.error);
+    expect(result.after).toMatch(/^type Customer = /m);
+    expect(result.after).toContain("function shipTo(customer: Customer)");
+  });
+
   it.each(STARTERS)(
     "annotates the starter $title without adding a type error",
     async (starter) => {
-      const result = await runPlayground(starter.code, libs);
+      const result = await runPlayground(starter.code, libs, {
+        nameShapes: starter.nameShapes,
+      });
       if (!result.ok) throw new Error(result.error);
       expect(result.after).not.toBe(starter.code);
       expect(errorCount(result.after)).toBeLessThanOrEqual(

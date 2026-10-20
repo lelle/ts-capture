@@ -2,9 +2,44 @@ export interface Starter {
   id: string;
   title: string;
   code: string;
+  /** Ticks "Name repeated shapes" (`infer.aliasRepeatedShapes`) when chosen. */
+  nameShapes?: boolean;
 }
 
 export const STARTERS: Starter[] = [
+  {
+    id: "api",
+    title: "An API response",
+    nameShapes: true,
+    code: `// Stands in for fetch(): the body is text until it is parsed, so TypeScript
+// only sees \`any\`. The run sees what the API actually sent.
+async function getJson(url) {
+  const body = '{"id":7,"customer":{"name":"Ada","address":{"city":"Oslo","zip":"0150"}},' +
+    '"lines":[{"sku":"chair","quantity":2,"price":{"amount":120,"currency":"NOK"}}]}';
+  return JSON.parse(body);
+}
+
+async function loadOrder(id) {
+  return getJson("/api/orders/" + id);
+}
+
+function shipTo(customer) {
+  return customer.address.city;
+}
+
+function lineTotal(line) {
+  return line.quantity * line.price.amount;
+}
+
+async function checkout(id) {
+  const order = await loadOrder(id);
+  shipTo(order.customer);
+  return order.lines.map(lineTotal);
+}
+
+checkout(7);
+`,
+  },
   {
     id: "cart",
     title: "Shopping cart",

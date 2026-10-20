@@ -3,6 +3,7 @@ import type { PlaygroundResult } from "./run.js";
 export interface RunRequest {
   id: number;
   code: string;
+  nameShapes: boolean;
 }
 
 /** `started` is sent once the compiler is loaded, just before the code runs. */
