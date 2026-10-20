@@ -49,7 +49,7 @@ export function renderMarkdown(
   const marked = new Marked({
     renderer: {
       heading({ tokens, depth }) {
-        const html = this.parser.parseInline(tokens);
+        const html = wholeWords(this.parser.parseInline(tokens));
         const text = unescapeHtml(html.replaceAll(/<[^>]*>/g, ""));
         const base = slugify(text);
         const seen = used.get(base) ?? 0;
@@ -62,6 +62,10 @@ export function renderMarkdown(
       link({ href, title: linkTitle, tokens }) {
         const titled = linkTitle ? ` title="${escapeHtml(linkTitle)}"` : "";
         return `<a href="${escapeHtml(siteHref(href, file))}"${titled}>${this.parser.parseInline(tokens)}</a>`;
+      },
+      // Long names break at their own seams, not mid-word.
+      codespan({ text }) {
+        return `<code>${escapeHtml(text).replaceAll(/([./])/g, "$1<wbr>")}</code>`;
       },
       code({ text, lang }: Tokens.Code) {
         const info = lang ?? "";
@@ -78,6 +82,21 @@ export function renderMarkdown(
 
   const html = marked.parse(source, { async: false });
   return { title, html, headings };
+}
+
+// A signature in a heading breaks between its words: `[--` and `include-tests]`
+// on two lines reads as two flags.
+function wholeWords(html: string): string {
+  return html.replaceAll(/<code>(.*?)<\/code>/g, (code, inner: string) =>
+    inner.includes(" ")
+      ? `<code>${inner
+          .replaceAll("<wbr>", "")
+          .replaceAll(
+            /[^ ]+/g,
+            (word) => `<span class="word">${word}</span>`,
+          )}</code>`
+      : code,
+  );
 }
 
 /** A link from one site path to another, both relative to the site's root. */

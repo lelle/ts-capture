@@ -130,15 +130,19 @@ const DOCS_STYLE = `
 .docs-menu .sections a.on-screen { color: var(--text); border-left-color: var(--accent); background: var(--code-bg); }
 main.doc { max-width: 80ch; margin: 0; padding: 0 0 20px; min-width: 0; }
 .doc h2, .doc h3 { scroll-margin-top: 16px; }
-.doc h3 { font-size: 17px; margin: 26px 0 10px; }
+.doc h3 { font-size: 19px; margin: 28px 0 10px; }
+.doc h4 { font-size: 17px; margin: 24px 0 8px; }
 .doc p, .doc ul, .doc ol { margin: 0 0 14px; }
 .doc li { margin-bottom: 4px; }
 .doc pre, .doc figure { margin: 0 0 16px; }
 .doc .t-inserted { color: var(--good); }
 .doc .t-deleted { color: var(--weak); }
 .doc :not(pre) > code { background: var(--code-bg); border-radius: 4px; padding: 1px 5px; font-size: 0.88em; overflow-wrap: anywhere; }
+.doc :is(h2, h3, h4) code { background: none; padding: 0; font-size: 0.92em; }
+.doc .word { white-space: nowrap; }
 .doc table { display: block; overflow-x: auto; border-collapse: collapse; margin: 0 0 18px; font-size: 14.5px; }
 .doc th, .doc td { border: 1px solid var(--line); padding: 6px 10px; text-align: left; vertical-align: top; }
+.doc td code { overflow-wrap: normal; }
 .doc td:first-child code { white-space: nowrap; }
 .doc blockquote { margin: 0 0 16px; padding: 2px 14px; border-left: 3px solid var(--line); color: var(--muted); }
 @media (max-width: 900px) {

@@ -110,6 +110,26 @@ describe("renderMarkdown", () => {
     });
   });
 
+  it("lets inline code break after a dot or a slash, and nowhere else", () => {
+    const { html } = render("`infer.literal.stringMaxLength` and `src/a_b.ts`");
+    expect(html).toContain(
+      "<code>infer.<wbr>literal.<wbr>stringMaxLength</code>",
+    );
+    expect(html).toContain("<code>src/<wbr>a_b.<wbr>ts</code>");
+  });
+
+  it("breaks code in a heading between its words only", () => {
+    const { html } = render("## `ts-capture apply <types.json> [--dry-run]`\n");
+    expect(html).toContain(
+      '<code><span class="word">ts-capture</span> <span class="word">apply</span> <span class="word">&lt;types.json&gt;</span> <span class="word">[--dry-run]</span></code>',
+    );
+  });
+
+  it("keeps the break points out of a heading's anchor", () => {
+    const { headings } = render("## `apply.skipFiles`\n");
+    expect(headings[0]!.id).toBe("applyskipfiles");
+  });
+
   describe("code blocks", () => {
     // Stands in for Shiki: colours `ts`, has no grammar for anything else.
     const highlight = (code: string, lang: string): string | undefined =>
