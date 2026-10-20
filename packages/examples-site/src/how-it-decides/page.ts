@@ -160,7 +160,6 @@ const toggle = toc.querySelector(".toc-toggle");
 const current = toc.querySelector(".toc-current");
 const list = document.getElementById("toc-list");
 const links = new Map([...list.querySelectorAll("a")].map((a) => [a.getAttribute("href").slice(1), a]));
-const onScreen = new Set();
 const fold = (open) => {
   toggle.setAttribute("aria-expanded", String(open));
   toc.classList.toggle("open", open);
@@ -172,16 +171,18 @@ list.addEventListener("click", (event) => {
 // On a narrow screen the folded menu is a bar over the top of the page: what
 // is under it is not on screen.
 const bar = getComputedStyle(toggle).display === "none" ? 0 : toc.offsetHeight;
-const observer = new IntersectionObserver((entries) => {
-  for (const entry of entries) {
-    const link = links.get(entry.target.id);
-    // A card that only touches the edge, or shows a fraction of a pixel,
-    // is not on screen.
-    const visible = entry.isIntersecting && entry.intersectionRect.height > 4;
-    link.classList.toggle("on-screen", visible);
-    if (visible) onScreen.add(entry.target.id);
-    else onScreen.delete(entry.target.id);
+// The observer only says which cards are near the screen. Whether one shows
+// more than a sliver is measured from where it is now, every frame the page
+// scrolls: an observer reports a card once, as it crosses the edge, and a card
+// that crossed by two pixels during a fast scroll would never count.
+const near = new Set();
+const update = () => {
+  const onScreen = new Set();
+  for (const id of near) {
+    const r = document.getElementById(id).getBoundingClientRect();
+    if (Math.min(r.bottom, innerHeight) - Math.max(r.top, bar) > 4) onScreen.add(id);
   }
+  for (const [id, link] of links) link.classList.toggle("on-screen", onScreen.has(id));
   // The card being read: the first one on screen with more than a sliver of it
   // left above the fold.
   const shown = [...links.keys()].filter((id) => onScreen.has(id));
@@ -195,7 +196,25 @@ const observer = new IntersectionObserver((entries) => {
   if (top < list.scrollTop || top + link.offsetHeight > list.scrollTop + list.clientHeight) {
     list.scrollTop = top - list.clientHeight / 3;
   }
-}, { rootMargin: "-" + bar + "px 0px 0px 0px" });
+};
+const observer = new IntersectionObserver((entries) => {
+  for (const entry of entries) {
+    if (entry.isIntersecting) near.add(entry.target.id);
+    else near.delete(entry.target.id);
+  }
+  update();
+});
+let frame = 0;
+addEventListener(
+  "scroll",
+  () => {
+    if (!frame) frame = requestAnimationFrame(() => {
+      frame = 0;
+      update();
+    });
+  },
+  { passive: true },
+);
 for (const id of links.keys()) {
   const card = document.getElementById(id);
   if (card) observer.observe(card);
