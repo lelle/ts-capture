@@ -349,6 +349,12 @@ export function buildCstReplacements(
     const markerSuffix = buildDiagnosticMarkerSuffix(types, infer);
 
     if (kind === "param") {
+      // No call passed it. `: undefined` would make every call that does a
+      // type error, and says nothing about what the parameter is for.
+      if (types.every(([name]) => name === "undefined")) {
+        skip("no-information", "every call left it out");
+        continue;
+      }
       const site = paramSites.get(pos)!;
       const isOptional = !!site.node.questionToken;
       const computed = computeAnnotationTypeString(types, opts, infer, isOptional, program);

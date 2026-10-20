@@ -188,6 +188,33 @@ describe.each(TIERS)("annotate, oracle %s", (tier) => {
   });
 
   // Parallel workers record the same site many times, one observation each.
+  // A parameter no call passed was observed as `undefined` alone. Written, it
+  // would turn every later call that passes something into a type error.
+  describe("leaves a parameter no call passed", () => {
+    it("on a function", () => {
+      const source = "export function connect(options) {\n  return options;\n}\n";
+      const pos = source.indexOf("options)") + "options".length;
+      const { result } = annotated(tier, source, [entry("target.ts", pos, [["undefined"]])]);
+      expect(result.text).toBe(source);
+      expect(result.skips).toContainEqual(
+        expect.objectContaining({
+          pos,
+          reason: "no-information",
+          detail: "every call left it out",
+        }),
+      );
+    });
+
+    it("but writes one that was sometimes passed", () => {
+      const source = "export function connect(options) {\n  return options;\n}\n";
+      const pos = source.indexOf("options)") + "options".length;
+      const { result } = annotated(tier, source, [
+        entry("target.ts", pos, [["undefined"], ["{ retries: number }"]]),
+      ]);
+      expect(result.text).toContain("options: { retries: number } | undefined");
+    });
+  });
+
   describe("judges a site by all its entries together", () => {
     const source = "declare const a: string | undefined;\nconst p = a ?? 1;\n";
     const pos = source.indexOf("p =") + 1;

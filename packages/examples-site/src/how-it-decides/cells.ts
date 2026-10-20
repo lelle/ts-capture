@@ -81,16 +81,13 @@ enable({ name: "dark mode" });
     outcome: "no-information",
     name: "options",
     title: "Nothing worth writing",
-    why: "Every call passed an empty object. `{}` says nothing about what the parameter is for, so nothing is written.",
-    decidedBy: {
-      file: "compute-annotation.ts",
-      symbol: "carriesNoInformation",
-    },
+    why: "No call passed this parameter, so all the run saw was `undefined`. That says nothing about what the parameter is for, and written as `options: undefined` it would make every call that does pass options an error.",
+    decidedBy: { file: "cst-replacements.ts", symbol: "buildCstReplacements" },
     code: `function connect(options) {
   return { retries: 3, ...options };
 }
 
-connect({});
+connect();
 `,
   },
   {
