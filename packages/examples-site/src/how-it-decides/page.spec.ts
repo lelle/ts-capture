@@ -133,6 +133,32 @@ describe("renderDecidesPage", () => {
     expect(page).not.toContain("open in the playground");
   });
 
+  it("lists every card in a menu, under its kind, in page order", () => {
+    const menu = page.slice(
+      page.indexOf('<nav class="toc"'),
+      page.indexOf("</nav>"),
+    );
+    expect(menu).toContain('<p class="toc-kind">Parameter</p>');
+    const links = [...menu.matchAll(/href="#([^"]+)"/g)].map((m) => m[1]);
+    expect(links).toEqual([
+      "parameter-written",
+      "parameter-redundant",
+      "parameter-no-site",
+    ]);
+  });
+
+  it("folds the menu behind a button on a narrow screen", () => {
+    expect(page).toContain(
+      '<button type="button" class="toc-toggle" aria-expanded="false" aria-controls="toc-list">',
+    );
+    expect(page).toContain('id="toc-list"');
+  });
+
+  it("marks in the menu the cards that are on screen", () => {
+    expect(page).toContain("IntersectionObserver");
+    expect(page).toContain(".toc a.on-screen");
+  });
+
   it("says why a cell has no example, and offers no playground", () => {
     expect(card("parameter-no-site")).toContain(
       "Only stale observations end here.",

@@ -132,6 +132,98 @@ const GRID_STYLE = `
 .grid .unreachable a { opacity: 0.6; }
 `;
 
+/** Every card, under its kind, in page order. */
+function renderToc(cards: DecidedCell[]): string {
+  const kinds = [...new Set(cards.map(({ cell }) => cell.kind))];
+  const groups = kinds.map((kind) => {
+    const items = cards
+      .filter(({ cell }) => cell.kind === kind)
+      .map(
+        ({ cell }) =>
+          `<li><a href="#${anchor(cell)}" data-label="${escapeHtml(`${KINDS[kind]} · ${cell.outcome}`)}">${escapeHtml(cell.outcome)}</a></li>`,
+      )
+      .join("");
+    return `<p class="toc-kind">${escapeHtml(KINDS[kind])}</p><ul>${items}</ul>`;
+  });
+  return `<nav class="toc" aria-label="Cards">
+  <button type="button" class="toc-toggle" aria-expanded="false" aria-controls="toc-list"><span class="toc-current">Cards</span></button>
+  <div id="toc-list" class="toc-list">${groups.join("")}</div>
+</nav>`;
+}
+
+// Marks in the menu every card on screen, and keeps the first of them in
+// view inside the menu without moving the page. On a narrow screen the menu
+// folds behind a button that names where the reader is.
+const TOC_SCRIPT = `
+const toc = document.querySelector(".toc");
+const toggle = toc.querySelector(".toc-toggle");
+const current = toc.querySelector(".toc-current");
+const list = document.getElementById("toc-list");
+const links = new Map([...list.querySelectorAll("a")].map((a) => [a.getAttribute("href").slice(1), a]));
+const onScreen = new Set();
+const fold = (open) => {
+  toggle.setAttribute("aria-expanded", String(open));
+  toc.classList.toggle("open", open);
+};
+toggle.addEventListener("click", () => fold(toggle.getAttribute("aria-expanded") !== "true"));
+list.addEventListener("click", (event) => {
+  if (event.target.closest("a")) fold(false);
+});
+// On a narrow screen the folded menu is a bar over the top of the page: what
+// is under it is not on screen.
+const bar = getComputedStyle(toggle).display === "none" ? 0 : toc.offsetHeight;
+const observer = new IntersectionObserver((entries) => {
+  for (const entry of entries) {
+    const link = links.get(entry.target.id);
+    // A card that only touches the edge, or shows a fraction of a pixel,
+    // is not on screen.
+    const visible = entry.isIntersecting && entry.intersectionRect.height > 4;
+    link.classList.toggle("on-screen", visible);
+    if (visible) onScreen.add(entry.target.id);
+    else onScreen.delete(entry.target.id);
+  }
+  // The card being read: the first one on screen with more than a sliver of it
+  // left above the fold.
+  const shown = [...links.keys()].filter((id) => onScreen.has(id));
+  const reading =
+    shown.find((id) => document.getElementById(id).getBoundingClientRect().bottom > bar + 80) ??
+    shown[0];
+  if (!reading) return;
+  const link = links.get(reading);
+  current.textContent = link.dataset.label;
+  const top = link.offsetTop;
+  if (top < list.scrollTop || top + link.offsetHeight > list.scrollTop + list.clientHeight) {
+    list.scrollTop = top - list.clientHeight / 3;
+  }
+}, { rootMargin: "-" + bar + "px 0px 0px 0px" });
+for (const id of links.keys()) {
+  const card = document.getElementById(id);
+  if (card) observer.observe(card);
+}
+`;
+
+const TOC_STYLE = `
+.layout { display: grid; grid-template-columns: 220px minmax(0, 1fr); }
+.toc { position: sticky; top: 0; align-self: start; max-height: 100vh; display: flex; flex-direction: column; border-right: 1px solid var(--line); font-size: 13px; }
+.toc-toggle { display: none; }
+.toc-list { position: relative; overflow-y: auto; padding: 24px 12px 24px 20px; }
+.toc-kind { margin: 14px 0 4px; font-weight: 600; }
+.toc-kind:first-child { margin-top: 0; }
+.toc ul { list-style: none; margin: 0; padding: 0; }
+.toc a { display: block; padding: 1px 8px; border-left: 2px solid transparent; color: var(--muted); text-decoration: none; font-family: ui-monospace, monospace; }
+.toc a:hover { color: var(--text); }
+.toc a.on-screen { color: var(--text); border-left-color: var(--accent); background: var(--code-bg); }
+@media (max-width: 900px) {
+  .layout { display: block; }
+  .toc { z-index: 2; max-height: none; border-right: 0; border-bottom: 1px solid var(--line); background: var(--bg); }
+  .toc-toggle { display: block; width: 100%; padding: 10px 20px; text-align: left; font: inherit; color: var(--text); background: var(--bg); border: 0; cursor: pointer; }
+  .toc-toggle::after { content: " ▾"; color: var(--muted); }
+  .toc-list { display: none; max-height: 60vh; padding-top: 4px; }
+  .toc.open .toc-list { display: block; }
+  .example { scroll-margin-top: 48px; }
+}
+`;
+
 /** `real` maps a real example's id to its title. */
 export function renderDecidesPage(
   cards: DecidedCell[],
@@ -144,9 +236,12 @@ export function renderDecidesPage(
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>ts-capture — how it decides</title>
 <meta name="description" content="Every way ts-capture apply treats a position: what it writes, what it refuses to write, and the code that decides it.">
-<style>${STYLE}${GRID_STYLE}</style>
+<style>${STYLE}${GRID_STYLE}${TOC_STYLE}</style>
 </head>
 <body>
+<div class="layout">
+${renderToc(cards)}
+<div class="content">
 <div class="top">
   <p class="links"><a href="../">ts-capture</a><a href="../examples/">Examples</a><a href="../playground/">Playground</a><a href="${REPO}">ts-capture on GitHub</a></p>
   <h1>How it decides</h1>
@@ -157,6 +252,9 @@ export function renderDecidesPage(
 <main>
 ${cards.map((card) => renderCard(card, real)).join("\n")}
 </main>
+</div>
+</div>
+<script>${TOC_SCRIPT}</script>
 </body>
 </html>
 `;
