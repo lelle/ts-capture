@@ -96,6 +96,15 @@ commas(['Apples', 'Oranges']);`);
     expect(out).toTypeAs("item", "string | string[]");
   });
 
+  it("types a callback that returns nothing as returning void", () => {
+    const out = pipeline(`
+function onDone(callback) {
+    callback();
+}
+onDone(() => {});`);
+    expect(out).toTypeAs("callback", "() => void");
+  });
+
   it("handles optional parameters", () => {
     const out = pipeline(`
 function calculate(a, b?) {

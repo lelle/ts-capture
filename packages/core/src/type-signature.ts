@@ -305,7 +305,7 @@ export function applyParamReturnUpgrade(
   observedReturnTypes: string[],
 ): string {
   if (observedReturnTypes.length === 0) return typeStr;
-  const newReturn = [...new Set(observedReturnTypes)].sort().join(" | ");
+  const newReturn = observedReturn(observedReturnTypes);
 
   // Case A: top-level function arrow `(args) => unknown`. Find the depth-0
   // `)` that closes the args list and check the trailing return is `unknown`.
@@ -427,6 +427,17 @@ export function isGenericFunctionType(type: string): boolean {
   return /^\(.*\) => /.test(type) && (type.includes(": unknown") || type === "() => unknown");
 }
 
+/**
+ * What a function returned, as the return of its type. A lone `undefined` is
+ * `void`, matching the apply-side rule: a receiver that expects
+ * `cb(...) => undefined` rejects every caller whose callback returns
+ * something (TS2322). In a union, `undefined` is one branch and stays.
+ */
+function observedReturn(returnTypes: string[]): string {
+  const unique = [...new Set(returnTypes)].sort();
+  return unique.length === 1 && unique[0] === "undefined" ? "void" : unique.join(" | ");
+}
+
 /** Build a function signature string from collected parameter and return type entries. */
 export function buildFunctionSignature(
   params: Array<{ name: string; types: string[] }>,
@@ -442,19 +453,7 @@ export function buildFunctionSignature(
   if (returnTypes.length === 0) {
     retType = "unknown";
   } else {
-    const unique = [...new Set(returnTypes)].sort();
-    // Widen sole-undefined return to void, matching the apply-side
-    // rule. The arrow's own return-type annotation widens; the
-    // receiver's prop-shape must too, otherwise the receiver expects
-    // `cb(...) => undefined` while callers provide `cb(...) => void`
-    // and TS rejects the variance (TS2322). Union returns like
-    // `string | undefined` stay as-is — `undefined` is meaningful
-    // when it's one branch.
-    if (unique.length === 1 && unique[0] === "undefined") {
-      retType = "void";
-    } else {
-      retType = unique.join(" | ");
-    }
+    retType = observedReturn(returnTypes);
   }
   if (isAsync && !retType.startsWith("Promise<")) {
     retType = `Promise<${retType}>`;

@@ -1329,6 +1329,21 @@ describe("applyParamReturnUpgrade", () => {
     ).toBe("(x: unknown) => number | string");
   });
 
+  // A callback that returned nothing is a `void` callback: `() => undefined`
+  // rejects every caller whose callback returns something.
+  it.each([
+    ["(x: unknown) => unknown", "cb", "(x: unknown) => void"],
+    ["{ done(): unknown }", "done", "{ done(): void }"],
+  ])("reads %s returning only undefined as void", (typeStr, member, expected) => {
+    expect(applyParamReturnUpgrade(typeStr, member, ["undefined"])).toBe(expected);
+  });
+
+  it("keeps undefined as one branch of what came back", () => {
+    expect(applyParamReturnUpgrade("() => unknown", "cb", ["number", "undefined"])).toBe(
+      "() => number | undefined",
+    );
+  });
+
   it("leaves a specific (non-unknown) existing return alone — fallback only", () => {
     // Parent's cross-ref already gave us a real signature. Param-return is a
     // fallback, not an override: trust the parent's specific return.
