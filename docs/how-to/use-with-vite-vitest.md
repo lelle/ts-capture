@@ -48,8 +48,8 @@ plugins: [
   tsCapture({
     enabled: process.env.CI !== "true", // off: nothing instrumented, no dumps written
     exclude: /node_modules|\.spec\.ts$/, // skip files matching this regex
-    apply: true, // vite serve only: auto-apply on each browser beacon
-    outputFile: ".ts-capture-types.json", // vite serve only: dump beacon payload
+    apply: true, // vite serve only: auto-apply on each browser report
+    outputFile: ".ts-capture-types.json", // vite serve only: dump the reported observations
   }),
 ];
 ```
@@ -66,9 +66,10 @@ serve mode.
 ## Browser dev sessions
 
 The same plugin registration works in a Vite dev server. The plugin
-auto-detects the browser environment and reports observations via
-`navigator.sendBeacon` to a `/__ts-capture_collect` endpoint it serves. Set
-`apply: true` to write types back on each beacon, or
+auto-detects the browser environment and reports observations to a
+`/__ts-capture_collect` endpoint it serves: with `fetch` soon after they are
+made and every 10 seconds, and with `navigator.sendBeacon` when the page
+unloads. Set `apply: true` to write types back on each report, or
 `outputFile: 'types.json'` to dump them to disk.
 
 ## Next

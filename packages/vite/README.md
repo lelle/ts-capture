@@ -61,10 +61,12 @@ See `examples/vitest/` for a complete working example.
 ## Use in a Vite dev server (browser)
 
 Same plugin registration in `vite.config.ts`. The plugin auto-detects
-the browser environment and reports observations via
-`navigator.sendBeacon` to a `/__ts-capture_collect` endpoint that the plugin
-itself serves. Optional `apply: true` writes types back to source on
-each beacon; `outputFile: 'types.json'` dumps them to disk:
+the browser environment and reports observations to a
+`/__ts-capture_collect` endpoint that the plugin itself serves: with
+`fetch` soon after they are made and every 10 seconds, and with
+`navigator.sendBeacon` when the page unloads. Optional `apply: true`
+writes types back to source on each report; `outputFile: 'types.json'`
+dumps them to disk:
 
 ```ts
 plugins: [tsCapture({ apply: true, outputFile: '.ts-capture-types.json' })],
@@ -95,8 +97,8 @@ plugins: [
   tsCapture({
     enabled: process.env.CI !== "true", // off: nothing instrumented, no dumps written
     exclude: /node_modules|\.spec\.ts$/, // skip files matching this regex
-    apply: true, // vite serve only: auto-apply on each browser beacon
-    outputFile: ".ts-capture-types.json", // vite serve only: dump beacon payload to JSON
+    apply: true, // vite serve only: auto-apply on each browser report
+    outputFile: ".ts-capture-types.json", // vite serve only: dump the reported observations to JSON
     literalOptions: { literalString: true, literalStringMaxLength: 24 }, // observe literals
   }),
 ];
@@ -132,8 +134,9 @@ processes:
    (Symbol-keyed init guard makes repeat execution a cheap no-op —
    needed because Vitest can load files in any worker order).
 3. The collector branches on environment:
-   - **Browser**: `navigator.sendBeacon` to `/__ts-capture_collect` on
-     `beforeunload` + every 10 seconds.
+   - **Browser**: `fetch` to `/__ts-capture_collect` on the next tick
+     after an observation and every 10 seconds; `navigator.sendBeacon` on
+     `beforeunload`.
    - **Node**: per-PID JSON dump under `TS_CAPTURE_TYPES_DIR` with periodic
      500 ms flush + standard exit handlers + eager flush every 10
      observations (Vitest workers don't reliably reach

@@ -96,8 +96,11 @@ Nothing to add (16)
 The groups are: _would add a type error_, _carries no type information_ (an
 empty array, `unknown`, a function whose parameters were never observed),
 _refers to a type this file cannot name_, and _falls outside the type already
-there_. Positions where TypeScript already infers the same type, or that are
-already annotated, are counted under _Nothing to add_ and not listed.
+there_ — the type TypeScript infers at that position, which the run
+contradicts. Positions where TypeScript already infers the same type, or that
+already have a written type, are counted under _Nothing to add_ and not
+listed. Apply is never given an observation of a type you wrote, so _already
+annotated_ counts positions typed since the run, mostly by an earlier apply.
 
 ## `ts-capture coverage <tsconfig.json>`
 

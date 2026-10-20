@@ -90,7 +90,8 @@ in full and revert with `git checkout .`.
 Apply is conservative by design:
 
 - **It never overwrites an existing annotation** — only empty positions are
-  filled.
+  filled (unless [`ignoreExistingTypes`](../reference/configuration.md#scope--existing-types),
+  a measurement mode, is on).
 - **A type-check gate** (`infer.typecheckVerify`, on by default) drops any
   candidate annotation that would introduce a new TypeScript error.
 - **It writes nothing TypeScript infers on its own** — judged against the

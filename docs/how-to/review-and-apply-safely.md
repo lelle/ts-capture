@@ -96,8 +96,8 @@ those apart; looking at where the value comes from can.
 
 ## What `apply` will and won't do
 
-- **Won't overwrite existing annotations** — only empty (`any`) positions are
-  filled.
+- **Won't overwrite existing annotations** — only positions with no written
+  type are filled. An explicit `: any` is a written type and is left alone.
 - **Won't introduce type errors** — every candidate is checked against the
   project's TypeChecker (`infer.typecheckVerify`, on by default) and dropped if
   it would add a diagnostic.

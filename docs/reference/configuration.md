@@ -28,13 +28,13 @@ over the defaults, so you only specify what you change.
 
 ## Top-level keys
 
-| Key          | Purpose                                                                            |
-| ------------ | ---------------------------------------------------------------------------------- |
-| `infer`      | Inference behavior (the bulk of the knobs — see below).                            |
-| `apply`      | `ts-capture apply` CLI behavior (currently `skipFiles`).                           |
-| `common`     | Shared compiler options (`rootDir`, `tsConfig`) — resolved against the config dir. |
-| `instrument` | Per-run instrumentation options (advanced).                                        |
-| `applyTypes` | Per-file applier options (advanced; distinct from the `apply` CLI layer).          |
+| Key          | Purpose                                                                                                     |
+| ------------ | ----------------------------------------------------------------------------------------------------------- |
+| `infer`      | Inference behavior (the bulk of the knobs — see below).                                                     |
+| `apply`      | `ts-capture apply` CLI behavior (currently `skipFiles`).                                                    |
+| `common`     | Shared compiler options (`rootDir`, `tsConfig`) — resolved against the config dir.                          |
+| `instrument` | Per-run instrumentation options (advanced). Read by the `register` loader only, not by the bundler plugins. |
+| `applyTypes` | Per-file applier options (advanced; distinct from the `apply` CLI layer).                                   |
 
 `common` / `instrument` / `applyTypes` are compiler/instrumentation plumbing;
 most users only touch `infer` and `apply`.
@@ -146,6 +146,12 @@ That is from a real run against nestjs/nest. TypeScript believes the value is
 always a `string`; the code produced `undefined`. Whether the fix is to widen the type or to stop
 producing `undefined` is not something an observation can decide, so ts-capture
 reports it and leaves the code alone. On by default, in every `outputMode`.
+
+A conflict needs the project: what TypeScript infers comes from the checker,
+so without a `tsconfig.json` (see `--project` in the [CLI reference](cli.md))
+no conflict is found. And only `null` or `undefined` counts. When the run also
+saw a value of another kind outside the type, the position is not a conflict,
+because comparing those needs more than the text of the types.
 
 **`[proposal]` and `[applied]` — what an annotation would be, or was.** Turned
 on with `outputMode`:

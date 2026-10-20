@@ -73,8 +73,10 @@ function add(a: string | number, b: string | number) {
 
 ## Already-typed declarations are respected
 
-ts-capture never overwrites an existing annotation. `const f = (x: T) => U`
-keeps its `T`/`U`; only _missing_ inner annotations get filled.
+ts-capture never overwrites an existing annotation (unless
+[`ignoreExistingTypes`](../reference/configuration.md#scope--existing-types), a
+measurement mode, is on). `const f = (x: T): U => …` keeps its `T` and `U`;
+only _missing_ annotations inside it get filled.
 
 ## Observation is not side-effect free
 
