@@ -23,6 +23,7 @@
   "dependencies": {
     "@ts-capture/core": "workspace:*",
     "marked": "18.1.1",
+    "shiki": "4.5.0",
     "typescript": "6.0.3"
   },
   "devDependencies": {

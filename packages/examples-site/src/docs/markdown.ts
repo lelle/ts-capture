@@ -1,7 +1,9 @@
 import { Marked, type Tokens } from "marked";
 import { posix } from "node:path";
 
-import { escapeHtml, renderCode } from "../code.js";
+import type { Highlight } from "./highlight.js";
+
+import { escapeHtml } from "../code.js";
 import { REPO } from "../frame.js";
 
 export interface Heading {
@@ -15,9 +17,6 @@ export interface RenderedDoc {
   /** The second-level headings, in order: what the menu lists under the page. */
   headings: Heading[];
 }
-
-// The tokenizer reads TypeScript; JSX and Svelte markup would scan as noise.
-const COLOURED = new Set(["ts", "js"]);
 
 /** The anchor GitHub gives a heading, so links written for GitHub still land. */
 export function slugify(text: string): string {
@@ -34,8 +33,15 @@ export function sitePathOf(file: string): string {
   return `docs/${file.replace(/\.md$/, "")}/`;
 }
 
-/** `file` is the page's path under docs/; it decides where its links lead. */
-export function renderMarkdown(source: string, file: string): RenderedDoc {
+/**
+ * `file` is the page's path under docs/; it decides where its links lead.
+ * Without `highlight`, code blocks are plain.
+ */
+export function renderMarkdown(
+  source: string,
+  file: string,
+  highlight?: Highlight,
+): RenderedDoc {
   const headings: Heading[] = [];
   const used = new Map<string, number>();
   let title = "";
@@ -61,9 +67,7 @@ export function renderMarkdown(source: string, file: string): RenderedDoc {
         const info = lang ?? "";
         const language = /^\S*/.exec(info)![0];
         const caption = /\btitle="([^"]*)"/.exec(info)?.[1];
-        const body = COLOURED.has(language)
-          ? renderCode(text, text)
-          : escapeHtml(text);
+        const body = highlight?.(text, language) ?? escapeHtml(text);
         const pre = `<pre><code>${body}</code></pre>`;
         return caption === undefined
           ? `${pre}\n`

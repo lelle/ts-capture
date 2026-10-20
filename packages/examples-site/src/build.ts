@@ -14,6 +14,7 @@ import ts from "typescript";
 
 import type { BuildInfo } from "./frame.js";
 
+import { createCodeHighlighter } from "./docs/highlight.js";
 import { renderDocsSite } from "./docs/site.js";
 import { renderHomePage } from "./home.js";
 import { CELLS } from "./how-it-decides/cells.js";
@@ -85,6 +86,7 @@ process.stdout.write(`${decided.length} cells -> ${decidesDir}/index.html\n`);
 const docs = renderDocsSite(
   (file) => readFileSync(resolve(docsDir, file), "utf-8"),
   buildInfo,
+  await createCodeHighlighter(),
 );
 for (const [path, html] of docs) {
   mkdirSync(resolve(outDir, path), { recursive: true });

@@ -111,14 +111,25 @@ describe("renderMarkdown", () => {
   });
 
   describe("code blocks", () => {
-    it("colours TypeScript with the site's own tokens", () => {
-      const { html } = render("```ts\nconst a: string = 1;\n```\n");
-      expect(html).toContain('<pre><code><span class="t-keyword">const</span>');
-      expect(html).toContain('<span class="t-type">string</span>');
+    // Stands in for Shiki: colours `ts`, has no grammar for anything else.
+    const highlight = (code: string, lang: string): string | undefined =>
+      lang === "ts" ? `<b>${code}</b>` : undefined;
+
+    it("hands a block to the highlighter by its language", () => {
+      const { html } = renderMarkdown(
+        '```ts title="Input"\nconst a = 1;\n```\n',
+        "how-to/x.md",
+        highlight,
+      );
+      expect(html).toContain("<pre><code><b>const a = 1;</b></code></pre>");
     });
 
-    it("escapes a block in a language it does not colour", () => {
-      const { html } = render("```sh\necho <a> && b\n```\n");
+    it("escapes a block the highlighter has no grammar for", () => {
+      const { html } = renderMarkdown(
+        "```sh\necho <a> && b\n```\n",
+        "how-to/x.md",
+        highlight,
+      );
       expect(html).toContain(
         "<pre><code>echo &lt;a&gt; &amp;&amp; b</code></pre>",
       );

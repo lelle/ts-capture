@@ -1,3 +1,4 @@
+import type { Highlight } from "./highlight.js";
 import type { MenuGroup } from "./menu.js";
 
 import { escapeHtml } from "../code.js";
@@ -23,11 +24,13 @@ export function renderDocsPage(
   source: string,
   menu: MenuGroup[],
   build: BuildInfo,
+  highlight?: Highlight,
 ): string {
   // The index is "Docs" on the site, as in the bar; GitHub keeps its own title.
   const doc = renderMarkdown(
     file === INDEX ? source.replace(/^# .*$/m, "# Docs") : source,
     file,
+    highlight,
   );
   const here = sitePathOf(file);
   const root = relativeHref(here, "");
@@ -131,6 +134,8 @@ main.doc { max-width: 80ch; margin: 0; padding: 0 0 20px; min-width: 0; }
 .doc p, .doc ul, .doc ol { margin: 0 0 14px; }
 .doc li { margin-bottom: 4px; }
 .doc pre, .doc figure { margin: 0 0 16px; }
+.doc .t-inserted { color: var(--good); }
+.doc .t-deleted { color: var(--weak); }
 .doc :not(pre) > code { background: var(--code-bg); border-radius: 4px; padding: 1px 5px; font-size: 0.88em; overflow-wrap: anywhere; }
 .doc table { display: block; overflow-x: auto; border-collapse: collapse; margin: 0 0 18px; font-size: 14.5px; }
 .doc th, .doc td { border: 1px solid var(--line); padding: 6px 10px; text-align: left; vertical-align: top; }

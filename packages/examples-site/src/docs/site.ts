@@ -1,4 +1,5 @@
 import type { BuildInfo } from "../frame.js";
+import type { Highlight } from "./highlight.js";
 
 import { sitePathOf } from "./markdown.js";
 import { readMenu } from "./menu.js";
@@ -8,6 +9,7 @@ import { renderDocsPage } from "./page.js";
 export function renderDocsSite(
   read: (file: string) => string,
   build: BuildInfo,
+  highlight?: Highlight,
 ): Map<string, string> {
   const menu = readMenu(read("README.md"));
   const files = [
@@ -17,7 +19,7 @@ export function renderDocsSite(
   return new Map(
     files.map((file) => [
       sitePathOf(file),
-      renderDocsPage(file, read(file), menu, build),
+      renderDocsPage(file, read(file), menu, build, highlight),
     ]),
   );
 }
