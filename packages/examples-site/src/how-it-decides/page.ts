@@ -296,7 +296,7 @@ for (const card of cards) observer.observe(card);
 `;
 
 const TOC_STYLE = `
-.layout { display: grid; grid-template-columns: 230px minmax(0, 1fr); }
+.layout { display: grid; grid-template-columns: 230px minmax(0, 1fr); max-width: calc(230px + 1180px); margin: 0 auto; }
 .toc { position: sticky; top: 0; align-self: start; height: 100vh; box-sizing: border-box; display: flex; flex-direction: column; border-right: 1px solid var(--line); font-size: 13px; }
 .toc-toggle { display: none; }
 .toc-list { overflow-y: auto; padding: 24px 12px 24px 20px; }
