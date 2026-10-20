@@ -107,4 +107,9 @@ describe("renderDocsPage", () => {
       '<li><a href="#ts-capture-verify-typesjson---project-tsconfigjson"><code>verify</code></a></li>',
     );
   });
+
+  it("adds a copy button to marked blocks once its script runs", () => {
+    expect(page).toContain('document.querySelectorAll("pre[data-copy]")');
+    expect(page).toContain("navigator.clipboard.writeText");
+  });
 });

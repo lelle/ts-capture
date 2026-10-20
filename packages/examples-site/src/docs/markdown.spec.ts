@@ -37,6 +37,10 @@ describe("renderMarkdown", () => {
   const render = (source: string, file = "how-to/check-your-types.md") =>
     renderMarkdown(source, file);
 
+  it("gives the page title no anchor of its own", () => {
+    expect(render("# Title\n").html).toBe('<h1 id="title">Title</h1>\n');
+  });
+
   it("takes the title from the first heading", () => {
     expect(render("# Check the types you wrote\n\nText.\n").title).toBe(
       "Check the types you wrote",
@@ -48,9 +52,11 @@ describe("renderMarkdown", () => {
       "# Title\n\n## What `apply` will and won't do\n\n### Detail\n\n## Merge and verify\n",
     );
     expect(html).toContain(
-      '<h2 id="what-apply-will-and-wont-do">What <code>apply</code> will and won&#39;t do</h2>',
+      '<h2 id="what-apply-will-and-wont-do">What <code>apply</code> will and won&#39;t do <a class="anchor" href="#what-apply-will-and-wont-do" aria-label="Link to this section">#</a></h2>',
     );
-    expect(html).toContain('<h3 id="detail">Detail</h3>');
+    expect(html).toContain(
+      '<h3 id="detail">Detail <a class="anchor" href="#detail" aria-label="Link to this section">#</a></h3>',
+    );
     expect(headings).toEqual([
       {
         id: "what-apply-will-and-wont-do",
@@ -156,7 +162,9 @@ describe("renderMarkdown", () => {
         "how-to/x.md",
         highlight,
       );
-      expect(html).toContain("<pre><code><b>const a = 1;</b></code></pre>");
+      expect(html).toContain(
+        "<pre data-copy><code><b>const a = 1;</b></code></pre>",
+      );
     });
 
     it("escapes a block the highlighter has no grammar for", () => {
@@ -166,8 +174,14 @@ describe("renderMarkdown", () => {
         highlight,
       );
       expect(html).toContain(
-        "<pre><code>echo &lt;a&gt; &amp;&amp; b</code></pre>",
+        "<pre data-copy><code>echo &lt;a&gt; &amp;&amp; b</code></pre>",
       );
+    });
+
+    it("marks a block to copy, except output", () => {
+      const { html } = render("```sh\nnpm test\n```\n\n```text\nok\n```\n");
+      expect(html).toContain("<pre data-copy><code>npm test</code></pre>");
+      expect(html).toContain("<pre><code>ok</code></pre>");
     });
 
     it("puts the title of a block above it", () => {

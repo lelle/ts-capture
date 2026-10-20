@@ -68,7 +68,11 @@ export function renderMarkdown(
             : html;
           headings.push({ id, html, menu });
         }
-        return `<h${depth} id="${id}">${html}</h${depth}>\n`;
+        const anchor =
+          depth === 1
+            ? ""
+            : ` <a class="anchor" href="#${id}" aria-label="Link to this section">#</a>`;
+        return `<h${depth} id="${id}">${html}${anchor}</h${depth}>\n`;
       },
       link({ href, title: linkTitle, tokens }) {
         const titled = linkTitle ? ` title="${escapeHtml(linkTitle)}"` : "";
@@ -83,7 +87,9 @@ export function renderMarkdown(
         const language = /^\S*/.exec(info)![0];
         const caption = /\btitle="([^"]*)"/.exec(info)?.[1];
         const body = highlight?.(text, language) ?? escapeHtml(text);
-        const pre = `<pre><code>${body}</code></pre>`;
+        // Output is read, not pasted, so only input gets a copy button.
+        const copy = language === "text" ? "" : " data-copy";
+        const pre = `<pre${copy}><code>${body}</code></pre>`;
         return caption === undefined
           ? `${pre}\n`
           : `<figure><figcaption>${escapeHtml(caption)}</figcaption>${pre}</figure>\n`;

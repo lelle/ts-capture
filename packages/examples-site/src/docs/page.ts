@@ -115,6 +115,18 @@ const update = () => {
 };
 addEventListener("scroll", () => { if (!frame) frame = requestAnimationFrame(update); }, { passive: true });
 update();
+for (const pre of document.querySelectorAll("pre[data-copy]")) {
+  const button = document.createElement("button");
+  button.type = "button";
+  button.className = "copy";
+  button.textContent = "Copy";
+  button.addEventListener("click", async () => {
+    await navigator.clipboard.writeText(pre.querySelector("code").textContent);
+    button.textContent = "Copied";
+    setTimeout(() => (button.textContent = "Copy"), 1500);
+  });
+  pre.append(button);
+}
 `;
 
 const DOCS_STYLE = `
@@ -135,6 +147,13 @@ main.doc { max-width: 80ch; margin: 0; padding: 0 0 20px; min-width: 0; }
 .doc p, .doc ul, .doc ol { margin: 0 0 14px; }
 .doc li { margin-bottom: 4px; }
 .doc pre, .doc figure { margin: 0 0 16px; }
+.doc pre[data-copy] { position: relative; }
+.doc .copy { position: absolute; top: 8px; right: 8px; font: 12px/1 system-ui, sans-serif; padding: 5px 8px; border: 1px solid var(--line); border-radius: 6px; background: var(--surface); color: var(--muted); cursor: pointer; opacity: 0; }
+.doc pre:hover .copy,
+.doc .copy:focus-visible { opacity: 1; color: var(--text); }
+@media (hover: none) { .doc .copy { opacity: 0.8; } }
+.doc .anchor { color: var(--muted); text-decoration: none; font-weight: 400; opacity: 0.35; }
+.doc :is(h2, h3, h4):hover .anchor, .doc .anchor:focus-visible { opacity: 1; }
 .doc .t-inserted { color: var(--good); }
 .doc .t-deleted { color: var(--weak); }
 .doc :not(pre) > code { background: var(--code-bg); border-radius: 4px; padding: 1px 5px; font-size: 0.88em; overflow-wrap: anywhere; }
