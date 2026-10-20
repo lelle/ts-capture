@@ -645,6 +645,30 @@ for (const i of [0, 1]) {
   },
   {
     kind: "callback",
+    outcome: "contradiction",
+    name: "next",
+    title: "The run disagrees with TypeScript",
+    why: "TypeScript types `next` from the signature the callback is assigned to: a function, never missing. The run passed `undefined` once. Apply reports the disagreement instead of widening the parameter.",
+    decidedBy: {
+      file: "redundant-annotation.ts",
+      symbol: "observedBeyondInferred",
+    },
+    code: "const step: (go: () => void) => void = (next) => next?.();\n\nstep(() => {});\nstep(undefined as unknown as () => void);\n",
+  },
+  {
+    kind: "callback",
+    outcome: "kept-existing",
+    name: "resolve",
+    title: "A signature would be replaced by `Function`",
+    why: "`resolve` is a function the engine made, so the run can only say it was callable. TypeScript already has its signature, and `Function` would throw that away.",
+    decidedBy: {
+      file: "redundant-annotation.ts",
+      symbol: "writesOverCallSignature",
+    },
+    code: "const ready = new Promise((resolve) => resolve(1));\n",
+  },
+  {
+    kind: "callback",
     outcome: "already-annotated",
     name: "",
     title: "A type is written already",
