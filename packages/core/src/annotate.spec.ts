@@ -236,6 +236,18 @@ describe.each(TIERS)("annotate, oracle %s", (tier) => {
     });
   });
 
+  // TypeScript types `next` from where the callback is assigned; the run
+  // passed `undefined` too. A function arm in the union must not hide that.
+  it("reports a callback the run passed undefined where TypeScript says a function", () => {
+    if (tier === "none") return;
+    const source = "export const step: (next: () => void) => void = (next) => next?.();\n";
+    const pos = source.indexOf("(next)") + "(next".length;
+    const { result } = annotated(tier, source, [
+      entry("target.ts", pos, [["() => void"], ["undefined"]]),
+    ]);
+    expect(result.skips).toContainEqual(expect.objectContaining({ pos, reason: "contradiction" }));
+  });
+
   describe("says why it left a variable to TypeScript", () => {
     it.each([
       [

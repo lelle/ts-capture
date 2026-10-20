@@ -1,6 +1,11 @@
 import { describe, expect, it } from "vitest";
 
-import { canonicalTypeString, sameTypeString, typeStringForSource } from "./type-canonical.js";
+import {
+  canonicalTypeString,
+  canonicalUnionArms,
+  sameTypeString,
+  typeStringForSource,
+} from "./type-canonical.js";
 
 // Unit spec for the type-string canonicaliser. The boundary case — what the
 // checker's printer actually emits against what ts-capture writes — lives in
@@ -119,5 +124,14 @@ describe("typeStringForSource", () => {
 
   it("leaves a type carrying a diagnostic note alone", () => {
     expect(typeStringForSource("unknown /* @ts-capture:polymorphic-position */")).toBeUndefined();
+  });
+});
+
+describe("canonicalUnionArms", () => {
+  // Arms are compared as sets against another type's arms; a function arm must
+  // read the same whether or not it sat in a union.
+  it("spells a function arm as it is spelled on its own", () => {
+    expect(canonicalUnionArms("(() => void) | undefined")).toEqual(["() => void", "undefined"]);
+    expect(canonicalUnionArms("() => void")).toEqual(["() => void"]);
   });
 });

@@ -1,6 +1,6 @@
 import ts from "typescript";
 
-import { deparen, renderAtom, renderType, typeNode, typeText } from "./type-text.js";
+import { deparen, renderType, typeNode, typeText } from "./type-text.js";
 
 // The spellings of a type-string the rest of the code compares and writes.
 // Reading the string is `type-text.ts`'s; this module only chooses a spelling.
@@ -37,7 +37,9 @@ export function canonicalUnionArms(text: string): string[] | undefined {
   const node = typeNode(text);
   if (!node) return undefined;
   const top = deparen(node);
-  return ts.isUnionTypeNode(top) ? top.types.map((t) => renderAtom(t)) : [renderType(top)];
+  // Each arm as it is spelled alone, so it compares equal to the same type
+  // outside a union: `(() => void)` here is `() => void` there.
+  return ts.isUnionTypeNode(top) ? top.types.map((t) => renderType(t)) : [renderType(top)];
 }
 
 /** Every type name this type-string refers to. */

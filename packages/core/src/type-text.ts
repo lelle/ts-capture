@@ -297,7 +297,7 @@ function nullishLast(arms: readonly string[]): string[] {
   return [...arms].sort((a, b) => rank(a) - rank(b));
 }
 
-export function renderAtom(node: ts.TypeNode, faithful = false): string {
+function renderAtom(node: ts.TypeNode, faithful = false): string {
   const n = deparen(node);
   return needsParens(n) ? `(${renderType(n, faithful)})` : renderType(n, faithful);
 }
