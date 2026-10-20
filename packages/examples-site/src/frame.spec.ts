@@ -17,7 +17,7 @@ const DATA: ExamplesData = { examples: [], sources: {} };
 const pages = {
   home: renderHomePage(BUILD),
   examples: renderPage(DATA, BUILD),
-  "how-it-decides": renderDecidesPage([], new Map(), BUILD),
+  "how-it-decides": renderDecidesPage([], DATA, BUILD),
   playground: renderPlaygroundPage(
     [{ id: "a", title: "A", code: "f();\n" }],
     BUILD,

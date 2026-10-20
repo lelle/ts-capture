@@ -19,7 +19,7 @@ import { renderDocsSite } from "./docs/site.js";
 import { renderHomePage } from "./home.js";
 import { CELLS } from "./how-it-decides/cells.js";
 import { decide } from "./how-it-decides/decide.js";
-import { renderDecidesPage } from "./how-it-decides/page.js";
+import { renderDecidesPage, ruleLinks } from "./how-it-decides/page.js";
 import { type ExamplesData, renderPage } from "./page.js";
 import { reachableLibs } from "./playground/libs.js";
 import { renderPlaygroundPage } from "./playground/page.js";
@@ -55,7 +55,10 @@ copyFileSync(
   resolve(root, "docs/assets/demo.mp4"),
   resolve(outDir, "demo.mp4"),
 );
-writeFileSync(resolve(examplesDir, "index.html"), renderPage(data, buildInfo));
+writeFileSync(
+  resolve(examplesDir, "index.html"),
+  renderPage(data, buildInfo, ruleLinks(CELLS)),
+);
 process.stdout.write(
   `${data.examples.length} examples -> ${examplesDir}/index.html\n`,
 );
@@ -75,11 +78,7 @@ const decided = await Promise.all(CELLS.map((cell) => decide(cell, libs)));
 mkdirSync(decidesDir, { recursive: true });
 writeFileSync(
   resolve(decidesDir, "index.html"),
-  renderDecidesPage(
-    decided,
-    new Map(data.examples.map((example) => [example.id, example.title])),
-    buildInfo,
-  ),
+  renderDecidesPage(decided, data, buildInfo),
 );
 process.stdout.write(`${decided.length} cells -> ${decidesDir}/index.html\n`);
 

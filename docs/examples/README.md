@@ -1,7 +1,8 @@
 # Examples
 
 Before and after: what ts-capture wrote into real code, including the results
-a reviewer should change and the places it left alone.
+a reviewer should change. What a real run left alone is shown on the How it
+decides page, beside the rule that left it.
 
 The page is built from [`examples.json`](examples.json):
 

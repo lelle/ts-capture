@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { renderCode } from "./code.js";
-import { type ExamplesData, renderPage } from "./page.js";
+import { type ExamplesData, renderExampleBody, renderPage } from "./page.js";
 
 const DATA: ExamplesData = {
   sources: {
@@ -72,10 +72,31 @@ describe("renderCode", () => {
 describe("renderPage", () => {
   const html = renderPage(DATA, { version: "0.4.0" });
 
-  it("has a card for every example, in the order given", () => {
+  it("has a card for every example it wrote, and leaves the ones it left alone to How it decides", () => {
     expect(
       [...html.matchAll(/<article id="([^"]+)"/g)].map((m) => m[1]),
-    ).toEqual(["left-alone", "generic"]);
+    ).toEqual(["generic"]);
+    expect(html).not.toContain('data-value="left"');
+  });
+
+  it("links an example to the rule that decided it, where one does", () => {
+    const linked = renderPage(
+      DATA,
+      { version: "0.4.0" },
+      new Map([
+        [
+          "generic",
+          {
+            href: "../how-it-decides/#variable-written",
+            label: "Variable · written",
+          },
+        ],
+      ]),
+    );
+    expect(linked).toContain(
+      '<p class="rule"><a href="../how-it-decides/#variable-written">The rule: Variable · written →</a></p>',
+    );
+    expect(html).not.toContain('class="rule"');
   });
 
   it("links a public project's example to the file at the commit it was run on", () => {
@@ -93,8 +114,12 @@ describe("renderPage", () => {
   });
 
   it("shows what was observed and why it was left, for a position not written", () => {
-    expect(html).toContain("{ &quot;sku-lamp&quot;: number }");
-    expect(html).toContain("can&#39;t index &lt;that&gt;.");
+    const body = renderExampleBody(
+      DATA.examples[0]!,
+      DATA.sources["mini-app"]!,
+    );
+    expect(body).toContain("{ &quot;sku-lamp&quot;: number }");
+    expect(body).toContain("can&#39;t index &lt;that&gt;.");
   });
 
   it("escapes captions", () => {

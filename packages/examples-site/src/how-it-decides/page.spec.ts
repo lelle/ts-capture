@@ -1,7 +1,9 @@
 import { describe, expect, it } from "vitest";
 
+import type { ExamplesData } from "../page.js";
+
 import { type Cell, OUTCOMES } from "./cells.js";
-import { type DecidedCell, renderDecidesPage } from "./page.js";
+import { type DecidedCell, renderDecidesPage, ruleLinks } from "./page.js";
 
 const written: Cell = {
   kind: "parameter",
@@ -12,6 +14,19 @@ const written: Cell = {
   decidedBy: { file: "cst-replacements.ts", symbol: "buildCstReplacements" },
   code: 'function greet(user) {}\ngreet({ name: "Ada" });\n',
   real: ["params-and-return"],
+};
+const typeError: Cell = {
+  kind: "parameter",
+  outcome: "type-error",
+  name: "settings",
+  title: "A type the code would not compile with",
+  why: "Written, that type would make the next line an error.",
+  decidedBy: {
+    file: "apply-types-verify.ts",
+    symbol: "filterAcceptedReplacements",
+  },
+  code: "function enable(settings) {}\nenable({});\n",
+  real: ["left-alone"],
 };
 const redundant: Cell = {
   kind: "parameter",
@@ -47,8 +62,50 @@ const CARDS: DecidedCell[] = [
     skip: { reason: "redundant", observed: "string", detail: undefined },
   },
   { cell: unreachable },
+  { cell: typeError, after: typeError.code! },
 ];
-const REAL = new Map([["params-and-return", "Parameters and a return type"]]);
+const REAL: ExamplesData = {
+  sources: {
+    nest: {
+      name: "nestjs/nest",
+      about: "",
+      url: null,
+      commit: "09dba60ce",
+      tsCapture: "feee61e",
+    },
+  },
+  examples: [
+    {
+      id: "params-and-return",
+      title: "Parameters and a return type",
+      verdict: "good",
+      caption: "From the calls.",
+      source: "nest",
+      file: "a.ts",
+      line: 1,
+      before: "function f(a) {}",
+      after: "function f(a: string) {}",
+    },
+    {
+      id: "left-alone",
+      title: "A position it observed and did not write",
+      verdict: "left",
+      caption: "stock is not written.",
+      leftAlone: {
+        position: "a.ts:1:1",
+        name: "stock",
+        group: "Would add a type error",
+        observed: "{ a: number }",
+        reason: "TS7053",
+      },
+      source: "nest",
+      file: "b.ts",
+      line: 9,
+      before: "function g(stock) {}",
+      after: "function g(stock) {}",
+    },
+  ],
+};
 
 const BUILD = { version: "0.4.0" };
 const page = renderDecidesPage(CARDS, REAL, BUILD);
@@ -95,6 +152,42 @@ describe("renderDecidesPage", () => {
   it("opens the example in the playground", () => {
     expect(card("parameter-redundant")).toContain(
       `href="../playground/#code=${encodeURIComponent(redundant.code!)}"`,
+    );
+  });
+
+  it("shows a real example it left alone in full, inside its own card", () => {
+    const left = card("parameter-type-error");
+    expect(left).toContain(
+      '<details class="real"><summary>In real code: A position it observed and did not write</summary>',
+    );
+    expect(left).toContain('class="note left-alone"');
+    expect(left).not.toContain('href="../examples/#left-alone"');
+  });
+
+  it("points an example at the card that shows it most narrowly", () => {
+    const callback: Cell = { ...written, kind: "callback", real: ["callback"] };
+    expect(
+      ruleLinks([
+        { ...written, real: ["params-and-return", "callback"] },
+        callback,
+      ]),
+    ).toEqual(
+      new Map([
+        [
+          "params-and-return",
+          {
+            href: "../how-it-decides/#parameter-written",
+            label: "Parameter · written",
+          },
+        ],
+        [
+          "callback",
+          {
+            href: "../how-it-decides/#callback-written",
+            label: "Callback · written",
+          },
+        ],
+      ]),
     );
   });
 

@@ -7,6 +7,11 @@ import {
   renderSiteFooter,
   REPO,
 } from "../frame.js";
+import {
+  type ExamplesData,
+  renderExampleBody,
+  type RuleLink,
+} from "../page.js";
 import { STYLE } from "../style.js";
 import { type Cell, type Outcome, OUTCOMES, type SiteKind } from "./cells.js";
 
@@ -76,7 +81,7 @@ function renderGrid(cards: DecidedCell[]): string {
 
 function renderCard(
   { cell, after, appliedTo, skip }: DecidedCell,
-  real: ReadonlyMap<string, string>,
+  real: ExamplesData,
 ): string {
   const outcome =
     cell.outcome === "written"
@@ -98,12 +103,26 @@ function renderCard(
   const saw = skip?.observed
     ? `<dt>Observed</dt><dd><code>${escapeHtml(skip.observed)}</code>${skip.detail ? ` · ${escapeHtml(skip.detail)}` : ""}</dd>`
     : "";
-  const examples = (cell.real ?? [])
+  const found = (cell.real ?? []).flatMap((id) => {
+    const example = real.examples.find((candidate) => candidate.id === id);
+    return example ? [example] : [];
+  });
+  // A real example left alone lives here, beside its rule; the written ones
+  // live on Examples.
+  const examples = found
+    .filter((example) => example.verdict !== "left")
     .map(
-      (id) =>
-        `<a href="../examples/#${escapeHtml(id)}">${escapeHtml(real.get(id) ?? id)}</a>`,
+      (example) =>
+        `<a href="../examples/#${escapeHtml(example.id)}">${escapeHtml(example.title)}</a>`,
     )
     .join(", ");
+  const shown = found
+    .filter((example) => example.verdict === "left")
+    .map(
+      (example) =>
+        `<details class="real"><summary>In real code: ${escapeHtml(example.title)}</summary>${renderExampleBody(example, real.sources[example.source]!)}</details>`,
+    )
+    .join("\n");
   const links = [
     `<a href="${CORE}/${escapeHtml(cell.decidedBy.file)}">${escapeHtml(cell.decidedBy.file)}</a> <code>${escapeHtml(cell.decidedBy.symbol)}</code>`,
     cell.code ? `<a href="${TEST}">the test that checks this card</a>` : "",
@@ -124,6 +143,7 @@ function renderCard(
         <dt>Decided in</dt><dd>${links.join(" · ")}</dd>
         ${examples ? `<dt>In real code</dt><dd>${examples}</dd>` : ""}
       </dl>
+      ${shown}
     </article>`;
 }
 
@@ -332,10 +352,7 @@ const named = (cell: Cell): boolean =>
   cell.name !== "" && cell.kind !== "return" && cell.kind !== "this";
 
 /** Each kind's cards in a section under the kind's name. */
-function renderSections(
-  cards: DecidedCell[],
-  real: ReadonlyMap<string, string>,
-): string {
+function renderSections(cards: DecidedCell[], real: ExamplesData): string {
   const kinds = [...new Set(cards.map(({ cell }) => cell.kind))];
   return kinds
     .map(
@@ -358,14 +375,37 @@ const SECTION_STYLE = `
 .kind .example h3 { font-size: 21px; line-height: 1.3; margin: 0 0 8px; text-wrap: balance; }
 .kind .example h3 a { color: inherit; text-decoration: none; }
 .kind .example h3 a:hover { text-decoration: underline; }
+.real { margin: 18px 0 0; padding-top: 14px; border-top: 1px solid var(--line); }
+.real summary { cursor: pointer; font-weight: 600; margin: 0 0 12px; }
 @media (max-width: 900px) { .kind .example { scroll-margin-top: 56px; } }
 @media (max-width: 760px) { .kind .example { padding: 18px 16px; } }
 `;
 
-/** `real` maps a real example's id to its title. */
+/** For each example a card shows, the card that shows the fewest: the most specific. */
+export function ruleLinks(cells: Cell[]): Map<string, RuleLink> {
+  const best = new Map<string, Cell>();
+  for (const cell of cells) {
+    for (const id of cell.real ?? []) {
+      const current = best.get(id);
+      if (!current || cell.real!.length < current.real!.length)
+        best.set(id, cell);
+    }
+  }
+  return new Map(
+    [...best].map(([id, cell]) => [
+      id,
+      {
+        href: `../how-it-decides/#${anchor(cell)}`,
+        label: `${KINDS[cell.kind]} · ${cell.outcome}`,
+      },
+    ]),
+  );
+}
+
+/** `real` holds the examples from real runs that the cards point to. */
 export function renderDecidesPage(
   given: DecidedCell[],
-  real: ReadonlyMap<string, string>,
+  real: ExamplesData,
   build: BuildInfo,
 ): string {
   // Each kind's cards in the order of the outcome list, so the menu and the

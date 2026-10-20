@@ -417,6 +417,7 @@ for (const i of [0, 1]) {
   const word = words[i];
 }
 `,
+    real: ["conflict-note"],
   },
   {
     kind: "variable",

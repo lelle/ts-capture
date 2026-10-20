@@ -65,7 +65,17 @@ function fileReference(example: Example, source: ExampleSource): string {
   return `<a class="file" href="${escapeHtml(href)}">${place}</a>`;
 }
 
-function renderExample(example: Example, source: ExampleSource): string {
+/** A link from an example to the card on How it decides that shows its rule. */
+export interface RuleLink {
+  href: string;
+  label: string;
+}
+
+/** Everything but the title: what was written, where, and why. */
+export function renderExampleBody(
+  example: Example,
+  source: ExampleSource,
+): string {
   const verdict = VERDICTS[example.verdict];
   const better = example.better
     ? `<p class="note better"><span class="note-label">A reviewer would write</span> <code>${escapeHtml(example.better)}</code></p>`
@@ -77,21 +87,32 @@ function renderExample(example: Example, source: ExampleSource): string {
         ${example.leftAlone.reason ? `<dt>Why</dt><dd>${escapeHtml(example.leftAlone.reason)}</dd>` : ""}
       </dl>`
     : "";
-  return `<article id="${escapeHtml(example.id)}" class="example" data-source="${escapeHtml(example.source)}" data-verdict="${example.verdict}">
-      <header>
-        <h2><a href="#${escapeHtml(example.id)}">${escapeHtml(example.title)}</a></h2>
-        <p class="meta">
+  return `<p class="meta">
           <span class="verdict verdict-${example.verdict}" title="${escapeHtml(verdict.summary)}">${verdict.label}</span>
           <span class="source">${escapeHtml(source.name)}</span>
           ${fileReference(example, source)}
         </p>
-      </header>
       <div class="panes">
         <figure><figcaption>Before</figcaption><pre><code>${renderCode(example.before, example.before)}</code></pre></figure>
         <figure><figcaption>After <code>ts-capture apply</code></figcaption><pre><code>${renderCode(example.before, example.after)}</code></pre></figure>
       </div>
       <p class="caption">${escapeHtml(example.caption)}</p>
-      ${better}${left}
+      ${better}${left}`;
+}
+
+function renderExample(
+  example: Example,
+  source: ExampleSource,
+  rule: RuleLink | undefined,
+): string {
+  const ruleLine = rule
+    ? `\n      <p class="rule"><a href="${escapeHtml(rule.href)}">The rule: ${escapeHtml(rule.label)} →</a></p>`
+    : "";
+  return `<article id="${escapeHtml(example.id)}" class="example" data-source="${escapeHtml(example.source)}" data-verdict="${example.verdict}">
+      <header>
+        <h2><a href="#${escapeHtml(example.id)}">${escapeHtml(example.title)}</a></h2>
+      </header>
+      ${renderExampleBody(example, source)}${ruleLine}
     </article>`;
 }
 
@@ -156,9 +177,27 @@ nav.addEventListener("click", (event) => {
 });
 `;
 
-export function renderPage(data: ExamplesData, build: BuildInfo): string {
-  const examples = data.examples
-    .map((example) => renderExample(example, data.sources[example.source]))
+/**
+ * The examples apply wrote. What it left alone is shown on How it decides,
+ * beside the rule that left it; `rules` links the rest to theirs.
+ */
+export function renderPage(
+  data: ExamplesData,
+  build: BuildInfo,
+  rules: ReadonlyMap<string, RuleLink> = new Map(),
+): string {
+  const written = {
+    ...data,
+    examples: data.examples.filter((example) => example.verdict !== "left"),
+  };
+  const examples = written.examples
+    .map((example) =>
+      renderExample(
+        example,
+        data.sources[example.source]!,
+        rules.get(example.id),
+      ),
+    )
     .join("\n");
   return `<!doctype html>
 <html lang="en">
@@ -174,9 +213,9 @@ ${ICON_LINK}
 <div class="top">
   ${renderSiteBar("examples")}
   <h1>Examples</h1>
-  <p class="lede">ts-capture watches your code run under its tests and writes the types it saw back into the source. These are annotations it wrote into real code: the ones you would have written yourself, the ones a reviewer should change, and the places it chose to leave alone.</p>
+  <p class="lede">ts-capture watches your code run under its tests and writes the types it saw back into the source. These are annotations it wrote into real code: the ones you would have written yourself, and the ones a reviewer should change. What it left alone, and why, is on <a href="../how-it-decides/">How it decides</a>.</p>
   <p class="how">Nothing here was typed by hand. Each example is cut from the diff of an actual run; the highlighted parts are what <code>apply</code> added.</p>
-  ${renderFilters(data)}
+  ${renderFilters(written)}
 </div>
 <main>
 ${examples}
@@ -184,7 +223,7 @@ ${examples}
 <section class="sources">
   <h2>Where these come from</h2>
   <ul>
-${renderSources(data)}
+${renderSources(written)}
   </ul>
   <p>A type is only as good as what the tests passed in. The examples marked “needs review” are not bugs: they describe the test run exactly, which is why nothing flags them. See <a href="../docs/explanation/what-it-cannot-infer/">what it cannot infer</a> and <a href="../docs/how-to/review-and-apply-safely/">review and apply safely</a>.</p>
 </section>
