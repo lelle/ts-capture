@@ -10,23 +10,15 @@ ts-capture observes how your code is actually called at runtime — in tests, in
 dev, in the browser — and writes inferred TypeScript types back into your
 source. Turns the implicit `any` your tests exercise into precise types.
 
+**[▶ Try it in the browser](https://lelle.github.io/ts-capture/playground/)** — no install
+
 ![An order form whose code has no types. The ts-capture plugin is added to the Vite config, two orders are placed in the browser, and `ts-capture apply` writes four named types and six annotations into the source, taking type coverage from 77% to 100%.](docs/assets/demo.gif)
 
 The recording is made by [`pnpm demo`](packages/demo), which runs every step
 for real; nothing in it is written by hand.
 
-> **🚧 Pre-release.** The packages are on npm as 0.x. There is no 1.0, and
-> none is scheduled: the version stays below 1.0 until code, API, test
-> coverage and documentation meet a quality bar that respects the first
-> impression.
-
-> **0.x — API may change between minor versions.** Hobby/research
-> project; best-effort maintenance.
-
-> **⚠️ ts-capture is not a passive tool.** It rewrites your source files, runs
-> your getters while observing, and writes observed data to disk — by default
-> into your temp directory. Commit your work first, and read [Risks](#risks)
-> before pointing it at a real codebase.
+> 0.x pre-release · rewrites your source — commit first.
+> See [Risks](#risks).
 
 ## How it works
 
@@ -51,7 +43,8 @@ greet("World");
 ## Documentation
 
 Full docs live in **[`docs/`](docs/README.md)**, organized by intent
-([Diátaxis](https://diataxis.fr/)):
+([Diátaxis](https://diataxis.fr/)), and on the site at
+[lelle.github.io/ts-capture/docs](https://lelle.github.io/ts-capture/docs/):
 
 - **Learn** — [How it works](docs/explanation/how-it-works.md) ·
   [Getting started](docs/tutorials/getting-started.md)
@@ -210,9 +203,13 @@ every `infer.*` / `apply.*` flag, its default, and what it does.
 
 ## Status
 
-**Release status: 0.x pre-release.** Capability-level state below reflects
-what works _internally_ — 1.0 is gated on the quality work described in the
-Pre-release notice above.
+**Release status: 0.x pre-release.** The packages are on npm as 0.x, and the
+API may change between minor versions. There is no 1.0, and none is scheduled:
+the version stays below 1.0 until code, API, test coverage and documentation
+meet a quality bar that respects the first impression. Hobby/research project;
+best-effort maintenance.
+
+Capability-level state below reflects what works _internally_.
 
 | Capability                | Where                      | Internal status                                                                                                 |
 | ------------------------- | -------------------------- | --------------------------------------------------------------------------------------------------------------- |
