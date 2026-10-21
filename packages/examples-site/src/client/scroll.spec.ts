@@ -1,8 +1,8 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { resetPageHeight, setPageHeight } from "./page-height.js";
 import { atPageBottom, onScrollFrame } from "./scroll.js";
+import { resetPageHeight, setPageHeight } from "./stubs.js";
 
 describe("onScrollFrame", () => {
   beforeEach(() => vi.useFakeTimers());

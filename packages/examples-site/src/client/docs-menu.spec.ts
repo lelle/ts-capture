@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { renderDocsPage } from "../docs/page.js";
 import { setUpCopyButtons, setUpDocsMenu } from "./docs-menu.js";
-import { resetPageHeight, setPageHeight } from "./page-height.js";
+import { resetPageHeight, setPageHeight, stubMatchMedia } from "./stubs.js";
 
 const SOURCE = `# Check the types you wrote
 
@@ -42,10 +42,7 @@ function render(narrow: boolean): HTMLDetailsElement {
     MENU,
     { version: "0.4.0" },
   );
-  window.matchMedia = ((query: string) => ({
-    matches: narrow,
-    media: query,
-  })) as typeof window.matchMedia;
+  stubMatchMedia(() => narrow);
   return document.querySelector<HTMLDetailsElement>(".docs-menu")!;
 }
 

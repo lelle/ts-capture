@@ -27,13 +27,11 @@ export function renderDocsPage(
     highlight,
   );
   const here = sitePathOf(file);
-  const root = relativeHref(here, "");
   const name = doc.title;
   return renderLayout(
     {
       id: "docs",
       title: name,
-      root: root,
       path: here,
       body: markup`<div class="docs">
 ${renderMenu(file, menu, doc.title, doc.headings)}

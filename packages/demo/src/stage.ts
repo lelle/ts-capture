@@ -23,7 +23,8 @@ export interface Badge {
 
 /** The colours of highlighted code, shared with the share card. */
 export const TOKEN_STYLE = `.t-keyword { color: #ff7b72; } .t-string { color: #a5d6ff; } .t-number { color: #79c0ff; }
-  .t-type { color: #79c0ff; } .t-comment { color: #8b949e; } .t-name { color: #e6edf3; }`;
+  .t-type { color: #79c0ff; } .t-comment { color: #8b949e; } .t-name { color: #e6edf3; }
+  ins { text-decoration: none; background: #17452a; border-radius: 3px; }`;
 
 const STYLE = `
   :root { color-scheme: dark; }
@@ -45,8 +46,7 @@ const STYLE = `
   pre { margin: 0; padding: 8px 20px 10px; font: 14px/20.5px ui-monospace, Menlo, monospace;
     white-space: pre; tab-size: 2; }
   ${TOKEN_STYLE}
-  ins { text-decoration: none; background: #17452a; border-radius: 3px;
-    animation: arrive 1.4s ease-out; }
+  ins { animation: arrive 1.4s ease-out; }
   @keyframes arrive { from { background: #2ea043; color: #fff; } to { background: #17452a; } }
   #browser { padding: 16px 90px; }
   .window { height: 100%; border: 1px solid #30363d; border-radius: 10px; overflow: hidden;

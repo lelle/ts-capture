@@ -25,8 +25,10 @@ the browser scripts with esbuild.
 ## How a page is made
 
 - **`layout.ts`** holds what every page shares: the head, the bar, the footer,
-  the stylesheets and the scripts. A page calls `renderLayout` with its id,
-  title, description and content, and nothing else.
+  the stylesheets, the scripts and the share card's tags. A page calls
+  `renderLayout` with its id, title, description and content; a page deeper
+  than one level adds its `path`, from which its links to the rest of the
+  site are worked out.
 - **The theme** follows the system until the reader flips the switch in the
   bar. `js/theme.js` is loaded in `<head>`, not as a module, so a saved choice
   is set before the page is drawn; `site.css` gives every colour as

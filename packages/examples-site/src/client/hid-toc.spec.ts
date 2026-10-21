@@ -5,7 +5,7 @@ import type { Cell } from "../how-it-decides/cells.js";
 
 import { renderDecidesPage } from "../how-it-decides/page.js";
 import { setUpToc } from "./hid-toc.js";
-import { resetPageHeight, setPageHeight } from "./page-height.js";
+import { resetPageHeight, setPageHeight } from "./stubs.js";
 
 const cell = (kind: Cell["kind"], outcome: Cell["outcome"]): Cell => ({
   kind,

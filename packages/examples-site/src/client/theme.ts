@@ -10,13 +10,12 @@ const root = document.documentElement;
 
 /** Before the page is drawn: the theme the reader picked, if they did. */
 export function applySavedTheme(): void {
-  let saved: null | string = null;
   try {
-    saved = localStorage.getItem(KEY);
+    const saved = localStorage.getItem(KEY);
+    if (saved === "dark" || saved === "light") root.dataset.theme = saved;
   } catch {
-    return;
+    // Storage is blocked: the page follows the system.
   }
-  if (saved === "dark" || saved === "light") root.dataset.theme = saved;
 }
 
 /** The bar's switch, offering the theme the page is not in. */
@@ -25,15 +24,16 @@ export function setUpThemeSwitch(): void {
   const current = (): Theme =>
     (root.dataset.theme as Theme | undefined) ??
     (matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light");
+  const other = (): Theme => (current() === "dark" ? "light" : "dark");
   const show = (): void => {
-    const next = current() === "dark" ? "light" : "dark";
+    const next = other();
     button.setAttribute("aria-label", `Switch to ${next} theme`);
     for (const icon of button.querySelectorAll("svg")) {
       icon.toggleAttribute("hidden", !icon.classList.contains(`to-${next}`));
     }
   };
   button.addEventListener("click", () => {
-    const next = current() === "dark" ? "light" : "dark";
+    const next = other();
     root.dataset.theme = next;
     try {
       localStorage.setItem(KEY, next);

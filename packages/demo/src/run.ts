@@ -9,9 +9,17 @@ import { createServer, type ViteDevServer } from "vite";
 // The demo, run for real: a scratch copy of the app, the two files that turn
 // capture on, a dev server, and the ts-capture CLI.
 
-export const PACKAGE_DIR = path.resolve(
+const PACKAGE_DIR = path.resolve(
   path.dirname(fileURLToPath(import.meta.url)),
   "..",
+);
+/** Where the recording and the share card are written, for the site and README. */
+export const ASSETS_DIR = path.resolve(
+  PACKAGE_DIR,
+  "..",
+  "..",
+  "docs",
+  "assets",
 );
 const APP_DIR = path.join(PACKAGE_DIR, "app");
 const CAPTURE_DIR = path.join(PACKAGE_DIR, "capture");

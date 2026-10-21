@@ -2,15 +2,13 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { renderHomePage } from "../home.js";
+import { stubMatchMedia } from "./stubs.js";
 import { applySavedTheme, setUpThemeSwitch } from "./theme.js";
 
 const root = document.documentElement;
 
 const systemIsDark = (dark: boolean): void => {
-  window.matchMedia = ((query: string) => ({
-    matches: dark,
-    media: query,
-  })) as typeof window.matchMedia;
+  stubMatchMedia(() => dark);
 };
 
 const storageFails = (method: "getItem" | "setItem"): void => {

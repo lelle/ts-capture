@@ -3,13 +3,13 @@ import { describe, expect, it, vi } from "vitest";
 
 import { renderHomePage } from "../home.js";
 import { playDemo } from "./demo.js";
+import { stubMatchMedia } from "./stubs.js";
 
 function render(reducedMotion: boolean): ReturnType<typeof vi.fn> {
   document.body.innerHTML = renderHomePage({ version: "0.4.0" });
-  window.matchMedia = ((query: string) => ({
-    matches: reducedMotion && query === "(prefers-reduced-motion: reduce)",
-    media: query,
-  })) as typeof window.matchMedia;
+  stubMatchMedia(
+    (query) => reducedMotion && query === "(prefers-reduced-motion: reduce)",
+  );
   const play = vi.fn(async () => {});
   document.querySelector("video")!.play = play;
   return play;

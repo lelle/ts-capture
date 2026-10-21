@@ -20,7 +20,6 @@ const STYLE = `
   pre { margin: auto 0 0; padding: 22px 26px; border: 1px solid #30363d; border-radius: 12px;
     background: #161b22; font: 21px/1.5 ui-monospace, Menlo, monospace; white-space: pre-wrap; }
   ${TOKEN_STYLE}
-  ins { text-decoration: none; background: #17452a; border-radius: 3px; }
 `;
 
 export function shareCardHtml(example: {

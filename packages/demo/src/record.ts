@@ -8,10 +8,10 @@ import type { Stage } from "./stage.js";
 
 import {
   addCapture,
+  ASSETS_DIR,
   freshApp,
   observationsWritten,
   ORDERS,
-  PACKAGE_DIR,
   placeOrder,
   readApp,
   readCapture,
@@ -34,7 +34,6 @@ import { stageHtml, VIEWPORT } from "./stage.js";
 const SOURCE = "src/order.ts";
 const VITE_CONFIG = "vite.config.ts";
 const CAPTURE_CONFIG = "ts-capture.config.json";
-const OUT_DIR = path.resolve(PACKAGE_DIR, "..", "..", "docs", "assets");
 
 interface Measured {
   before: string;
@@ -206,13 +205,13 @@ function ffmpeg(args: string[]): void {
 }
 
 function encode(video: string, lead: number): void {
-  fs.mkdirSync(OUT_DIR, { recursive: true });
+  fs.mkdirSync(ASSETS_DIR, { recursive: true });
   const from = ["-ss", (lead / 1000).toFixed(2), "-i", video];
   ffmpeg([
     ...from,
     "-vf",
     "fps=12,split[a][b];[a]palettegen=stats_mode=diff[p];[b][p]paletteuse=dither=none:diff_mode=rectangle",
-    path.join(OUT_DIR, "demo.gif"),
+    path.join(ASSETS_DIR, "demo.gif"),
   ]);
   ffmpeg([
     ...from,
@@ -220,7 +219,7 @@ function encode(video: string, lead: number): void {
     "+faststart",
     "-pix_fmt",
     "yuv420p",
-    path.join(OUT_DIR, "demo.mp4"),
+    path.join(ASSETS_DIR, "demo.mp4"),
   ]);
 }
 
@@ -231,5 +230,5 @@ console.log(
 const { video, lead } = await film(measured);
 encode(video, lead);
 console.log(
-  `recorded: ${path.relative(process.cwd(), path.join(OUT_DIR, "demo.gif"))}`,
+  `recorded: ${path.relative(process.cwd(), path.join(ASSETS_DIR, "demo.gif"))}`,
 );
