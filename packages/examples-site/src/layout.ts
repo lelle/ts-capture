@@ -1,6 +1,7 @@
 import { type Markup, markup, trusted } from "./markup.js";
 
 export const REPO = "https://github.com/lelle/ts-capture";
+const SITE = "https://lelle.github.io/ts-capture/";
 const NPM = "https://www.npmjs.com/package/@ts-capture/core";
 
 /**
@@ -52,6 +53,27 @@ const THEME_ICONS = trusted(
   '<svg class="to-light" viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><path fill="currentColor" d="M8 12a4 4 0 1 1 0-8 4 4 0 0 1 0 8Zm0-1.5a2.5 2.5 0 1 0 0-5 2.5 2.5 0 0 0 0 5Zm5.657-8.157a.75.75 0 0 1 0 1.061l-1.061 1.06a.749.749 0 0 1-1.275-.326.749.749 0 0 1 .215-.734l1.06-1.06a.75.75 0 0 1 1.06 0Zm-9.193 9.193a.75.75 0 0 1 0 1.06l-1.06 1.061a.75.75 0 1 1-1.061-1.06l1.06-1.061a.75.75 0 0 1 1.061 0ZM8 0a.75.75 0 0 1 .75.75v1.5a.75.75 0 0 1-1.5 0V.75A.75.75 0 0 1 8 0ZM3 8a.75.75 0 0 1-.75.75H.75a.75.75 0 0 1 0-1.5h1.5A.75.75 0 0 1 3 8Zm13 0a.75.75 0 0 1-.75.75h-1.5a.75.75 0 0 1 0-1.5h1.5A.75.75 0 0 1 16 8Zm-8 5a.75.75 0 0 1 .75.75v1.5a.75.75 0 0 1-1.5 0v-1.5A.75.75 0 0 1 8 13Zm3.536-1.464a.75.75 0 0 1 1.06 0l1.061 1.06a.75.75 0 0 1-1.06 1.061l-1.061-1.06a.75.75 0 0 1 0-1.061ZM2.343 2.343a.75.75 0 0 1 1.061 0l1.06 1.061a.751.751 0 0 1-.018 1.042.751.751 0 0 1-1.042.018l-1.06-1.06a.75.75 0 0 1 0-1.06Z"/></svg><svg class="to-dark" viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><path fill="currentColor" d="M9.598 1.591a.749.749 0 0 1 .785-.175 7.001 7.001 0 1 1-8.967 8.967.75.75 0 0 1 .961-.96 5.5 5.5 0 0 0 7.046-7.046.75.75 0 0 1 .175-.786Zm1.616 1.945a7 7 0 0 1-7.678 7.678 5.499 5.499 0 1 0 7.678-7.678Z"/></svg>',
 );
 
+// What a link to the page shows where it is shared. The card's addresses must
+// be absolute.
+function renderShareCard(
+  title: string,
+  description: string | undefined,
+  path: string,
+): Markup {
+  return markup`<meta property="og:type" content="website">
+<meta property="og:site_name" content="ts-capture">
+<meta property="og:title" content="${title}">
+${
+  description &&
+  markup`<meta property="og:description" content="${description}">
+`
+}<meta property="og:url" content="${SITE}${path}">
+<meta property="og:image" content="${SITE}og.png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta name="twitter:card" content="summary_large_image">`;
+}
+
 function renderSiteBar(current: PageId, root: string): Markup {
   const link = (id: PageId, href: string, name: string): Markup =>
     markup`<a href="${href}"${id === current && markup` aria-current="page"`}>${name}</a>`;
@@ -82,6 +104,8 @@ export interface Page {
   description?: string;
   /** From the page to the site's root, for pages deeper than one level. */
   root?: string;
+  /** Where the page is under the site's root, for pages deeper than one level. */
+  path?: string;
   /** Under the bar, before the page: its heading and introduction. */
   top?: Markup;
   body: Markup;
@@ -99,7 +123,7 @@ const SCRIPT: Record<PageId, string> = {
 };
 
 export function renderLayout(page: Page, build: BuildInfo): string {
-  const { id, root = rootOf(id) } = page;
+  const { id, root = rootOf(id), path = id === "home" ? "" : `${id}/` } = page;
   const title = id === "home" ? page.title : `${page.title} · ts-capture`;
   return markup`<!doctype html>
 <html lang="en">
@@ -112,7 +136,8 @@ ${
   page.description &&
   markup`<meta name="description" content="${page.description}">
 `
-}<script src="${root}js/theme.js"></script>
+}${renderShareCard(title, page.description, path)}
+<script src="${root}js/theme.js"></script>
 ${renderStylesheets(id, root)}
 </head>
 <body>

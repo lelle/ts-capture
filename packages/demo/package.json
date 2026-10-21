@@ -7,6 +7,7 @@
   "scripts": {
     "build": "tsc",
     "record": "node dist/record.js",
+    "og-image": "node dist/og-image.js",
     "typecheck": "tsc --noEmit -p tsconfig.test.json",
     "test": "vitest run",
     "test:watch": "vitest",

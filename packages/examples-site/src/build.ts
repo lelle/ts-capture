@@ -56,10 +56,9 @@ mkdirSync(resolve(outDir, "css"), { recursive: true });
 for (const sheet of readdirSync(stylesDir)) {
   copyFileSync(resolve(stylesDir, sheet), resolve(outDir, "css", sheet));
 }
-copyFileSync(
-  resolve(root, "docs/assets/demo.mp4"),
-  resolve(outDir, "demo.mp4"),
-);
+for (const asset of ["demo.mp4", "og.png"]) {
+  copyFileSync(resolve(root, "docs/assets", asset), resolve(outDir, asset));
+}
 writeFileSync(
   resolve(examplesDir, "index.html"),
   renderPage(data, buildInfo, ruleLinks(CELLS)),

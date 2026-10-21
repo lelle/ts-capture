@@ -17,6 +17,7 @@
     "examples": "pnpm --filter @ts-capture/core run build && pnpm --filter @ts-capture/examples-site run build && pnpm --filter @ts-capture/examples-site run site",
     "site": "pnpm --filter @ts-capture/examples-site run preview",
     "demo": "pnpm --filter @ts-capture/core --filter @ts-capture/vite --filter @ts-capture/examples-site --filter @ts-capture/demo run build && pnpm --filter @ts-capture/demo run record",
+    "og-image": "pnpm --filter @ts-capture/core --filter @ts-capture/examples-site --filter @ts-capture/demo run build && pnpm --filter @ts-capture/demo run og-image",
     "verify": "bash scripts/ci.sh",
     "clean": "pnpm -r exec rm -rf dist node_modules",
     "changeset": "changeset",

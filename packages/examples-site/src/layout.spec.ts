@@ -152,6 +152,44 @@ describe("the site frame", () => {
     },
   );
 
+  const meta = (page: string): Record<string, string> =>
+    Object.fromEntries(
+      [
+        ...page.matchAll(
+          /<meta (?:property|name)="((?:og|twitter):[\w:]+)" content="([^"]*)">/g,
+        ),
+      ].map((m) => [m[1]!, m[2]!]),
+    );
+
+  it.each([
+    ["home", "https://lelle.github.io/ts-capture/"],
+    ["examples", "https://lelle.github.io/ts-capture/examples/"],
+    [
+      "docs",
+      "https://lelle.github.io/ts-capture/docs/how-to/check-your-types/",
+    ],
+  ] as const)(
+    "%s shows as a card where it is shared, with its own title and address",
+    (id, url) => {
+      const tags = meta(pages[id]);
+      expect(tags["og:url"]).toBe(url);
+      expect(tags["og:title"]).toBe(
+        /<title>([^<]*)<\/title>/.exec(pages[id])![1],
+      );
+      expect(tags["og:image"]).toBe(
+        "https://lelle.github.io/ts-capture/og.png",
+      );
+      expect(tags["twitter:card"]).toBe("summary_large_image");
+    },
+  );
+
+  it("describes the card as the page describes itself, and leaves it out where the page has none", () => {
+    expect(meta(pages.home)["og:description"]).toBe(
+      /<meta name="description" content="([^"]*)">/.exec(pages.home)![1],
+    );
+    expect(meta(pages.docs)).not.toHaveProperty("og:description");
+  });
+
   it("leaves the commit out when the build does not know it", () => {
     expect(renderHomePage({ version: "0.4.0" })).not.toContain("/commit/");
   });

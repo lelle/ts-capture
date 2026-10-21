@@ -1,10 +1,12 @@
 # @ts-capture/demo
 
 The order form in the recording at the top of the repository's README, and the
-script that records it.
+script that records it. Also the picture a link to the site shows where it is
+shared.
 
 ```sh
 pnpm demo        # from the repository root; writes docs/assets/demo.gif and demo.mp4
+pnpm og-image    # writes docs/assets/og.png, from a real example in examples.json
 ```
 
 Needs `ffmpeg` on the path and Playwright's Chromium

@@ -47,7 +47,7 @@
       "vitest": false
     },
     "packages/demo": {
-      "entry": ["src/record.ts!", "src/**/*.spec.ts!"],
+      "entry": ["src/record.ts!", "src/og-image.ts!", "src/**/*.spec.ts!"],
       "project": ["src/**/*.ts!"],
       "vitest": false
     },
