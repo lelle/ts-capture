@@ -1,8 +1,9 @@
 // @vitest-environment jsdom
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { renderDocsPage } from "../docs/page.js";
 import { setUpCopyButtons, setUpDocsMenu } from "./docs-menu.js";
+import { resetPageHeight, setPageHeight } from "./page-height.js";
 
 const SOURCE = `# Check the types you wrote
 
@@ -58,6 +59,8 @@ const marked = (): string[] =>
     .map((link) => link.hash);
 
 describe("setUpDocsMenu", () => {
+  afterEach(resetPageHeight);
+
   it("leaves the menu open on a wide screen", () => {
     const menu = render(false);
     setUpDocsMenu();
@@ -85,10 +88,7 @@ describe("setUpDocsMenu", () => {
         "getBoundingClientRect",
       ).mockReturnValue({ top } as DOMRect);
     }
-    Object.defineProperty(document.documentElement, "scrollHeight", {
-      configurable: true,
-      value: 5000,
-    });
+    setPageHeight(5000);
     setUpDocsMenu();
     expect(marked()).toEqual(["#what-is-checked"]);
   });
@@ -101,10 +101,7 @@ describe("setUpDocsMenu", () => {
         "getBoundingClientRect",
       ).mockReturnValue({ top: 400 } as DOMRect);
     }
-    Object.defineProperty(document.documentElement, "scrollHeight", {
-      configurable: true,
-      value: window.innerHeight,
-    });
+    setPageHeight(window.innerHeight);
     setUpDocsMenu();
     expect(marked()).toEqual(["#merge-and-verify"]);
   });

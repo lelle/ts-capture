@@ -114,8 +114,7 @@ export function setUpToc(): void {
           document.getElementById(id)!.getBoundingClientRect().bottom >
           top + 80,
       ) ?? shown[0];
-    // The last card can never reach the top: at the bottom it is the one being
-    // read, unless a click pinned another.
+    // At the bottom the last card is read, unless a click pinned another.
     if (atPageBottom() && !pinned) reading = ids.at(-1);
     const shownFor = pinned ?? reading;
     if (shownFor) select(kindOf(shownFor));

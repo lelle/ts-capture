@@ -1,14 +1,8 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+import { resetPageHeight, setPageHeight } from "./page-height.js";
 import { atPageBottom, onScrollFrame } from "./scroll.js";
-
-const pageHeight = (height: number): void => {
-  Object.defineProperty(document.documentElement, "scrollHeight", {
-    configurable: true,
-    value: height,
-  });
-};
 
 describe("onScrollFrame", () => {
   beforeEach(() => vi.useFakeTimers());
@@ -29,10 +23,12 @@ describe("onScrollFrame", () => {
 });
 
 describe("atPageBottom", () => {
+  afterEach(resetPageHeight);
+
   it("counts the last two pixels as the bottom, and nothing above them", () => {
-    pageHeight(innerHeight + 2);
+    setPageHeight(innerHeight + 2);
     expect(atPageBottom()).toBe(true);
-    pageHeight(innerHeight + 3);
+    setPageHeight(innerHeight + 3);
     expect(atPageBottom()).toBe(false);
   });
 });

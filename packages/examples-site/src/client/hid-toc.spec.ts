@@ -5,6 +5,7 @@ import type { Cell } from "../how-it-decides/cells.js";
 
 import { renderDecidesPage } from "../how-it-decides/page.js";
 import { setUpToc } from "./hid-toc.js";
+import { resetPageHeight, setPageHeight } from "./page-height.js";
 
 const cell = (kind: Cell["kind"], outcome: Cell["outcome"]): Cell => ({
   kind,
@@ -41,7 +42,10 @@ beforeEach(() => {
   setUpToc();
 });
 
-afterEach(() => vi.useRealTimers());
+afterEach(() => {
+  vi.useRealTimers();
+  resetPageHeight();
+});
 
 const kind = (name: string): HTMLAnchorElement =>
   document.querySelector<HTMLAnchorElement>(`#kinds a[data-kind="${name}"]`)!;
@@ -89,13 +93,9 @@ describe("setUpToc", () => {
   });
 
   it("reads the last card once the page is scrolled to the bottom", () => {
-    Object.defineProperty(document.documentElement, "scrollHeight", {
-      configurable: true,
-      value: innerHeight,
-    });
+    setPageHeight(innerHeight);
     dispatchEvent(new Event("scroll"));
     vi.advanceTimersToNextFrame();
-    Reflect.deleteProperty(document.documentElement, "scrollHeight");
     expect(kind("variable").hasAttribute("aria-current")).toBe(true);
     expect(document.querySelector(".toc-current")!.textContent).toBe(
       `${kind("variable").textContent} · written`,
