@@ -1,5 +1,53 @@
 # @ts-capture/core
 
+## 0.4.0
+
+### Minor Changes
+
+- [`dfc6fe4`](https://github.com/lelle/ts-capture/commit/dfc6fe49b3367dacc4a94b12716d8f86e2600e66) Thanks [@lelle](https://github.com/lelle)! - `ts-capture apply` now writes through `annotateProject`. A file the tsconfig does not list is type-checked against the project before an annotation is written to it, as the files it lists are; before, its annotations were written unchecked. `infer.cstAware` has no effect any more and prints a warning when set to `false`; it will be removed.
+
+- [`3837b9d`](https://github.com/lelle/ts-capture/commit/3837b9db1e70398519439de8280ff7faa029c249) Thanks [@lelle](https://github.com/lelle)! - `instrumentSource` takes a `program` option: a Program the caller already has, which `instrumentImplicitThis` asks where `this` is implicitly `any`. A caller without a tsconfig, such as the browser, can now observe `this` too.
+
+- [`aefbe20`](https://github.com/lelle/ts-capture/commit/aefbe201b90ddad8e42446d935ff0da7e3fe199f) Thanks [@lelle](https://github.com/lelle)! - There is one applier. `applyTypesToFile`, `applyTypesToFileCst` and `applyTypesToFiles` are deprecated in favour of `annotate` and `annotateProject`; `applyTypesToFile` now runs the same applier as `annotate` instead of the offset-based one, so its output follows the same rules as `ts-capture apply`. The options that only steered the hand-off between the two appliers (`checkerSites`, `stripConflictNotes`, `inferClassFields`) are gone.
+
+- [`fd5c4bd`](https://github.com/lelle/ts-capture/commit/fd5c4bd5b763915b3347c1dee1546e939efa2ac2) Thanks [@lelle](https://github.com/lelle)! - An applier plugin's `apply` may return an `AnnotateResult` (`{ text, skips, telemetry }`), with skip positions relative to the source it was given. `ts-capture apply` then counts what the plugin wrote and lists what it skipped in `--report`. Returning a plain string still works, with nothing to report, and is deprecated.
+
+- [`a5080c8`](https://github.com/lelle/ts-capture/commit/a5080c887b038c746a51a45e57da185a02f5c043) Thanks [@lelle](https://github.com/lelle)! - A position that already has a written type is now a skip with the reason `already-annotated`, at its position, instead of only a count. `annotate` returns it with the other skips, and `apply --report` counts it under "Nothing to add" as before. `ApplySkipReason` has two new values, `already-annotated` and `no-site`.
+
+- [`585185c`](https://github.com/lelle/ts-capture/commit/585185c1203f85332b5a26f6a1db099a4e2695e7) Thanks [@lelle](https://github.com/lelle)! - `ts-capture verify` now has TypeScript compare what the run saw with the type at each position, where the text comparison could not decide. Named and structural types are now settled: on honojs/hono and nestjs/nest the share of written types reported unverifiable falls from about half to about a fifth, and no type that matched before stops matching. New reasons say why the rest cannot be decided (`generic declared type`, `name not in scope`, `declared narrower than observable`, …).
+
+### Patch Changes
+
+- [`cad80a5`](https://github.com/lelle/ts-capture/commit/cad80a5871f0034019ae6cec0d59db2927bf6a53) Thanks [@lelle](https://github.com/lelle)! - `ts-capture apply-bundle` now writes through the same applier as `ts-capture apply`, on syntax alone, so the two follow the same rules.
+
+- [`3ebb3a5`](https://github.com/lelle/ts-capture/commit/3ebb3a5adc5b6907c493b185aad3a8d5aac672ad) Thanks [@lelle](https://github.com/lelle)! - A callback parameter whose function returned nothing is written as `() => void`, not `() => undefined`, which rejected every caller whose callback returns something.
+
+- [`75d2677`](https://github.com/lelle/ts-capture/commit/75d26774088f2ad2790b21bd99ba4764d97e3c36) Thanks [@lelle](https://github.com/lelle)! - A class field typed from its constructor parameter now goes through the same checks as every other site. With the type-check oracle on (the CLI default), a field TypeScript already infers from the constructor's assignment is left as it is instead of being restated, and a field that is not written is listed in `apply --report` with the reason.
+
+- [`60c2eac`](https://github.com/lelle/ts-capture/commit/60c2eacbc563c8fd01d5070d27d21246ff5b4886) Thanks [@lelle](https://github.com/lelle)! - A callback the run passed `undefined` where TypeScript types it as a function is reported as a contradiction instead of written as `(() => void) | undefined`. The function arm read differently inside a union than on its own, so the disagreement was never seen.
+
+- [`2ce8db8`](https://github.com/lelle/ts-capture/commit/2ce8db83d2e57e0f355196f6b3e128432cca4710) Thanks [@lelle](https://github.com/lelle)! - A variable initialized with a choice between functions, `const compare = asc ? (a: number, b: number) => a - b : (a: number, b: number) => b - a`, is left with the types its functions already have, as a single arrow is. `apply` could write a union of the observed function types over it, with `unknown` for a branch the tests never called.
+
+- [`085191a`](https://github.com/lelle/ts-capture/commit/085191a83542b276acfd6785ed23d1383be9d929) Thanks [@lelle](https://github.com/lelle)! - A function observed as a value is no longer kept alive by the collector. Before, every callback passed through an instrumented function was held for the rest of the run, with the scope it closed over, so a long `register` or dev-server session grew in memory for as long as it ran.
+
+- [`85f4723`](https://github.com/lelle/ts-capture/commit/85f47236c3db6172ef78171aff0e2fdf27635b05) Thanks [@lelle](https://github.com/lelle)! - `apply` judges a site by all its observations together. A variable whose initializer can produce a union (`a ?? b`, a ternary, `.find(...)`) was left untyped when each test worker recorded one branch, even if the branches together covered both. It is now annotated when more than one type was observed, and a site observed many times is listed once in `apply --report`.
+
+- [`3f921d7`](https://github.com/lelle/ts-capture/commit/3f921d73806172542e656a9eb886ce796b5033a2) Thanks [@lelle](https://github.com/lelle)! - A parameter no call passed is no longer written as `: undefined`, which made every later call that passes it a type error. Apply leaves it alone and reports it as `no-information`: "every call left it out".
+
+- [`1da26ec`](https://github.com/lelle/ts-capture/commit/1da26ec8ac40f44ec59843ac69a8ccd5337066e7) Thanks [@lelle](https://github.com/lelle)! - A paren-less arrow whose return type is written while its parameter is not (`xs.forEach(x => x.close())`) now gets its parentheses, `(x): void => …`, instead of the unparseable `x: void => …`.
+
+- [`a287dc0`](https://github.com/lelle/ts-capture/commit/a287dc0d03f95e3e7dff2a76b76fdb455ff6a325) Thanks [@lelle](https://github.com/lelle)! - `node --import @ts-capture/core/register` now writes through the same applier as `ts-capture apply`, on syntax alone, so the two follow the same rules.
+
+- [`63988f6`](https://github.com/lelle/ts-capture/commit/63988f64d2e3f4a6b9d06ee9b0761b1b7bf426ab) Thanks [@lelle](https://github.com/lelle)! - Every observed position `apply` leaves alone now has a reason in `apply --report`. A declaration marked `@ts-capture-ignore` is counted under "Nothing to add" as `marked @ts-capture-ignore`. A variable left for TypeScript to infer says why: its initializer is a function with its own types, passes type arguments or sits in a generic function (the code already says more), or only one branch of its initializer, or only `undefined`, was observed (counted under "Nothing to add" as `left for TypeScript to infer`). `ApplySkipReason` has two new values, `ignored` and `left-to-typescript`.
+
+- [`fd710be`](https://github.com/lelle/ts-capture/commit/fd710be78f85f6eb50674532035a66d70a361f08) Thanks [@lelle](https://github.com/lelle)! - An observation whose position is no place a type can go, typically because the code changed since the run, is now listed in `apply --report` under "No place to write it" instead of being dropped without a word. `apply` no longer hands such entries to a second, offset-based applier.
+
+- [`b159994`](https://github.com/lelle/ts-capture/commit/b15999465b9fdbe2965adace9372de1526ab716d) Thanks [@lelle](https://github.com/lelle)! - Apply no longer writes a second `this` parameter into a function that already declares one (`greet(this: Date, this: Date)`, which does not parse). The entry is skipped as already annotated.
+
+- [`0e4ab1a`](https://github.com/lelle/ts-capture/commit/0e4ab1a49b6c1ec159c6c838df884925ff97df30) Thanks [@lelle](https://github.com/lelle)! - Apply reads a `.tsx` or `.jsx` file as JSX. It read every file as plain TypeScript, so in a component file the code after the first JSX element was misread and its observations were dropped.
+
+- [`901d8ea`](https://github.com/lelle/ts-capture/commit/901d8ea664406418ef095a11571c50f16fecb1c6) Thanks [@lelle](https://github.com/lelle)! - A union of observed types is split at its real arms everywhere: a `|` inside a string literal or inside the class-chain marker (`captureClassHierarchy`) no longer cuts an arm in two.
+
 ## 0.3.0
 
 ### Minor Changes

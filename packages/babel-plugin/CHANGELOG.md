@@ -1,5 +1,12 @@
 # @ts-capture/babel-plugin
 
+## 0.4.0
+
+### Patch Changes
+
+- Updated dependencies [[`cad80a5`](https://github.com/lelle/ts-capture/commit/cad80a5871f0034019ae6cec0d59db2927bf6a53), [`3ebb3a5`](https://github.com/lelle/ts-capture/commit/3ebb3a5adc5b6907c493b185aad3a8d5aac672ad), [`75d2677`](https://github.com/lelle/ts-capture/commit/75d26774088f2ad2790b21bd99ba4764d97e3c36), [`dfc6fe4`](https://github.com/lelle/ts-capture/commit/dfc6fe49b3367dacc4a94b12716d8f86e2600e66), [`60c2eac`](https://github.com/lelle/ts-capture/commit/60c2eacbc563c8fd01d5070d27d21246ff5b4886), [`2ce8db8`](https://github.com/lelle/ts-capture/commit/2ce8db83d2e57e0f355196f6b3e128432cca4710), [`085191a`](https://github.com/lelle/ts-capture/commit/085191a83542b276acfd6785ed23d1383be9d929), [`3837b9d`](https://github.com/lelle/ts-capture/commit/3837b9db1e70398519439de8280ff7faa029c249), [`85f4723`](https://github.com/lelle/ts-capture/commit/85f47236c3db6172ef78171aff0e2fdf27635b05), [`aefbe20`](https://github.com/lelle/ts-capture/commit/aefbe201b90ddad8e42446d935ff0da7e3fe199f), [`3f921d7`](https://github.com/lelle/ts-capture/commit/3f921d73806172542e656a9eb886ce796b5033a2), [`1da26ec`](https://github.com/lelle/ts-capture/commit/1da26ec8ac40f44ec59843ac69a8ccd5337066e7), [`fd5c4bd`](https://github.com/lelle/ts-capture/commit/fd5c4bd5b763915b3347c1dee1546e939efa2ac2), [`a287dc0`](https://github.com/lelle/ts-capture/commit/a287dc0d03f95e3e7dff2a76b76fdb455ff6a325), [`a5080c8`](https://github.com/lelle/ts-capture/commit/a5080c887b038c746a51a45e57da185a02f5c043), [`63988f6`](https://github.com/lelle/ts-capture/commit/63988f64d2e3f4a6b9d06ee9b0761b1b7bf426ab), [`fd710be`](https://github.com/lelle/ts-capture/commit/fd710be78f85f6eb50674532035a66d70a361f08), [`b159994`](https://github.com/lelle/ts-capture/commit/b15999465b9fdbe2965adace9372de1526ab716d), [`0e4ab1a`](https://github.com/lelle/ts-capture/commit/0e4ab1a49b6c1ec159c6c838df884925ff97df30), [`901d8ea`](https://github.com/lelle/ts-capture/commit/901d8ea664406418ef095a11571c50f16fecb1c6), [`585185c`](https://github.com/lelle/ts-capture/commit/585185c1203f85332b5a26f6a1db099a4e2695e7)]:
+  - @ts-capture/core@0.4.0
+
 ## 0.3.0
 
 ### Patch Changes
