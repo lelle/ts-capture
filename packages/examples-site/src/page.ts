@@ -106,7 +106,7 @@ function renderExample(
   rule: RuleLink | undefined,
 ): string {
   const ruleLine = rule
-    ? `\n      <p class="rule"><a href="${escapeHtml(rule.href)}">The rule: ${escapeHtml(rule.label)} →</a></p>`
+    ? `\n      <dl class="note rule"><dt>The rule</dt><dd><a href="${escapeHtml(rule.href)}">${escapeHtml(rule.label)} →</a></dd></dl>`
     : "";
   return `<article id="${escapeHtml(example.id)}" class="example" data-source="${escapeHtml(example.source)}" data-verdict="${example.verdict}">
       <header>

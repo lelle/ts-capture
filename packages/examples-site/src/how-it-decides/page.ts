@@ -371,14 +371,10 @@ const SECTION_STYLE = `
 .kind { padding-top: 56px; }
 .kind:first-child { padding-top: 32px; }
 .kind-heading { margin: 0 0 18px; font-size: 13px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); }
-.kind .example { scroll-margin-top: 16px; background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 24px 28px 22px; margin: 0 0 24px; }
-.kind .example h3 { font-size: 21px; line-height: 1.3; margin: 0 0 8px; text-wrap: balance; }
-.kind .example h3 a { color: inherit; text-decoration: none; }
-.kind .example h3 a:hover { text-decoration: underline; }
+.kind .example { scroll-margin-top: 16px; }
 .real { margin: 18px 0 0; padding-top: 14px; border-top: 1px solid var(--line); }
 .real summary { cursor: pointer; font-weight: 600; margin: 0 0 12px; }
 @media (max-width: 900px) { .kind .example { scroll-margin-top: 56px; } }
-@media (max-width: 760px) { .kind .example { padding: 18px 16px; } }
 `;
 
 /** For each example a card shows, the card that shows the fewest: the most specific. */

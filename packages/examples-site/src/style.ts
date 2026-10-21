@@ -45,11 +45,12 @@ h1 { font-size: clamp(28px, 4.5vw, 42px); line-height: 1.15; margin: 0 0 14px; l
 }
 .filters button[aria-pressed="true"] { background: var(--text); color: var(--bg); border-color: var(--text); }
 .filters button:focus-visible, a:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
-.example { padding: 34px 0 30px; border-bottom: 1px solid var(--line); }
+.example { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 24px 28px 22px; margin: 0 0 24px; }
+main > .example:first-child { margin-top: 24px; }
 .example[hidden] { display: none; }
-.example h2 { font-size: 21px; line-height: 1.3; margin: 0 0 8px; text-wrap: balance; }
-.example h2 a { color: inherit; text-decoration: none; }
-.example h2 a:hover { text-decoration: underline; }
+.example :is(h2, h3) { font-size: 21px; line-height: 1.3; margin: 0 0 8px; text-wrap: balance; }
+.example :is(h2, h3) a { color: inherit; text-decoration: none; }
+.example :is(h2, h3) a:hover { text-decoration: underline; }
 .meta { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px; margin: 0 0 16px; font-size: 14px; color: var(--muted); }
 .verdict { font-weight: 600; padding: 1px 9px; border-radius: 999px; border: 1px solid currentColor; }
 .verdict-good { color: var(--good); } .verdict-weak { color: var(--weak); } .verdict-left { color: var(--left); }
@@ -69,9 +70,10 @@ ins { text-decoration: none; background: var(--add-bg); border-radius: 3px; padd
 .note { max-width: 76ch; margin: 12px 0 0; padding: 10px 14px; border-left: 3px solid var(--line); background: var(--surface); font-size: 15px; }
 .note code { font-size: 13.5px; overflow-wrap: anywhere; }
 .better { border-left-color: var(--weak); }
-.note-label, .left-alone dt { font-size: 12px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); }
-.left-alone { border-left-color: var(--left); display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 4px 14px; }
-.left-alone dd { margin: 0; overflow-wrap: anywhere; }
+.note-label, .left-alone dt, .rule dt { font-size: 12px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); }
+.left-alone { border-left-color: var(--left); }
+.left-alone, .rule { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 4px 14px; }
+.left-alone dd, .rule dd { margin: 0; overflow-wrap: anywhere; }
 .empty { padding: 30px 0; color: var(--muted); }
 footer, .sources { color: var(--muted); font-size: 14.5px; }
 .sources { padding-top: 30px; }
@@ -115,6 +117,7 @@ main h2 { font-size: 21px; margin: 34px 0 12px; }
 main > .how { margin: 16px 0 0; }
 main > .note { border-left-color: var(--weak); margin-top: 26px; }
 @media (max-width: 760px) {
+  .example { padding: 18px 16px; }
   .panes { grid-template-columns: minmax(0, 1fr); }
   .top { padding-top: 28px; }
   pre { font-size: 12.5px; padding: 12px; }

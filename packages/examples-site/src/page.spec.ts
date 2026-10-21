@@ -94,9 +94,9 @@ describe("renderPage", () => {
       ]),
     );
     expect(linked).toContain(
-      '<p class="rule"><a href="../how-it-decides/#variable-written">The rule: Variable · written →</a></p>',
+      '<dl class="note rule"><dt>The rule</dt><dd><a href="../how-it-decides/#variable-written">Variable · written →</a></dd></dl>',
     );
-    expect(html).not.toContain('class="rule"');
+    expect(html).not.toContain('class="note rule"');
   });
 
   it("links a public project's example to the file at the commit it was run on", () => {
