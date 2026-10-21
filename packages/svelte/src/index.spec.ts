@@ -10,7 +10,7 @@ import {
   type Instrumented,
 } from "../../core/src/test-utils/instrumented.js";
 import "../../core/src/test-utils/matchers.js";
-import { applySvelteTypesToFile } from "./apply.js";
+import { annotateSvelte, applySvelteTypesToFile } from "./apply.js";
 import {
   sveltePlugin,
   sveltePreprocessor,
@@ -202,6 +202,20 @@ describe("applySvelteTypesToFile", () => {
       "a",
       "number",
     );
+  });
+
+  it("counts what both script blocks wrote in one telemetry", () => {
+    const svelteSource = `<script context="module" lang="ts">${MOD}</script><script lang="ts">${FOO}</script>`;
+    const { telemetry } = annotateSvelte(
+      svelteSource,
+      [
+        entry("comp.svelte__script.ts", endOf(FOO, "(a"), [["string"]]),
+        entry("comp.svelte__module.ts", endOf(MOD, "(a"), [["number"]]),
+      ],
+      { svelteFilename: "comp.svelte" },
+    );
+    expect(telemetry.totalEntries).toBe(2);
+    expect(telemetry.emitted).toBe(2);
   });
 
   it("leaves a component alone that ignoreFiles names by its .svelte path", () => {

@@ -117,15 +117,15 @@ function emptyTelemetry(): AnnotateResult["telemetry"] {
   };
 }
 
+// Every count, so one added to the telemetry is summed here too; the skips
+// are gathered apart, at their places in the component.
 function addCounts(
   into: AnnotateResult["telemetry"],
   from: AnnotateResult["telemetry"],
 ): void {
-  into.totalEntries += from.totalEntries;
-  into.emitted += from.emitted;
-  into.idempotent += from.idempotent;
-  into.unparseable += from.unparseable;
-  into.positionMismatch += from.positionMismatch;
-  into.verifyReject += from.verifyReject;
-  into.redundant += from.redundant;
+  const counts = into as unknown as Record<string, unknown>;
+  for (const [key, value] of Object.entries(from)) {
+    if (typeof value === "number")
+      counts[key] = (counts[key] as number) + value;
+  }
 }
