@@ -109,11 +109,11 @@ textarea {
 .demo figcaption { text-transform: none; letter-spacing: 0; font-size: 14px; max-width: 76ch; margin: 8px 0 0; }
 main h2 { font-size: 21px; margin: 34px 0 12px; }
 .install { list-style: none; padding: 0; margin: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 340px), 1fr)); gap: 14px; }
-.install li { min-width: 0; }
-.install h3 { font-size: 15px; margin: 0 0 6px; }
-.install pre { margin-bottom: 6px; }
+.install li { min-width: 0; display: flex; flex-direction: column; background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 16px 18px 14px; }
+.install h3 { font-size: 15px; margin: 0 0 10px; }
+.install pre { margin-bottom: 10px; }
 .package { white-space: nowrap; }
-.install a { font-size: 14px; }
+.install a { font-size: 14px; margin-top: auto; align-self: flex-start; }
 main > .how { margin: 16px 0 0; }
 main > .note { border-left-color: var(--weak); margin-top: 26px; }
 @media (max-width: 760px) {
