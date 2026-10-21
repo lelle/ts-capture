@@ -1,12 +1,5 @@
 import { renderCode } from "./code.js";
-import {
-  type BuildInfo,
-  ICON_LINK,
-  pageTitle,
-  renderSiteBar,
-  renderSiteFooter,
-  renderStylesheets,
-} from "./frame.js";
+import { type BuildInfo, renderLayout } from "./layout.js";
 import { join, type Markup, markup } from "./markup.js";
 
 export interface ExampleSource {
@@ -175,25 +168,17 @@ export function renderPage(
     ),
     "\n",
   );
-  return markup`<!doctype html>
-<html lang="en">
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-${ICON_LINK}
-<title>${pageTitle("Examples")}</title>
-<meta name="description" content="Before and after: what ts-capture wrote into real code, including the results a reviewer should change.">
-${renderStylesheets("examples")}
-</head>
-<body>
-<div class="top">
-  ${renderSiteBar("examples")}
-  <h1>Examples</h1>
+  return renderLayout(
+    {
+      id: "examples",
+      title: "Examples",
+      description:
+        "Before and after: what ts-capture wrote into real code, including the results a reviewer should change.",
+      top: markup`<h1>Examples</h1>
   <p class="lede">ts-capture watches your code run under its tests and writes the types it saw back into the source. These are annotations it wrote into real code: the ones you would have written yourself, and the ones a reviewer should change. What it left alone, and why, is on <a href="../how-it-decides/">How it decides</a>.</p>
   <p class="how">Nothing here was typed by hand. Each example is cut from the diff of an actual run; the highlighted parts are what <code>apply</code> added.</p>
-  ${renderFilters(written)}
-</div>
-<main>
+  ${renderFilters(written)}`,
+      body: markup`<main>
 ${examples}
 <p class="empty" hidden>No example matches both filters.</p>
 <section class="sources">
@@ -203,10 +188,8 @@ ${renderSources(written)}
   </ul>
   <p>A type is only as good as what the tests passed in. The examples marked “needs review” are not bugs: they describe the test run exactly, which is why nothing flags them. See <a href="../docs/explanation/what-it-cannot-infer/">what it cannot infer</a> and <a href="../docs/how-to/review-and-apply-safely/">review and apply safely</a>.</p>
 </section>
-</main>
-${renderSiteFooter(build, "examples")}
-<script type="module" src="../js/examples.js"></script>
-</body>
-</html>
-`.toString();
+</main>`,
+    },
+    build,
+  );
 }

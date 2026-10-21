@@ -1,14 +1,7 @@
 import type { Highlight } from "./highlight.js";
 import type { MenuGroup } from "./menu.js";
 
-import {
-  type BuildInfo,
-  ICON_LINK,
-  pageTitle,
-  renderSiteBar,
-  renderSiteFooter,
-  renderStylesheets,
-} from "../frame.js";
+import { type BuildInfo, renderLayout } from "../layout.js";
 import { join, type Markup, markup, trusted } from "../markup.js";
 import {
   type Heading,
@@ -36,31 +29,21 @@ export function renderDocsPage(
   const here = sitePathOf(file);
   const root = relativeHref(here, "");
   const name = doc.title;
-  return markup`<!doctype html>
-<html lang="en">
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-${ICON_LINK}
-<title>${pageTitle(name)}</title>
-${renderStylesheets("docs", root)}
-</head>
-<body>
-<div class="top">
-  ${renderSiteBar("docs", root)}
-</div>
-<div class="docs">
+  return renderLayout(
+    {
+      id: "docs",
+      title: name,
+      root: root,
+      body: markup`<div class="docs">
 ${renderMenu(file, menu, doc.title, doc.headings)}
 <main class="doc">
 ${doc.html}
 ${renderPager(file, menu)}
 </main>
-</div>
-${renderSiteFooter(build, "docs", root)}
-<script type="module" src="${root}js/docs.js"></script>
-</body>
-</html>
-`.toString();
+</div>`,
+    },
+    build,
+  );
 }
 
 /** The pages either side of this one, in menu order from the overview on. */

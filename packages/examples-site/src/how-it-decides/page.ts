@@ -1,13 +1,5 @@
 import { escapeHtml, renderCode } from "../code.js";
-import {
-  type BuildInfo,
-  ICON_LINK,
-  pageTitle,
-  renderSiteBar,
-  renderSiteFooter,
-  renderStylesheets,
-  REPO,
-} from "../frame.js";
+import { type BuildInfo, renderLayout, REPO } from "../layout.js";
 import { join, Markup, markup, trusted } from "../markup.js";
 import {
   type ExamplesData,
@@ -240,33 +232,23 @@ export function renderDecidesPage(
       kindOrder.indexOf(a.cell.kind) - kindOrder.indexOf(b.cell.kind) ||
       OUTCOMES.indexOf(a.cell.outcome) - OUTCOMES.indexOf(b.cell.outcome),
   );
-  return markup`<!doctype html>
-<html lang="en">
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-${ICON_LINK}
-<title>${pageTitle("How it decides")}</title>
-<meta name="description" content="Every way ts-capture apply treats a position: what it writes, what it refuses to write, and the code that decides it.">
-${renderStylesheets("how-it-decides")}
-</head>
-<body>
-<div class="top">
-  ${renderSiteBar("how-it-decides")}
-  <h1>How it decides</h1>
+  return renderLayout(
+    {
+      id: "how-it-decides",
+      title: "How it decides",
+      description:
+        "Every way ts-capture apply treats a position: what it writes, what it refuses to write, and the code that decides it.",
+      top: markup`<h1>How it decides</h1>
   <p class="lede">For every position the tests passed through, <code>apply</code> either writes the type it saw or leaves the position alone, and says why. Each card below is one of those outcomes: a small file, run and applied, and the code that made the call.</p>
   <p class="how">The cards are not written by hand: each is run through the same applier as the playground when the page is built, and a test checks that it still ends where the card says.</p>
-  ${renderGrid(cards)}
-</div>
-<div class="layout">
+  ${renderGrid(cards)}`,
+      body: markup`<div class="layout">
 ${renderToc(cards)}
 <main>
 ${renderSections(cards, real)}
 </main>
-</div>
-${renderSiteFooter(build, "how-it-decides")}
-<script type="module" src="../js/how-it-decides.js"></script>
-</body>
-</html>
-`.toString();
+</div>`,
+    },
+    build,
+  );
 }

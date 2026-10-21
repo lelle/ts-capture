@@ -1,11 +1,4 @@
-import {
-  type BuildInfo,
-  ICON_LINK,
-  renderSiteBar,
-  renderSiteFooter,
-  renderStylesheets,
-  REPO,
-} from "./frame.js";
+import { type BuildInfo, renderLayout, REPO } from "./layout.js";
 import { join, type Markup, markup } from "./markup.js";
 
 const DOCS = "docs";
@@ -59,23 +52,15 @@ function renderIntegration(integration: Integration): Markup {
 }
 
 export function renderHomePage(build: BuildInfo): string {
-  return markup`<!doctype html>
-<html lang="en">
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-${ICON_LINK}
-<title>ts-capture — runtime values as TypeScript types</title>
-<meta name="description" content="ts-capture watches your code run and writes the types it saw back into your source.">
-${renderStylesheets("home")}
-</head>
-<body>
-<div class="top">
-  ${renderSiteBar("home")}
-  <h1>ts-capture</h1>
-  <p class="lede">Capture runtime values, shape them as TypeScript types. ts-capture watches how your code is called — in tests, in dev, in the browser — and writes the types it saw back into your source.</p>
-</div>
-<main>
+  return renderLayout(
+    {
+      id: "home",
+      title: "ts-capture — runtime values as TypeScript types",
+      description:
+        "ts-capture watches your code run and writes the types it saw back into your source.",
+      top: markup`<h1>ts-capture</h1>
+  <p class="lede">Capture runtime values, shape them as TypeScript types. ts-capture watches how your code is called — in tests, in dev, in the browser — and writes the types it saw back into your source.</p>`,
+      body: markup`<main>
   <figure class="demo">
     <video src="demo.mp4" width="960" height="720" muted loop playsinline controls preload="metadata" aria-describedby="demo-description"></video>
     <figcaption id="demo-description">An order form whose code has no types. The ts-capture plugin is added to the Vite config, two orders are placed in the browser, and <code>ts-capture apply</code> writes four named types and six annotations into the source, taking type coverage from 77% to 100%.</figcaption>
@@ -88,10 +73,8 @@ ${renderStylesheets("home")}
   <p class="how">Then run your tests, and <code>npx ts-capture apply types.json --dry-run</code> to see what it would write. The <a href="${DOCS}/tutorials/getting-started/">getting started tutorial</a> takes a first run from install to <code>apply</code>.</p>
   <p class="how">Already typed? Run the tests with <code>TS_CAPTURE_OBSERVE_ANNOTATED=1</code> and <code>npx ts-capture verify</code> lists the types you wrote that the run contradicts. See <a href="${DOCS}/how-to/check-your-types/">check the types you wrote</a>.</p>
   <p class="note">ts-capture rewrites your source files, runs your getters while observing, and writes what it observed to disk. Commit your work first, and read <a href="${DOCS}/how-to/review-and-apply-safely/">review and apply safely</a> before pointing it at a real codebase. The packages are 0.x: the API may change between minor versions.</p>
-</main>
-${renderSiteFooter(build, "home")}
-<script type="module" src="js/home.js"></script>
-</body>
-</html>
-`.toString();
+</main>`,
+    },
+    build,
+  );
 }

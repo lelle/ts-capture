@@ -12,7 +12,7 @@ import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import ts from "typescript";
 
-import type { BuildInfo } from "./frame.js";
+import type { BuildInfo } from "./layout.js";
 
 import { createCodeHighlighter } from "./docs/highlight.js";
 import { renderDocsSite } from "./docs/site.js";

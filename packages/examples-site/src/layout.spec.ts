@@ -1,14 +1,14 @@
 import { describe, expect, it } from "vitest";
 
-import type { BuildInfo } from "./frame.js";
-
 import { renderDocsPage } from "./docs/page.js";
 import { renderHomePage } from "./home.js";
 import { renderDecidesPage } from "./how-it-decides/page.js";
+import { type BuildInfo, renderLayout } from "./layout.js";
+import { markup } from "./markup.js";
 import { type ExamplesData, renderPage } from "./page.js";
 import { renderPlaygroundPage } from "./playground/page.js";
 
-// The four pages are one site: the same bar at the top, with the page you are
+// The five pages are one site: the same bar at the top, with the page you are
 // on marked, the same footer, and one name per page.
 
 const BUILD = { version: "0.4.0", commit: "abc1234" };
@@ -153,5 +153,50 @@ describe("the site frame", () => {
     expect(builtFrom({ version: "0.3.0", unreleased: true })).toBe(
       "Built from main, after ts-capture 0.3.0",
     );
+  });
+});
+
+describe("renderLayout", () => {
+  const page = renderLayout(
+    {
+      id: "examples",
+      title: "Examples",
+      description: "Before & after.",
+      top: markup`<h1>Examples</h1>`,
+      body: markup`<main>cards</main>`,
+      extra: markup`<script type="application/json">{}</script>`,
+    },
+    BUILD,
+  );
+  const order = (...parts: string[]): number[] =>
+    parts.map((part) => page.indexOf(part));
+
+  it("names the page, then the site", () => {
+    expect(page).toContain("<title>Examples · ts-capture</title>");
+    expect(page).toContain(
+      '<meta name="description" content="Before &amp; after.">',
+    );
+  });
+
+  it("leaves the home page its own title, and a page without a description without one", () => {
+    const home = renderLayout(
+      { id: "home", title: "ts-capture — types", body: markup`<main></main>` },
+      BUILD,
+    );
+    expect(home).toContain("<title>ts-capture — types</title>");
+    expect(home).not.toContain('name="description"');
+  });
+
+  it("puts the bar and the top first, then the page, the footer, and the scripts last", () => {
+    const at = order(
+      '<nav class="site"',
+      "<h1>Examples</h1>",
+      "<main>cards</main>",
+      '<footer class="site">',
+      '<script type="application/json">',
+      '<script type="module" src="../js/examples.js">',
+    );
+    expect(at.every((i) => i >= 0)).toBe(true);
+    expect(at).toEqual([...at].sort((a, b) => a - b));
   });
 });

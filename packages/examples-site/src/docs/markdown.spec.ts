@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { REPO } from "../frame.js";
+import { REPO } from "../layout.js";
 import { renderMarkdown, sitePathOf, slugify } from "./markdown.js";
 
 // docs/ is written for GitHub and rendered again for the site: the Markdown

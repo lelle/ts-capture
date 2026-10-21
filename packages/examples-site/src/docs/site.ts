@@ -1,4 +1,4 @@
-import type { BuildInfo } from "../frame.js";
+import type { BuildInfo } from "../layout.js";
 import type { Highlight } from "./highlight.js";
 
 import { sitePathOf } from "./markdown.js";
