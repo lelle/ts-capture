@@ -4,8 +4,8 @@ The project site: the front page, Examples, How it decides, the Playground
 and the docs. Private; it is published to GitHub Pages, never to npm.
 
 ```sh
-pnpm examples                                  # from the repository root; writes site/
-python3 -m http.server --directory site 8000   # the playground does not run from file:
+pnpm examples   # from the repository root; writes site/
+pnpm site       # serves site/ at http://localhost:4173; the playground does not run from file:
 ```
 
 ## The pages
