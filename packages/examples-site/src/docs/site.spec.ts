@@ -1,4 +1,4 @@
-import { existsSync, globSync, readFileSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { dirname, posix, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
@@ -37,12 +37,18 @@ const others = {
   ),
 };
 
+// Node 20, which the packages still support, has no fs.globSync.
+const docsFiles = (): string[] =>
+  readdirSync(docsDir, { recursive: true, encoding: "utf-8" }).filter((file) =>
+    file.endsWith(".md"),
+  );
+
 describe("the docs on the site", () => {
   it("lists every page under docs/ in the menu", () => {
     const listed = readMenu(read("README.md")).flatMap((group) =>
       group.pages.map((page) => page.file),
     );
-    const written = globSync("**/*.md", { cwd: docsDir }).filter(
+    const written = docsFiles().filter(
       (file) => file !== "README.md" && !file.startsWith("examples/"),
     );
     expect(listed.toSorted()).toEqual(written.toSorted());
@@ -50,10 +56,15 @@ describe("the docs on the site", () => {
 
   it("explains each fact in one file, and links to it from the others", () => {
     const repoDir = resolve(docsDir, "..");
-    const files = globSync(
-      ["docs/**/*.md", "README.md", "packages/*/README.md"],
-      { cwd: repoDir, exclude: ["docs/examples/**"] },
-    );
+    const files = [
+      ...docsFiles()
+        .filter((file) => !file.startsWith("examples/"))
+        .map((file) => `docs/${file}`),
+      "README.md",
+      ...readdirSync(resolve(repoDir, "packages"))
+        .map((name) => `packages/${name}/README.md`)
+        .filter((file) => existsSync(resolve(repoDir, file))),
+    ];
     const texts = new Map(
       files.map((file) => [
         file,
