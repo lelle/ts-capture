@@ -1,6 +1,6 @@
 {
   "name": "@ts-capture/esbuild",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "description": "ts-capture esbuild plugin — instrument TS at bundle time for tsup / Bun / esbuild-direct stacks. (0.x — API may change between minor versions.)",
   "type": "module",
   "exports": {
