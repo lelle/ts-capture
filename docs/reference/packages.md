@@ -31,3 +31,19 @@ integration package matching their stack.
 
 Each integration package's README has stack-specific detail; the how-to guides
 above are the task-focused entry points.
+
+## What's supported
+
+|                 | First-class (CI) | Best-effort     |
+| --------------- | ---------------- | --------------- |
+| **Node**        | 20+              | <20             |
+| **OS**          | Linux, macOS     | Windows         |
+| **JS-runtime**  | Node             | Bun, Deno       |
+| **Test-runner** | Vitest, Jest     | Mocha, Tap, AVA |
+
+## Versions
+
+The packages are on npm as 0.x, and the API may change between minor versions.
+There is no 1.0, and none is scheduled: the version stays below 1.0 until code,
+API, test coverage and documentation meet a quality bar that respects the first
+impression. Hobby/research project; best-effort maintenance.

@@ -54,6 +54,8 @@ looking something up.
 - [How it works](explanation/how-it-works.md) — observe → merge → apply.
 - [Why runtime observation](explanation/why-runtime-observation.md) — the
   strategy, and when it helps vs hurts.
+- [What it does to your project](explanation/what-it-does-to-your-project.md) —
+  the source it rewrites, the getters it runs, the data it writes.
 - [What it cannot infer](explanation/what-it-cannot-infer.md) — the limits and
   failure modes.
 - [JSX element typing](explanation/jsx-element-typing.md) — how React elements

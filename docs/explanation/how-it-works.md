@@ -104,6 +104,32 @@ Apply is conservative by design:
 Because apply only fills gaps and is gated by the type-checker, a run that
 finds nothing safe to add changes nothing.
 
+## What observation costs
+
+ts-capture's transform-time instrumentation adds **18-31% wall-time
+overhead** on synthetic benches (linear axes — file count, call count,
+type complexity). On the hono test suite (3457 tests, 284 source files)
+it runs in 246s with ts-capture observation enabled vs 33s baseline —
+~7.5× slower in absolute terms but completes cleanly with all tests
+passing post-fix.
+
+For context: Ben Coe (Istanbul/nyc/c8 maintainer) reports Node.js's
+own test suite is ~300% slower with Istanbul transform-time
+instrumentation, and ~20% slower with V8 native coverage
+([Rethinking JavaScript Test Coverage](https://medium.com/the-node-js-collection/rethinking-javascript-test-coverage-5726fb272949)).
+ts-capture's overhead is in V8-native territory, an order of magnitude
+better than transform-time coverage.
+
+### Why not V8 native coverage?
+
+ts-capture is forced to use transform-time instrumentation because shape
+observation requires actual runtime values, not just hit counts. V8's
+coverage protocol exposes line/branch hit counts only — useful for
+coverage tools like c8, but insufficient for a tool that needs to
+walk values to compute their structural type. We inherit transform-
+time's known weaknesses (per-call overhead, language-feature lag,
+sourcemap complexity) by necessity.
+
 ## Where to go next
 
 - Do it end to end: [Getting started](../tutorials/getting-started.md).

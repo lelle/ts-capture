@@ -18,7 +18,7 @@ The approach isn't new:
 runtime type collection for TypeScript and directly inspired ts-capture.
 
 The cost is that observation needs real executions (usually your test suite) and
-adds run-time overhead — see [Performance](../../README.md#performance). The
+adds run-time overhead — see [What observation costs](how-it-works.md#what-observation-costs). The
 payoff is types for positions a static tool leaves as `any`.
 
 The deeper consequence of that trade-off: **the output is a function of which
