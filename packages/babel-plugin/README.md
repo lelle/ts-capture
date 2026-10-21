@@ -7,16 +7,8 @@ Mirrors the [`@istanbuljs/babel-plugin-istanbul`](https://github.com/istanbuljs/
 pattern: the user's existing Babel chain (Jest preset, Vite-with-Babel, webpack,
 etc.) does the instrumentation, eliminating loader-integration as a problem class.
 
-## Why a Babel plugin?
-
-The ts-capture evaluation found that ts-capture's
-`--import @ts-capture/core/register` runtime mode does not work end-to-end on any of the
-20 popular OSS TypeScript projects screened, because every popular TS test
-setup (mocha+ts-node, Jest, Vitest, Vite) installs its own loader earlier in
-the Node ESM chain.
-
-A Babel plugin sidesteps the loader chain entirely: instrumentation happens
-at compile time inside the build tool the user already runs.
+Instrumenting at compile time, inside the build tool you already run, avoids
+the Node loader chain that Jest, Vitest and ts-node each take over first.
 
 ## Install
 
@@ -46,18 +38,8 @@ And the collector, in Jest's `setupFiles`:
  };
 ```
 
-[Use with Jest (Babel)](../../docs/how-to/use-with-jest-babel.md) has the full
-walk-through.
-
-After running tests, observations land in `${TS_CAPTURE_TYPES_DIR}/ts-capture-types-<id>.json`, one file per test file under Jest.
-Merge those and apply with the ts-capture CLI. `apply` edits your source — run
-it from a committed working tree
-([Review & apply safely](../../docs/how-to/review-and-apply-safely.md)):
-
-```sh
-npx ts-capture apply types.json --dry-run   # preview
-npx ts-capture apply types.json
-```
+**Full guide:** [Use with Jest (Babel)](../../docs/how-to/use-with-jest-babel.md)
+— what the runtime line does, collecting, merging and applying.
 
 [`examples/jest/`](examples/jest) is a small project wired this way. What it
 gives:

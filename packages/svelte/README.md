@@ -6,20 +6,11 @@ blocks in `.svelte` files so ts-capture can fill in implicit `any` from
 observed runtime values, then writes the inferred types back into the
 right `<script>` block.
 
-## Why a Svelte preprocessor?
-
-`.svelte` files aren't plain TypeScript — their `<script>` blocks live
-inside component markup at file-relative byte offsets that no `.ts`-only
-tool tracks. This package plugs into the Svelte preprocess chain to
-instrument those blocks, and ships an offset-aware applier
-(`applySvelteTypesToFile` / `sveltePlugin()`) that remaps each block's
-collected type-info from block-relative back to file-relative positions
-before writing annotations into the owning `.svelte` file.
-
-It pairs with [`@ts-capture/vite`](../vite), which supplies the runtime
-`__tscptr__` collector for the Vite / Vitest pipeline.
-
-## Install
+Plain TypeScript tools cannot place a type inside a `<script>` block, so this
+package instruments the blocks through the Svelte preprocess chain and remaps
+each observation from block-relative back to file-relative offsets when it
+applies. It pairs with [`@ts-capture/vite`](../vite), which supplies the runtime
+collector.
 
 ```sh
 npm install --save-dev @ts-capture/svelte @ts-capture/vite @ts-capture/core
@@ -27,32 +18,7 @@ npm install --save-dev @ts-capture/svelte @ts-capture/vite @ts-capture/core
 
 Peer dependencies: `@ts-capture/core` and `svelte >=5.0.0`.
 
-## Transformation
-
-```svelte title="Input"
-<script lang="ts">
-  function format(value) {
-    return value.toFixed(2);
-  }
-</script>
-```
-
-```svelte title="Expected"
-<script lang="ts">
-  function format(value: number): string {
-    return value.toFixed(2);
-  }
-</script>
-```
-
-## Use with Vitest
-
-Register `sveltePreprocessor()` in the Svelte plugin's `preprocess`
-chain, and add the `@ts-capture/vite` plugin so the runtime collector is
-installed across the Vitest run:
-
-```ts
-// vite.config.ts
+```ts title="vite.config.ts"
 import { defineConfig } from "vitest/config";
 import { svelte } from "@sveltejs/vite-plugin-svelte";
 import tsCapture from "@ts-capture/vite";
@@ -63,31 +29,11 @@ export default defineConfig({
 });
 ```
 
-Run tests, then merge and apply the collected types:
+**Full guide:** [Use with Svelte 5](../../docs/how-to/use-with-svelte.md) —
+collecting, applying back into `.svelte` files with `sveltePlugin()`, and
+`$state` runes inside effects.
 
-```sh
-TS_CAPTURE_TYPES_DIR=./.ts-capture npm test
-npx ts-capture merge ./.ts-capture --out types.json
-npx ts-capture apply types.json --dry-run   # preview
-npx ts-capture apply types.json             # edits your source files
-```
-
-`apply` edits your source — run it from a committed working tree
-([Review & apply safely](../../docs/how-to/review-and-apply-safely.md)).
-
-## Apply types back to `.svelte` files
-
-`.svelte` files reach the CLI as synthetic virtual paths
-(`<file>.svelte__script.ts` / `<file>.svelte__module.ts`). Register
-`sveltePlugin()` so the CLI routes those entries back to the owning
-`.svelte` file via the offset-aware applier. Without it, the core CLI
-prints a stderr warning and skips every synthetic svelte path.
-
-```js title="ts-capture.config.mjs"
-import { sveltePlugin } from "@ts-capture/svelte";
-
-export default { plugins: [sveltePlugin()] };
-```
+## Programmatic apply
 
 For programmatic use, call the applier directly (from
 `@ts-capture/svelte/apply`):
@@ -103,29 +49,8 @@ const annotated = applySvelteTypesToFile(source, collectedTypes, {
 `ApplySvelteTypesOptions` extends core's `ApplyTypesOptions` with the
 required `svelteFilename` — the resolved `.svelte` path used to match
 each entry's virtual prefix back to the correct `<script>` block.
-
-## `$state` runes — `attachPeek`
-
-ts-capture observes runtime values by walking them. A Svelte 5 `$state`
-proxy can register reactive subscriptions when read inside an `$effect`.
-`attachPeek` (from `@ts-capture/svelte/runes`) attaches the ts-capture
-peek protocol so the walker observes the unwrapped plain value via
-Svelte's `snapshot()` instead of the reactive proxy:
-
-```ts
-import { attachPeek } from "@ts-capture/svelte/runes";
-
-let profile = attachPeek($state({ name: "alice", age: 30 }));
-```
-
-`$state({...})` read **outside** an effect is already walked correctly
-without this helper — property reads on a Svelte proxy outside an
-`$effect` don't register subscriptions. Use `attachPeek` only when
-observation may happen inside an effect context.
-
-> **Note:** `attachPeek` uses `svelte/internal/client.snapshot`, an
-> internal (non-public) Svelte runtime API. If Svelte exposes `snapshot`
-> publicly in a future version, this implementation can be replaced.
+`annotateSvelte` takes the same arguments and also returns the positions it
+did not write, with the reason for each.
 
 ## How it works
 
@@ -150,6 +75,10 @@ observation may happen inside an effect context.
 
 `SveltePreprocessorOptions` extends core's `InstrumentOptions`, so any
 core instrument option is accepted by `sveltePreprocessor(options)`.
+
+`attachPeek` (from `@ts-capture/svelte/runes`) reads a `$state` proxy through
+`svelte/internal/client.snapshot`, an internal Svelte API; if Svelte makes
+`snapshot` public, the helper can move to it.
 
 ## License
 

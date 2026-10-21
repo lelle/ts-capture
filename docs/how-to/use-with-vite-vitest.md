@@ -33,47 +33,41 @@ npx ts-capture apply types.json --dry-run   # preview
 npx ts-capture apply types.json
 ```
 
-`apply` edits your source — run it from a committed working tree
-([Review & apply safely](review-and-apply-safely.md)). The dumps and
-`types.json` are working files; the
-[tutorial](../tutorials/getting-started.md) has the `.gitignore` block.
+Commit first; `apply` edits your source ([review & apply safely](review-and-apply-safely.md)).
 
 Observations land in `${TS_CAPTURE_TYPES_DIR}/ts-capture-types-<uuid>.json`,
 one file per worker/fork — that's why a `merge` step is needed before `apply`.
 
-## Options
+## Switch it off for a run
 
-```ts
-plugins: [
-  tsCapture({
-    enabled: process.env.CI !== "true", // off: nothing instrumented, no dumps written
-    exclude: /node_modules|\.spec\.ts$/, // skip files matching this regex
-    apply: true, // vite serve only: auto-apply on each browser report
-    outputFile: ".ts-capture-types.json", // vite serve only: dump the reported observations
-  }),
-];
+With the plugin in the config, every test run instruments and writes dumps.
+`TS_CAPTURE_ENABLED=false` switches it off for one run; the `enabled` option
+does it in the config. Every option is in the
+[`@ts-capture/vite` README](../../packages/vite/README.md#options).
+
+```sh
+TS_CAPTURE_ENABLED=false npm test
 ```
-
-Once the plugin is in the config, every test run instruments and writes dumps.
-`enabled: false` switches it off in place; `TS_CAPTURE_ENABLED=false` in the
-environment does the same for one run without touching the config.
-
-`apply` and `outputFile` are honored **only** in `vite serve` (dev-server /
-browser) mode. Under Vitest or `vite build`, use the `TS_CAPTURE_TYPES_DIR` +
-`ts-capture merge` flow above. The plugin warns if `outputFile` is set outside
-serve mode.
 
 ## Browser dev sessions
 
-The same plugin registration works in a Vite dev server. The plugin
-auto-detects the browser environment and reports observations to a
-`/__ts-capture_collect` endpoint it serves: with `fetch` soon after they are
-made and every 10 seconds, and with `navigator.sendBeacon` when the page
-unloads. Set `apply: true` to write types back on each report, or
-`outputFile: 'types.json'` to dump them to disk.
+The same plugin registration works in a Vite dev server. In the browser,
+observations are sent to an endpoint the dev server serves; `apply: true`
+writes types back on each report, `outputFile: 'types.json'` dumps them to
+disk. Both work only in `vite serve`.
+
+```ts
+plugins: [tsCapture({ apply: true, outputFile: ".ts-capture-types.json" })],
+```
+
+> **`apply: true` rewrites your source files while you browse**, with no
+> preview step and underneath your open editor. Only enable it on a committed
+> working tree.
+
+Before you use it on a shared network, read
+[what the dev server exposes](../../packages/vite/README.md#what-the-dev-server-exposes).
 
 ## Next
 
-- [Review & apply safely](review-and-apply-safely.md) before running on an
-  existing codebase.
-- [Configuration reference](../reference/configuration.md) for inference tuning.
+[Review & apply safely](review-and-apply-safely.md) ·
+[Configuration](../reference/configuration.md)

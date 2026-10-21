@@ -1,129 +1,35 @@
 # ts-capture
 
-Automatically discover and add missing TypeScript type annotations by observing runtime types.
+The engine and the `ts-capture` CLI: it turns what your tests observed into
+type annotations in your source. The integrations below collect the
+observations; this package merges and applies them.
 
-> **Status:** Core complete. CLI, Node runner, and Vite plugin implemented.
-
-> **⚠️ This package writes to your source files.** `apply`,
-> `instrument --in-place` and the `core/register` runner all edit code on disk.
-> Commit your work before running them, so every change is a reviewable
-> `git diff` you can undo with `git checkout .`.
-
-## Install
-
-```bash
-npm install @ts-capture/core
+```sh
+npm install --save-dev @ts-capture/core
 ```
 
-## Usage
-
-### CLI
-
-```bash
-# Instrument a file (outputs to stdout)
-npx ts-capture instrument src/app.ts
-
-# Instrument in-place
-npx ts-capture instrument --in-place src/app.ts
-
-# Apply collected types to source files
-npx ts-capture apply collected-types.json
-
-# Report type coverage
-npx ts-capture coverage tsconfig.json
+```sh
+# 1. run your tests with an integration installed, so observations are written
+TS_CAPTURE_TYPES_DIR=./.ts-capture npm test
+# 2. merge them, preview, apply
+npx ts-capture merge ./.ts-capture --out types.json
+npx ts-capture apply types.json --dry-run
+npx ts-capture apply types.json
 ```
 
-### Node runner
+`apply` edits your source: run it from a committed working tree.
 
-The runner applies types on process exit, in place, with no preview.
-
-```bash
-# Run a script with automatic type collection and application
-node --import @ts-capture/core/register src/main.ts
-
-# Works with any runner
-mocha --import @ts-capture/core/register test/**/*.spec.ts
-```
-
-### Vite plugin
-
-```bash
-npm install @ts-capture/vite
-```
-
-```typescript
-// vite.config.ts
-import tsCapture from "@ts-capture/vite";
-
-export default defineConfig({
-  plugins: [
-    tsCapture({
-      apply: true, // auto-apply types on collection
-      exclude: /\.spec\.ts$/, // skip test files
-    }),
-  ],
-});
-```
-
-### Programmatic API
-
-```typescript
-import {
-  instrumentSource,
-  applyTypesToFile,
-  createCollectionContext,
-  typeCoverage,
-} from "@ts-capture/core";
-
-// Instrument source code
-const instrumented = instrumentSource(source, "app.ts");
-
-// Create a scoped collection context (no global state)
-const ctx = createCollectionContext();
-
-// ... execute instrumented code, collecting types via ctx ...
-
-// Apply collected types back to source
-const annotated = applyTypesToFile(source, ctx.getCollectedTypes(), {});
-```
-
-## How it works
-
-```
-Source Code ──► [Instrument] ──► Instrumented Code ──► [Execute + Collect] ──► Type Data ──► [Apply] ──► Annotated Source
-```
-
-1. **Instrument** — AST transformer inserts `__tscptr__()` tracking calls for unannotated parameters
-2. **Collect** — Runtime snippet observes actual values and records their types
-3. **Apply** — Collected types are written back as annotations in the original source
-
-## Packages
-
-| Package                                        | Description                      |
-| ---------------------------------------------- | -------------------------------- |
-| `@ts-capture/core` (this package)              | Core library + CLI + Node runner |
-| `@ts-capture/vite` (`../vite`)                 | Vite plugin                      |
-| `@ts-capture/babel-plugin` (`../babel-plugin`) | Babel plugin (Jest etc.)         |
-| `@ts-capture/core/preload` (this package)      | `NODE_OPTIONS=--require` shim    |
-| `@ts-capture/svelte` (`../svelte`)             | Svelte preprocessor              |
-| `@ts-capture/esbuild` (`../esbuild`)           | esbuild plugin (tsup etc.)       |
-
-See the [root README](../../README.md) for the full overview.
-
-## Tech Stack
-
-TypeScript 6, Vitest, Prettier, oxlint, ESM-only, Node 22+
-
-## Development
-
-```bash
-npm test              # run tests
-npm run test:coverage # with coverage report
-npm run check         # format + lint + build + test
-```
-
-TDD with Red-Green-Refactor. All work tracked as GitHub issues.
+- **Start:** [Getting started](../../docs/tutorials/getting-started.md)
+- **Your test runner:** [Vite / Vitest](../../docs/how-to/use-with-vite-vitest.md) ·
+  [Jest (Babel)](../../docs/how-to/use-with-jest-babel.md) ·
+  [Svelte](../../docs/how-to/use-with-svelte.md) ·
+  [no bundler](../../docs/how-to/use-without-a-bundler.md) ·
+  [esbuild / tsup](../esbuild)
+- **Look up:** [CLI](../../docs/reference/cli.md) ·
+  [Configuration](../../docs/reference/configuration.md) ·
+  [API](../../docs/reference/api.md)
+- **Before you run it:** [Review & apply safely](../../docs/how-to/review-and-apply-safely.md)
 
 ## License
 
-MIT
+MIT.

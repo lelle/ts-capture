@@ -55,27 +55,13 @@ npx ts-capture apply types.json --dry-run   # preview
 npx ts-capture apply types.json
 ```
 
-`apply` edits your source — run it from a committed working tree
-([Review & apply safely](review-and-apply-safely.md)). The dumps and
-`types.json` are working files; the
-[tutorial](../tutorials/getting-started.md) has the `.gitignore` block.
+Commit first; `apply` edits your source ([review & apply safely](review-and-apply-safely.md)).
 
 Observations land in `${TS_CAPTURE_TYPES_DIR}/ts-capture-types-<id>.json`,
 one file per test file under Jest.
 
-## Options
-
-```js
-plugins: [
-  [
-    "@ts-capture/babel-plugin",
-    {
-      exclude: /node_modules|\.spec\.ts$/, // skip files matching this regex
-      include: /\.(ts|tsx)$/, // override default file extensions
-    },
-  ],
-];
-```
+`include` and `exclude` choose the files the plugin instruments; see the
+[`@ts-capture/babel-plugin` README](../../packages/babel-plugin/README.md#options).
 
 ## Why the Babel plugin (not a Node loader)?
 
@@ -87,6 +73,5 @@ inside the build tool you already run.
 
 ## Next
 
-- [Review & apply safely](review-and-apply-safely.md) before applying on a real
-  codebase.
-- [Configuration reference](../reference/configuration.md).
+[Review & apply safely](review-and-apply-safely.md) ·
+[Configuration](../reference/configuration.md)

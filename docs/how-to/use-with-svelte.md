@@ -51,8 +51,7 @@ npx ts-capture apply types.json --dry-run   # preview
 npx ts-capture apply types.json
 ```
 
-`apply` edits your source — run it from a committed working tree
-([Review & apply safely](review-and-apply-safely.md)).
+Commit first; `apply` edits your source ([review & apply safely](review-and-apply-safely.md)).
 
 ## Route apply back to `.svelte` files
 
@@ -85,6 +84,5 @@ helper — use `attachPeek` only when reads happen inside an effect.
 
 ## Next
 
-- [Review & apply safely](review-and-apply-safely.md) before applying on a real
-  codebase.
-- [Configuration reference](../reference/configuration.md).
+[Review & apply safely](review-and-apply-safely.md) ·
+[Configuration](../reference/configuration.md)
