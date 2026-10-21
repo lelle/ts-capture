@@ -1,7 +1,6 @@
 import type { Highlight } from "./highlight.js";
 import type { MenuGroup } from "./menu.js";
 
-import { escapeHtml } from "../code.js";
 import {
   type BuildInfo,
   ICON_LINK,
@@ -9,6 +8,7 @@ import {
   renderSiteBar,
   renderSiteFooter,
 } from "../frame.js";
+import { join, type Markup, markup, trusted } from "../markup.js";
 import { STYLE } from "../style.js";
 import {
   type Heading,
@@ -36,14 +36,14 @@ export function renderDocsPage(
   const here = sitePathOf(file);
   const root = relativeHref(here, "");
   const name = doc.title;
-  return `<!doctype html>
+  return markup`<!doctype html>
 <html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 ${ICON_LINK}
-<title>${escapeHtml(pageTitle(name))}</title>
-<style>${STYLE}${DOCS_STYLE}</style>
+<title>${pageTitle(name)}</title>
+<style>${trusted(STYLE + DOCS_STYLE)}</style>
 </head>
 <body>
 <div class="top">
@@ -60,11 +60,11 @@ ${renderSiteFooter(build, "docs", root)}
 <script type="module" src="${root}js/docs.js"></script>
 </body>
 </html>
-`;
+`.toString();
 }
 
 /** The pages either side of this one, in menu order from the overview on. */
-function renderPager(file: string, menu: MenuGroup[]): string {
+function renderPager(file: string, menu: MenuGroup[]): Markup {
   const here = sitePathOf(file);
   const order = [
     { file: INDEX, name: "Overview", group: "Docs" },
@@ -73,12 +73,12 @@ function renderPager(file: string, menu: MenuGroup[]): string {
     ),
   ];
   const at = order.findIndex((page) => page.file === file);
-  const link = (side: "prev" | "next", label: string): string => {
+  const link = (side: "prev" | "next", label: string): Markup | undefined => {
     const page = order[side === "prev" ? at - 1 : at + 1];
-    if (at === -1 || !page) return "";
-    return `<a class="${side}" href="${relativeHref(here, sitePathOf(page.file))}"><span class="dir">${label}</span><span class="group">${escapeHtml(page.group)}</span><span class="name">${escapeHtml(page.name)}</span></a>`;
+    if (at === -1 || !page) return undefined;
+    return markup`<a class="${side}" href="${relativeHref(here, sitePathOf(page.file))}"><span class="dir">${label}</span><span class="group">${page.group}</span><span class="name">${page.name}</span></a>`;
   };
-  return `<nav class="pager" aria-label="Previous and next">${link("prev", "← Previous")}${link("next", "Next →")}</nav>`;
+  return markup`<nav class="pager" aria-label="Previous and next">${link("prev", "← Previous")}${link("next", "Next →")}</nav>`;
 }
 
 function renderMenu(
@@ -86,24 +86,25 @@ function renderMenu(
   menu: MenuGroup[],
   title: string,
   headings: Heading[],
-): string {
+): Markup {
   const here = sitePathOf(file);
-  const item = (target: string, name: string): string => {
+  const item = (target: string, name: string): Markup => {
     const current = target === file;
     const sections =
-      current && headings.length > 0
-        ? `<ul class="sections">${headings.map((h) => `<li><a href="#${h.id}">${h.menu}</a></li>`).join("")}</ul>`
-        : "";
-    return `<li><a href="${relativeHref(here, sitePathOf(target))}"${current ? ' aria-current="page"' : ""}>${escapeHtml(name)}</a>${sections}</li>`;
+      current &&
+      headings.length > 0 &&
+      markup`<ul class="sections">${headings.map((h) => markup`<li><a href="#${h.id}">${h.menu}</a></li>`)}</ul>`;
+    return markup`<li><a href="${relativeHref(here, sitePathOf(target))}"${current && trusted(' aria-current="page"')}>${name}</a>${sections}</li>`;
   };
-  const groups = menu
-    .map(
+  const groups = join(
+    menu.map(
       (group) =>
-        `<p class="docs-group">${escapeHtml(group.name)}</p><ul>${group.pages.map((page) => item(page.file, page.name)).join("")}</ul>`,
-    )
-    .join("\n");
+        markup`<p class="docs-group">${group.name}</p><ul>${group.pages.map((page) => item(page.file, page.name))}</ul>`,
+    ),
+    "\n",
+  );
   const reading = file === INDEX ? "Overview" : title;
-  return `<details class="docs-menu" open><summary>Docs · ${escapeHtml(reading)}</summary>
+  return markup`<details class="docs-menu" open><summary>Docs · ${reading}</summary>
 <nav aria-label="Docs">
 <ul>${item(INDEX, "Overview")}</ul>
 ${groups}

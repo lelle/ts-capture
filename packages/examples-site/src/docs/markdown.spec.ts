@@ -34,8 +34,18 @@ describe("sitePathOf", () => {
 });
 
 describe("renderMarkdown", () => {
-  const render = (source: string, file = "how-to/check-your-types.md") =>
-    renderMarkdown(source, file);
+  const render = (source: string, file = "how-to/check-your-types.md") => {
+    const doc = renderMarkdown(source, file);
+    return {
+      ...doc,
+      html: String(doc.html),
+      headings: doc.headings.map((h) => ({
+        ...h,
+        html: String(h.html),
+        menu: String(h.menu),
+      })),
+    };
+  };
 
   it("gives the page title no anchor of its own", () => {
     expect(render("# Title\n").html).toBe('<h1 id="title">Title</h1>\n');
@@ -162,7 +172,7 @@ describe("renderMarkdown", () => {
         "how-to/x.md",
         highlight,
       );
-      expect(html).toContain(
+      expect(String(html)).toContain(
         "<pre data-copy><code><b>const a = 1;</b></code></pre>",
       );
     });
@@ -173,7 +183,7 @@ describe("renderMarkdown", () => {
         "how-to/x.md",
         highlight,
       );
-      expect(html).toContain(
+      expect(String(html)).toContain(
         "<pre data-copy><code>echo &lt;a&gt; &amp;&amp; b</code></pre>",
       );
     });

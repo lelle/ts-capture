@@ -5,17 +5,18 @@ import type { Highlight } from "./highlight.js";
 
 import { escapeHtml } from "../code.js";
 import { REPO } from "../frame.js";
+import { type Markup, trusted } from "../markup.js";
 
 export interface Heading {
   id: string;
-  html: string;
+  html: Markup;
   /** What the menu lists: a CLI command's name alone, else the heading. */
-  menu: string;
+  menu: Markup;
 }
 
 export interface RenderedDoc {
   title: string;
-  html: string;
+  html: Markup;
   /** The second-level headings, in order: what the menu lists under the page. */
   headings: Heading[];
 }
@@ -66,7 +67,7 @@ export function renderMarkdown(
           const menu = command
             ? `<code>${command}</code>${this.parser.parseInline(rest)}`
             : html;
-          headings.push({ id, html, menu });
+          headings.push({ id, html: trusted(html), menu: trusted(menu) });
         }
         const anchor =
           depth === 1
@@ -98,7 +99,7 @@ export function renderMarkdown(
   });
 
   const html = marked.parse(source, { async: false });
-  return { title, html, headings };
+  return { title, html: trusted(html), headings };
 }
 
 // A signature in a heading breaks between its words: `[--` and `include-tests]`
