@@ -1,4 +1,3 @@
-import { escapeHtml } from "./code.js";
 import {
   type BuildInfo,
   ICON_LINK,
@@ -6,6 +5,7 @@ import {
   renderSiteFooter,
   REPO,
 } from "./frame.js";
+import { type Markup, markup, trusted } from "./markup.js";
 import { STYLE } from "./style.js";
 
 const DOCS = "docs";
@@ -44,19 +44,19 @@ export const INTEGRATIONS: Integration[] = [
   },
 ];
 
-function renderIntegration(integration: Integration): string {
-  const packages = integration.packages
-    .map((name) => `<span class="package">${escapeHtml(name)}</span>`)
-    .join(" ");
-  return `<li>
-      <h3>${escapeHtml(integration.name)}</h3>
+function renderIntegration(integration: Integration): Markup {
+  const packages = integration.packages.map(
+    (name, i) => markup`${i > 0 && " "}<span class="package">${name}</span>`,
+  );
+  return markup`<li>
+      <h3>${integration.name}</h3>
       <pre><code>npm install --save-dev ${packages}</code></pre>
-      <a href="${escapeHtml(integration.guide)}" aria-label="${escapeHtml(integration.name)} guide">Guide</a>
+      <a href="${integration.guide}" aria-label="${integration.name} guide">Guide</a>
     </li>`;
 }
 
 export function renderHomePage(build: BuildInfo): string {
-  return `<!doctype html>
+  return markup`<!doctype html>
 <html lang="en">
 <head>
 <meta charset="utf-8">
@@ -64,7 +64,7 @@ export function renderHomePage(build: BuildInfo): string {
 ${ICON_LINK}
 <title>ts-capture — runtime values as TypeScript types</title>
 <meta name="description" content="ts-capture watches your code run and writes the types it saw back into your source.">
-<style>${STYLE}</style>
+<style>${trusted(STYLE)}</style>
 </head>
 <body>
 <div class="top">
@@ -80,7 +80,7 @@ ${ICON_LINK}
   <p class="how">The recording is made by running every step for real; nothing in it is written by hand. See <a href="examples/">what it wrote into real projects</a>, the results a reviewer should change included, or <a href="playground/">try it in your browser</a>.</p>
   <h2>Install</h2>
   <ul class="install">
-    ${INTEGRATIONS.map(renderIntegration).join("\n    ")}
+    ${INTEGRATIONS.map((integration, i) => markup`${i > 0 && "\n    "}${renderIntegration(integration)}`)}
   </ul>
   <p class="how">Then run your tests, and <code>npx ts-capture apply types.json --dry-run</code> to see what it would write. The <a href="${DOCS}/tutorials/getting-started/">getting started tutorial</a> takes a first run from install to <code>apply</code>.</p>
   <p class="how">Already typed? Run the tests with <code>TS_CAPTURE_OBSERVE_ANNOTATED=1</code> and <code>npx ts-capture verify</code> lists the types you wrote that the run contradicts. See <a href="${DOCS}/how-to/check-your-types/">check the types you wrote</a>.</p>
@@ -90,5 +90,5 @@ ${renderSiteFooter(build, "home")}
 <script type="module" src="js/home.js"></script>
 </body>
 </html>
-`;
+`.toString();
 }
