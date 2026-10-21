@@ -63,7 +63,13 @@ A husky pre-commit hook runs prettier, lint, and typecheck.
    Recognised titles: `Input`, `Expected`, `Current` (bug reports),
    `Repro` (standalone reproducer), `Sketch` (RFC design sketches).
 
-4. **Add a changeset** describing the user-visible change:
+4. **Explain a fact in one place.** Each topic in `docs/`, the root README and
+   the package READMEs has one home; elsewhere, give it a sentence and a
+   link. The table of contents in [docs/README.md](docs/README.md) tells you
+   where a page belongs. A test fails when twelve words in a row, outside code
+   blocks, appear in two of those files, and names both.
+
+5. **Add a changeset** describing the user-visible change:
 
    ```sh
    pnpm changeset
@@ -74,10 +80,10 @@ A husky pre-commit hook runs prettier, lint, and typecheck.
    Commit the generated `.changeset/*.md` file with your change. Changes with
    no user-visible effect (internal refactors, tests, docs) don't need one.
 
-5. **Commit** using [Conventional Commits](https://www.conventionalcommits.org):
+6. **Commit** using [Conventional Commits](https://www.conventionalcommits.org):
    `feat:`, `fix:`, `refactor:`, `test:`, `docs:`, `chore:`, with a short
    body giving the why.
-6. **Open a PR.** CI must be green: format, lint, build, typecheck, tests.
+7. **Open a PR.** CI must be green: format, lint, build, typecheck, tests.
 
 ## How releases work
 

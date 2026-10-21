@@ -7,6 +7,7 @@ import { renderHomePage } from "../home.js";
 import { renderPage } from "../page.js";
 import { renderPlaygroundPage } from "../playground/page.js";
 import { readMenu } from "./menu.js";
+import { findRepeats } from "./repeats.js";
 import { renderDocsSite } from "./site.js";
 
 // Against the real docs/: a page left out of docs/README.md would be built
@@ -42,6 +43,21 @@ describe("the docs on the site", () => {
       (file) => file !== "README.md" && !file.startsWith("examples/"),
     );
     expect(listed.toSorted()).toEqual(written.toSorted());
+  });
+
+  it("explains each fact in one file, and links to it from the others", () => {
+    const repoDir = resolve(docsDir, "..");
+    const files = globSync(
+      ["docs/**/*.md", "README.md", "packages/*/README.md"],
+      { cwd: repoDir, exclude: ["docs/examples/**"] },
+    );
+    const texts = new Map(
+      files.map((file) => [
+        file,
+        readFileSync(resolve(repoDir, file), "utf-8"),
+      ]),
+    );
+    expect(findRepeats(texts)).toEqual([]);
   });
 
   it("builds the index and every listed page", () => {
