@@ -1,41 +1,27 @@
 :root {
   color-scheme: light dark;
-  --bg: #fbfaf7;
-  --surface: #ffffff;
-  --text: #1d1c1a;
-  --muted: #6b675f;
-  --line: #e4e0d8;
-  --code-bg: #f6f4ef;
-  --accent: #1f5fbf;
-  --add-bg: #c9eed1;
-  --good: #1f7a3a;
-  --weak: #a55b00;
-  --left: #5b5fb0;
-  --kw: #8a2f8f;
-  --type: #0b6e8a;
-  --str: #9a4a12;
-  --num: #1a6b52;
-  --com: #7b776e;
+  --bg: light-dark(#fbfaf7, #15161a);
+  --surface: light-dark(#ffffff, #1c1e24);
+  --text: light-dark(#1d1c1a, #e9e7e2);
+  --muted: light-dark(#6b675f, #9c988f);
+  --line: light-dark(#e4e0d8, #2c2f38);
+  --code-bg: light-dark(#f6f4ef, #121318);
+  --accent: light-dark(#1f5fbf, #8fb8ff);
+  --add-bg: light-dark(#c9eed1, #1f5230);
+  --good: light-dark(#1f7a3a, #6fd08a);
+  --weak: light-dark(#a55b00, #f0b35a);
+  --left: light-dark(#5b5fb0, #a9adf5);
+  --kw: light-dark(#8a2f8f, #d691da);
+  --type: light-dark(#0b6e8a, #6fc7e0);
+  --str: light-dark(#9a4a12, #e8a878);
+  --num: light-dark(#1a6b52, #86d6b8);
+  --com: light-dark(#7b776e, #8a8780);
 }
-@media (prefers-color-scheme: dark) {
-  :root {
-    --bg: #15161a;
-    --surface: #1c1e24;
-    --text: #e9e7e2;
-    --muted: #9c988f;
-    --line: #2c2f38;
-    --code-bg: #121318;
-    --accent: #8fb8ff;
-    --add-bg: #1f5230;
-    --good: #6fd08a;
-    --weak: #f0b35a;
-    --left: #a9adf5;
-    --kw: #d691da;
-    --type: #6fc7e0;
-    --str: #e8a878;
-    --num: #86d6b8;
-    --com: #8a8780;
-  }
+:root[data-theme="light"] {
+  color-scheme: light;
+}
+:root[data-theme="dark"] {
+  color-scheme: dark;
 }
 * {
   box-sizing: border-box;
@@ -94,6 +80,29 @@ nav.site .out {
 }
 nav.site .out {
   margin-left: auto;
+  align-items: center;
+  align-self: center;
+}
+nav.site .out a,
+nav.site .theme {
+  display: inline-flex;
+  padding: 2px;
+  border: 0;
+  background: none;
+  color: var(--muted);
+  cursor: pointer;
+}
+nav.site .out a:hover,
+nav.site .theme:hover {
+  color: var(--text);
+}
+nav.site .theme[hidden],
+nav.site .theme svg[hidden] {
+  display: none;
+}
+nav.site .out svg {
+  width: 18px;
+  height: 18px;
 }
 nav.site a[aria-current="page"] {
   color: var(--text);

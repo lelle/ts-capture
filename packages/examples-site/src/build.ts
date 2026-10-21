@@ -108,8 +108,8 @@ const bundled = {
 await Promise.all([
   build({
     ...bundled,
-    entryPoints: ["home", "examples", "how-it-decides", "docs"].map((page) =>
-      resolve(packageDir, `src/client/pages/${page}.ts`),
+    entryPoints: ["home", "examples", "how-it-decides", "docs", "theme"].map(
+      (page) => resolve(packageDir, `src/client/pages/${page}.ts`),
     ),
     outdir: resolve(outDir, "js"),
   }),

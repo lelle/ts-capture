@@ -71,8 +71,33 @@ describe("the site frame", () => {
         "How it decides",
         "Playground",
         "Docs",
-        "GitHub ↗",
       ]);
+    },
+  );
+
+  it.each(Object.entries(pages))(
+    "%s links GitHub by its mark, named for screen readers",
+    (_, page) => {
+      expect(bar(page)).toMatch(
+        /<a href="https:\/\/github\.com\/lelle\/ts-capture" aria-label="GitHub"><svg [^>]*aria-hidden="true"/,
+      );
+    },
+  );
+
+  it.each([
+    ["home", "js/theme.js"],
+    ["examples", "../js/theme.js"],
+    ["docs", "../../../js/theme.js"],
+  ] as const)(
+    "%s sets the theme before its stylesheets, and hides the switch until a script runs it",
+    (id, script) => {
+      const page = pages[id];
+      const at = page.indexOf(`<script src="${script}"></script>`);
+      expect(at).toBeGreaterThan(-1);
+      expect(at).toBeLessThan(page.indexOf('<link rel="stylesheet"'));
+      expect(bar(page)).toContain(
+        '<button type="button" class="theme" hidden>',
+      );
     },
   );
 

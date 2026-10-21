@@ -24,8 +24,12 @@ the browser scripts with esbuild.
 ## How a page is made
 
 - **`layout.ts`** holds what every page shares: the head, the bar, the footer,
-  the stylesheets and the script. A page calls `renderLayout` with its id,
+  the stylesheets and the scripts. A page calls `renderLayout` with its id,
   title, description and content, and nothing else.
+- **The theme** follows the system until the reader flips the switch in the
+  bar. `js/theme.js` is loaded in `<head>`, not as a module, so a saved choice
+  is set before the page is drawn; `site.css` gives every colour as
+  `light-dark(light, dark)`.
 - **`markup.ts`** builds HTML. `` markup`…` `` escapes every value put into it
   unless it is `Markup` already; `join` puts a separator between items.
   `trusted(text)` marks text as HTML, and belongs only where HTML is made by
