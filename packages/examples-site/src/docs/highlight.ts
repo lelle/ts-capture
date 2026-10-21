@@ -4,7 +4,7 @@ import {
   createHighlighter,
 } from "shiki";
 
-import { escapeHtml } from "../code.js";
+import { escapeHtml } from "../markup.js";
 
 /** Highlighted HTML for `code`, or undefined when there is no grammar for `lang`. */
 export type Highlight = (code: string, lang: string) => string | undefined;

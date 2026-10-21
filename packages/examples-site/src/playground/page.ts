@@ -30,7 +30,7 @@ export function renderPlaygroundPage(
   <div class="controls">
     <label for="starter">Start from</label>
     <select id="starter">${options}</select>
-    <span class="option"><input type="checkbox" id="name-shapes"${starters[0]?.nameShapes && trusted(" checked")}> <label for="name-shapes">Name repeated shapes</label></span>
+    <span class="option"><input type="checkbox" id="name-shapes"${starters[0]?.nameShapes && markup` checked`}> <label for="name-shapes">Name repeated shapes</label></span>
     <button type="button" id="run">Run</button>
     <span class="status" id="status" role="status"></span>
   </div>

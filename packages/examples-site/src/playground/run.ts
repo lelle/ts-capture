@@ -84,7 +84,7 @@ export async function runPlayground(
     return {
       ok: true,
       after: target,
-      html: String(renderCode(target, target)),
+      html: renderCode(target, target).text,
       summary: [NOTHING_OBSERVED],
       report: [],
       skips: [],
@@ -110,7 +110,7 @@ export async function runPlayground(
   return {
     ok: true,
     after,
-    html: String(renderCode(target, after)),
+    html: renderCode(target, after).text,
     summary: summaryLines(telemetry, after === target ? 0 : 1, skips, false),
     report: reportLines(telemetry, skips, () => SHOWN_AS),
     skips,

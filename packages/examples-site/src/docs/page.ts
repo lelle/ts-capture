@@ -2,7 +2,7 @@ import type { Highlight } from "./highlight.js";
 import type { MenuGroup } from "./menu.js";
 
 import { type BuildInfo, renderLayout } from "../layout.js";
-import { join, type Markup, markup, trusted } from "../markup.js";
+import { join, type Markup, markup } from "../markup.js";
 import {
   type Heading,
   relativeHref,
@@ -77,7 +77,7 @@ function renderMenu(
       current &&
       headings.length > 0 &&
       markup`<ul class="sections">${headings.map((h) => markup`<li><a href="#${h.id}">${h.menu}</a></li>`)}</ul>`;
-    return markup`<li><a href="${relativeHref(here, sitePathOf(target))}"${current && trusted(' aria-current="page"')}>${name}</a>${sections}</li>`;
+    return markup`<li><a href="${relativeHref(here, sitePathOf(target))}"${current && markup` aria-current="page"`}>${name}</a>${sections}</li>`;
   };
   const groups = join(
     menu.map(

@@ -3,9 +3,8 @@ import { posix } from "node:path";
 
 import type { Highlight } from "./highlight.js";
 
-import { escapeHtml } from "../code.js";
 import { REPO } from "../layout.js";
-import { type Markup, trusted } from "../markup.js";
+import { escapeHtml, type Markup, trusted } from "../markup.js";
 
 export interface Heading {
   id: string;

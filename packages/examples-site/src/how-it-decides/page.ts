@@ -1,6 +1,6 @@
-import { escapeHtml, renderCode } from "../code.js";
+import { renderCode } from "../code.js";
 import { type BuildInfo, renderLayout, REPO } from "../layout.js";
-import { join, Markup, markup, trusted } from "../markup.js";
+import { escapeHtml, join, Markup, markup, trusted } from "../markup.js";
 import {
   type ExamplesData,
   renderExampleBody,
@@ -60,7 +60,7 @@ function renderGrid(cards: DecidedCell[]): Markup {
         ({ cell }) => cell.kind === kind && cell.outcome === outcome,
       );
       if (!found) return markup`<td></td>`;
-      const cls = !found.cell.code && trusted(' class="unreachable"');
+      const cls = !found.cell.code && markup` class="unreachable"`;
       return markup`<td${cls}><a href="#${anchor(found.cell)}" title="${found.cell.title}">${found.cell.code ? "●" : "○"}</a></td>`;
     });
     return markup`<tr><th scope="row">${KINDS[kind]}</th>${cells}</tr>`;
@@ -157,7 +157,7 @@ function renderToc(cards: DecidedCell[]): Markup {
   const first = kinds[0];
   const kindItems = kinds.map(
     (kind) =>
-      markup`<li><a href="#${kind}-${outcomesOf(kind)[0]}" data-kind="${kind}" data-outcomes="${outcomesOf(kind).join(" ")}"${kind === first && trusted(' aria-current="true"')}>${KINDS[kind]}</a></li>`,
+      markup`<li><a href="#${kind}-${outcomesOf(kind)[0]}" data-kind="${kind}" data-outcomes="${outcomesOf(kind).join(" ")}"${kind === first && markup` aria-current="true"`}>${KINDS[kind]}</a></li>`,
   );
   const outcomeItems = OUTCOMES.map((outcome) => {
     const has = first !== undefined && outcomesOf(first).includes(outcome);

@@ -1,4 +1,4 @@
-import { type Markup, markup, trusted } from "./markup.js";
+import { type Markup, markup } from "./markup.js";
 
 export const REPO = "https://github.com/lelle/ts-capture";
 const NPM = "https://www.npmjs.com/package/@ts-capture/core";
@@ -34,37 +34,25 @@ const ICON_SVG =
 const ICON_LINK = markup`<link rel="icon" type="image/svg+xml" href="data:image/svg+xml,${encodeURIComponent(ICON_SVG)}">`;
 
 // Each page's own rules, beside the ones every page shares.
-const OWN_STYLESHEET: Partial<Record<PageId, string>> = {
-  docs: "docs",
-  "how-it-decides": "how-it-decides",
-};
+const OWN_STYLESHEET = new Set<PageId>(["docs", "how-it-decides"]);
 
-function renderStylesheets(current: PageId, root = rootOf(current)): Markup {
-  const own = OWN_STYLESHEET[current];
+function renderStylesheets(current: PageId, root: string): Markup {
   return markup`<link rel="stylesheet" href="${root}css/site.css">${
-    own &&
+    OWN_STYLESHEET.has(current) &&
     markup`
-<link rel="stylesheet" href="${root}css/${own}.css">`
+<link rel="stylesheet" href="${root}css/${current}.css">`
   }`;
 }
 
-function pageTitle(name: string): string {
-  return `${name} · ts-capture`;
-}
-
-function renderSiteBar(current: PageId, root = rootOf(current)): Markup {
+function renderSiteBar(current: PageId, root: string): Markup {
   const link = (id: PageId, href: string, name: string): Markup =>
-    markup`<a href="${href}"${id === current && trusted(' aria-current="page"')}>${name}</a>`;
+    markup`<a href="${href}"${id === current && markup` aria-current="page"`}>${name}</a>`;
   return markup`<nav class="site" aria-label="Site">${link("home", root || "./", "ts-capture")}<span class="pages">${PAGES.map(
     ({ id, name }) => link(id, `${root}${id}/`, name),
   )}</span><span class="out"><a href="${REPO}">GitHub ↗</a></span></nav>`;
 }
 
-function renderSiteFooter(
-  build: BuildInfo,
-  current: PageId,
-  root = rootOf(current),
-): Markup {
+function renderSiteFooter(build: BuildInfo, root: string): Markup {
   const commit =
     build.commit &&
     markup`<a href="${REPO}/commit/${build.commit}">${build.commit}</a>`;
@@ -104,7 +92,7 @@ const SCRIPT: Record<PageId, string> = {
 
 export function renderLayout(page: Page, build: BuildInfo): string {
   const { id, root = rootOf(id) } = page;
-  const title = id === "home" ? page.title : pageTitle(page.title);
+  const title = id === "home" ? page.title : `${page.title} · ts-capture`;
   return markup`<!doctype html>
 <html lang="en">
 <head>
@@ -127,7 +115,7 @@ ${
   }
 </div>
 ${page.body}
-${renderSiteFooter(build, id, root)}
+${renderSiteFooter(build, root)}
 ${
   page.extra &&
   markup`${page.extra}

@@ -1,5 +1,3 @@
-import { escapeHtml } from "./code.js";
-
 // Not named `html`: Prettier formats templates tagged `html` as HTML, which
 // would change what the pages send, inside `<pre>` too.
 
@@ -41,4 +39,16 @@ function render(value: Value): string {
   if (Array.isArray(value)) return value.map(render).join("");
   if (value === false || value === null || value === undefined) return "";
   return escapeHtml(String(value));
+}
+
+const ENTITIES: Record<string, string> = {
+  '"': "&quot;",
+  "&": "&amp;",
+  "'": "&#39;",
+  "<": "&lt;",
+  ">": "&gt;",
+};
+
+export function escapeHtml(text: string): string {
+  return text.replaceAll(/["&'<>]/g, (character) => ENTITIES[character]);
 }

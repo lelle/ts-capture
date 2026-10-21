@@ -136,7 +136,7 @@ async function film(
       [
         {
           title: SOURCE,
-          html: String(renderCode(measured.before, measured.before)),
+          html: renderCode(measured.before, measured.before).text,
         },
       ],
       { text: measured.coverageBefore, tone: "low" },
@@ -147,13 +147,12 @@ async function film(
     await onStage(page, "code", "2", "Add ts-capture to the build", [
       {
         title: VITE_CONFIG,
-        html: String(
-          renderCode(measured.viteConfigBefore, readCapture(VITE_CONFIG)),
-        ),
+        html: renderCode(measured.viteConfigBefore, readCapture(VITE_CONFIG))
+          .text,
       },
       {
         title: CAPTURE_CONFIG,
-        html: String(renderCode("", readCapture(CAPTURE_CONFIG))),
+        html: renderCode("", readCapture(CAPTURE_CONFIG)).text,
       },
     ]);
     await sleep(4000);
@@ -184,7 +183,7 @@ async function film(
       [
         {
           title: SOURCE,
-          html: String(renderCode(measured.before, measured.after)),
+          html: renderCode(measured.before, measured.after).text,
         },
       ],
       { text: measured.coverageAfter, tone: "full" },

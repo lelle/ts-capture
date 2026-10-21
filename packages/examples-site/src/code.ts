@@ -1,17 +1,5 @@
-import { type Markup, trusted } from "./markup.js";
+import { escapeHtml, type Markup, trusted } from "./markup.js";
 import { markAdded, tokenize } from "./tokens.js";
-
-const ENTITIES: Record<string, string> = {
-  '"': "&quot;",
-  "&": "&amp;",
-  "'": "&#39;",
-  "<": "&lt;",
-  ">": "&gt;",
-};
-
-export function escapeHtml(text: string): string {
-  return text.replaceAll(/["&'<>]/g, (character) => ENTITIES[character]);
-}
 
 /** `after` as highlighted HTML, with what `before` does not have wrapped in `ins`. */
 export function renderCode(before: string, after: string): Markup {

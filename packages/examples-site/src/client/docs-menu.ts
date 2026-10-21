@@ -1,3 +1,5 @@
+import { atPageBottom, onScrollFrame } from "./scroll.js";
+
 // Open in the HTML, so the menu is there without a script; folded on a narrow
 // screen, where it would push the page down. The section being read is the
 // last one whose heading has passed the top, or the last at the bottom.
@@ -17,25 +19,15 @@ export function setUpDocsMenu(): void {
   const targets = links.map((link) =>
     document.getElementById(decodeURIComponent(link.hash.slice(1))),
   );
-  let frame = 0;
   const update = (): void => {
-    frame = 0;
     let at = -1;
     targets.forEach((target, i) => {
       if (target && target.getBoundingClientRect().top <= 80) at = i;
     });
-    if (innerHeight + scrollY >= document.documentElement.scrollHeight - 2) {
-      at = targets.length - 1;
-    }
+    if (atPageBottom()) at = targets.length - 1;
     links.forEach((link, i) => link.classList.toggle("on-screen", i === at));
   };
-  addEventListener(
-    "scroll",
-    () => {
-      if (!frame) frame = requestAnimationFrame(update);
-    },
-    { passive: true },
-  );
+  onScrollFrame(update);
   update();
 }
 

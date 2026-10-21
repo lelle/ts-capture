@@ -1,3 +1,5 @@
+import { atPageBottom, onScrollFrame } from "./scroll.js";
+
 // The selected kind is the kind of the card being read, or of the card a click
 // pinned while that card is on screen; at the bottom of the page, the last
 // card. Outcome marks the selected kind's cards on screen. On a narrow screen
@@ -114,9 +116,7 @@ export function setUpToc(): void {
       ) ?? shown[0];
     // The last card can never reach the top: at the bottom it is the one being
     // read, unless a click pinned another.
-    const atBottom =
-      scrollY + innerHeight >= document.documentElement.scrollHeight - 2;
-    if (atBottom && !pinned) reading = ids.at(-1);
+    if (atPageBottom() && !pinned) reading = ids.at(-1);
     const shownFor = pinned ?? reading;
     if (shownFor) select(kindOf(shownFor));
     for (const link of outcomeLinks) {
@@ -134,18 +134,6 @@ export function setUpToc(): void {
     }
     update();
   });
-  let frame = 0;
-  addEventListener(
-    "scroll",
-    () => {
-      if (!frame) {
-        frame = requestAnimationFrame(() => {
-          frame = 0;
-          update();
-        });
-      }
-    },
-    { passive: true },
-  );
+  onScrollFrame(update);
   for (const card of cards) observer.observe(card);
 }
