@@ -204,6 +204,18 @@ describe("applySvelteTypesToFile", () => {
     );
   });
 
+  it("leaves a component alone that ignoreFiles names by its .svelte path", () => {
+    const svelteSource = `<script lang="ts">${FOO}</script>`;
+    const typeInfo: CollectedTypeInfo = [
+      entry("Legacy.svelte__script.ts", endOf(FOO, "(a"), [["string"]]),
+    ];
+    const result = applySvelteTypesToFile(svelteSource, typeInfo, {
+      svelteFilename: "Legacy.svelte",
+      ignoreFiles: [/Legacy\.svelte$/],
+    });
+    expect(result).toBe(svelteSource);
+  });
+
   it("returns source unchanged when no script block is present", () => {
     const svelteSource = "<p>No script here</p>";
     const typeInfo: CollectedTypeInfo = [

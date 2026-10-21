@@ -45,6 +45,10 @@ export function annotateSvelte(
   typeInfo: CollectedTypeInfo,
   options: ApplySvelteTypesOptions,
 ): AnnotateResult {
+  // The blocks are annotated under virtual names; a pattern names the component.
+  if (options.ignoreFiles?.some((p) => p.test(options.svelteFilename))) {
+    return { text: svelteSource, skips: [], telemetry: emptyTelemetry() };
+  }
   const ast = parse(svelteSource, { modern: true });
 
   type ScriptBlock = NonNullable<typeof ast.instance>;
