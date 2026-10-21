@@ -20,6 +20,7 @@ import { renderHomePage } from "./home.js";
 import { CELLS } from "./how-it-decides/cells.js";
 import { decide } from "./how-it-decides/decide.js";
 import { renderDecidesPage, ruleLinks } from "./how-it-decides/page.js";
+import { renderNotFoundPage } from "./not-found.js";
 import { type ExamplesData, renderPage } from "./page.js";
 import { reachableLibs } from "./playground/libs.js";
 import { renderPlaygroundPage } from "./playground/page.js";
@@ -51,6 +52,7 @@ const buildInfo: BuildInfo = {
 mkdirSync(playgroundDir, { recursive: true });
 mkdirSync(examplesDir, { recursive: true });
 writeFileSync(resolve(outDir, "index.html"), renderHomePage(buildInfo));
+writeFileSync(resolve(outDir, "404.html"), renderNotFoundPage(buildInfo));
 const stylesDir = resolve(packageDir, "src/styles");
 mkdirSync(resolve(outDir, "css"), { recursive: true });
 for (const sheet of readdirSync(stylesDir)) {

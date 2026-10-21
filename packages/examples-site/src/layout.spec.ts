@@ -5,6 +5,7 @@ import { renderHomePage } from "./home.js";
 import { renderDecidesPage } from "./how-it-decides/page.js";
 import { type BuildInfo, renderLayout } from "./layout.js";
 import { markup } from "./markup.js";
+import { renderNotFoundPage } from "./not-found.js";
 import { type ExamplesData, renderPage } from "./page.js";
 import { renderPlaygroundPage } from "./playground/page.js";
 
@@ -28,6 +29,7 @@ const pages = {
     [],
     BUILD,
   ),
+  "not-found": renderNotFoundPage(BUILD),
 };
 
 const bar = (page: string): string =>
@@ -188,6 +190,29 @@ describe("the site frame", () => {
       /<meta name="description" content="([^"]*)">/.exec(pages.home)![1],
     );
     expect(meta(pages.docs)).not.toHaveProperty("og:description");
+  });
+
+  it.each(Object.entries(pages))(
+    "%s lets a keyboard skip the bar, to the page's one main part",
+    (_, page) => {
+      const body = page.slice(page.indexOf("<body>") + "<body>".length);
+      expect(body.trimStart()).toMatch(
+        /^<a class="skip" href="#content">Skip to content<\/a>/,
+      );
+      expect(page.match(/<main[^>]* id="content"/g)).toHaveLength(1);
+    },
+  );
+
+  it("sends a reader who followed a dead link on to pages that exist, from any depth", () => {
+    const page = pages["not-found"];
+    expect(page).toContain("<title>Page not found · ts-capture</title>");
+    expect(marked(page)).toEqual([]);
+    const links = [...page.matchAll(/href="([^"#]+)"/g)]
+      .map((m) => m[1]!)
+      .filter((href) => !href.startsWith("http") && !href.startsWith("data:"));
+    expect(links.length).toBeGreaterThan(0);
+    for (const href of links) expect(href).toMatch(/^\/ts-capture\//);
+    expect(page).not.toContain('<script type="module"');
   });
 
   it("leaves the commit out when the build does not know it", () => {

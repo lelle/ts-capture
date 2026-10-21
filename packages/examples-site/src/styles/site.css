@@ -46,6 +46,19 @@ footer {
 a {
   color: var(--accent);
 }
+.skip {
+  position: absolute;
+  left: -9999px;
+}
+.skip:focus {
+  left: 16px;
+  top: 12px;
+  z-index: 10;
+  padding: 6px 12px;
+  border-radius: 6px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+}
 code,
 pre {
   font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;

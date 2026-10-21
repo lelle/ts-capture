@@ -1,7 +1,7 @@
 import { type Markup, markup, trusted } from "./markup.js";
 
 export const REPO = "https://github.com/lelle/ts-capture";
-const SITE = "https://lelle.github.io/ts-capture/";
+export const SITE = "https://lelle.github.io/ts-capture/";
 const NPM = "https://www.npmjs.com/package/@ts-capture/core";
 
 /**
@@ -15,10 +15,10 @@ export interface BuildInfo {
 }
 
 export type PageId =
-  "home" | "examples" | "how-it-decides" | "playground" | "docs";
+  "home" | "examples" | "how-it-decides" | "playground" | "docs" | "not-found";
 
 // In the order a reader learns it: what it writes, why, then try it.
-const PAGES: { id: Exclude<PageId, "home">; name: string }[] = [
+const PAGES: { id: Exclude<PageId, "home" | "not-found">; name: string }[] = [
   { id: "examples", name: "Examples" },
   { id: "how-it-decides", name: "How it decides" },
   { id: "playground", name: "Playground" },
@@ -114,7 +114,7 @@ export interface Page {
 }
 
 // The playground's script is built beside it, with the worker it starts.
-const SCRIPT: Record<PageId, string> = {
+const SCRIPT: Partial<Record<PageId, string>> = {
   home: "js/home.js",
   examples: "js/examples.js",
   "how-it-decides": "js/how-it-decides.js",
@@ -141,6 +141,7 @@ ${
 ${renderStylesheets(id, root)}
 </head>
 <body>
+<a class="skip" href="#content">Skip to content</a>
 <div class="top">
   ${renderSiteBar(id, root)}${
     page.top &&
@@ -154,7 +155,7 @@ ${
   page.extra &&
   markup`${page.extra}
 `
-}<script type="module" src="${root}${SCRIPT[id]}"></script>
+}${SCRIPT[id] && markup`<script type="module" src="${root}${SCRIPT[id]}"></script>`}
 </body>
 </html>
 `.toString();

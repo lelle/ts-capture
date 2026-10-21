@@ -166,7 +166,7 @@ describe("renderDecidesPage", () => {
     expect(at('<nav class="site"')).toBeLessThan(at("<h1>"));
     expect(at("<h1>")).toBeLessThan(at('<div class="layout">'));
     expect(at('<div class="layout">')).toBeLessThan(at('<nav class="toc"'));
-    expect(at('<nav class="toc"')).toBeLessThan(at("<main>"));
+    expect(at('<nav class="toc"')).toBeLessThan(at('<main id="content">'));
     expect(at("</main>")).toBeLessThan(at('<footer class="site"'));
   });
 

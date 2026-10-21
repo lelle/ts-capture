@@ -5,18 +5,19 @@ and the docs. Private; it is published to GitHub Pages, never to npm.
 
 ```sh
 pnpm examples   # from the repository root; writes site/
-pnpm site       # serves site/ at http://localhost:4173; the playground does not run from file:
+pnpm site       # serves site/ at http://localhost:4173/ts-capture/; the playground does not run from file:
 ```
 
 ## The pages
 
-| Page           | Source                | Built from                                                          |
-| -------------- | --------------------- | ------------------------------------------------------------------- |
-| Home           | `src/home.ts`         | the recording made by [`@ts-capture/demo`](../demo)                 |
-| Examples       | `src/page.ts`         | [`docs/examples/examples.json`](../../docs/examples/README.md)      |
-| How it decides | `src/how-it-decides/` | `cells.ts`, each cell run through the playground's applier at build |
-| Playground     | `src/playground/`     | `starters.ts`; runs `@ts-capture/core/browser` in a worker          |
-| Docs           | `src/docs/`           | `docs/**/*.md`, menu from `docs/README.md`, code coloured by Shiki  |
+| Page           | Source                | Built from                                                                             |
+| -------------- | --------------------- | -------------------------------------------------------------------------------------- |
+| Home           | `src/home.ts`         | the recording made by [`@ts-capture/demo`](../demo)                                    |
+| Examples       | `src/page.ts`         | [`docs/examples/examples.json`](../../docs/examples/README.md)                         |
+| How it decides | `src/how-it-decides/` | `cells.ts`, each cell run through the playground's applier at build                    |
+| Playground     | `src/playground/`     | `starters.ts`; runs `@ts-capture/core/browser` in a worker                             |
+| Docs           | `src/docs/`           | `docs/**/*.md`, menu from `docs/README.md`, code coloured by Shiki                     |
+| 404            | `src/not-found.ts`    | nothing; Pages serves it for any missing address, so its links start at `/ts-capture/` |
 
 `src/build.ts` writes them all to `site/`, copies the stylesheets and bundles
 the browser scripts with esbuild.

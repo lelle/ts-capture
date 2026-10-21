@@ -37,7 +37,7 @@ export function renderDocsPage(
       path: here,
       body: markup`<div class="docs">
 ${renderMenu(file, menu, doc.title, doc.headings)}
-<main class="doc">
+<main class="doc" id="content">
 ${doc.html}
 ${renderPager(file, menu)}
 </main>

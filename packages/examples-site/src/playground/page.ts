@@ -25,7 +25,7 @@ export function renderPlaygroundPage(
       top: markup`<h1>Playground</h1>
   <p class="lede">Write untyped TypeScript, call it at the end of the file, and run. ts-capture watches the calls and writes the types it saw back into the code.</p>
   <p class="how">Everything happens in this tab: the code runs in your browser and is sent nowhere. The calls play the part your test suite plays in a real project.</p>`,
-      body: markup`<main>
+      body: markup`<main id="content">
   <noscript><p class="empty">The playground needs JavaScript. The <a href="../examples/">examples</a> do not.</p></noscript>
   <div class="controls">
     <label for="starter">Start from</label>

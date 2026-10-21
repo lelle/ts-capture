@@ -60,7 +60,7 @@ export function renderHomePage(build: BuildInfo): string {
         "ts-capture watches your code run and writes the types it saw back into your source.",
       top: markup`<h1>ts-capture</h1>
   <p class="lede">Capture runtime values, shape them as TypeScript types. ts-capture watches how your code is called — in tests, in dev, in the browser — and writes the types it saw back into your source.</p>`,
-      body: markup`<main>
+      body: markup`<main id="content">
   <figure class="demo">
     <video src="demo.mp4" width="960" height="720" muted loop playsinline controls preload="metadata" aria-describedby="demo-description"></video>
     <figcaption id="demo-description">An order form whose code has no types. The ts-capture plugin is added to the Vite config, two orders are placed in the browser, and <code>ts-capture apply</code> writes four named types and six annotations into the source, taking type coverage from 77% to 100%.</figcaption>

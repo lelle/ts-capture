@@ -244,7 +244,7 @@ export function renderDecidesPage(
   ${renderGrid(cards)}`,
       body: markup`<div class="layout">
 ${renderToc(cards)}
-<main>
+<main id="content">
 ${renderSections(cards, real)}
 </main>
 </div>`,
