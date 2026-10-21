@@ -7,6 +7,7 @@ import {
   renderSiteFooter,
   REPO,
 } from "../frame.js";
+import { join, Markup, markup, trusted } from "../markup.js";
 import {
   type ExamplesData,
   renderExampleBody,
@@ -43,8 +44,8 @@ const KINDS: Record<SiteKind, string> = {
 const anchor = (cell: Cell): string => `${cell.kind}-${cell.outcome}`;
 
 /** Escaped prose, with what it quotes in backticks set as code. */
-const prose = (text: string): string =>
-  escapeHtml(text).replace(/`([^`]+)`/g, "<code>$1</code>");
+const prose = (text: string): Markup =>
+  trusted(escapeHtml(text).replace(/`([^`]+)`/g, "<code>$1</code>"));
 
 /** What the grid's marks mean, for the marks it has. */
 function legend(cards: DecidedCell[]): string {
@@ -56,25 +57,25 @@ function legend(cards: DecidedCell[]): string {
   return parts.join(" · ");
 }
 
-function renderGrid(cards: DecidedCell[]): string {
+function renderGrid(cards: DecidedCell[]): Markup {
   const kinds = [...new Set(cards.map(({ cell }) => cell.kind))];
   const head = OUTCOMES.map(
-    (outcome) => `<th scope="col">${escapeHtml(outcome)}</th>`,
-  ).join("");
+    (outcome) => markup`<th scope="col">${outcome}</th>`,
+  );
   const rows = kinds.map((kind) => {
     const cells = OUTCOMES.map((outcome: Outcome) => {
       const found = cards.find(
         ({ cell }) => cell.kind === kind && cell.outcome === outcome,
       );
-      if (!found) return "<td></td>";
-      const cls = found.cell.code ? "" : ' class="unreachable"';
-      return `<td${cls}><a href="#${anchor(found.cell)}" title="${escapeHtml(found.cell.title)}">${found.cell.code ? "●" : "○"}</a></td>`;
-    }).join("");
-    return `<tr><th scope="row">${escapeHtml(KINDS[kind])}</th>${cells}</tr>`;
+      if (!found) return markup`<td></td>`;
+      const cls = !found.cell.code && trusted(' class="unreachable"');
+      return markup`<td${cls}><a href="#${anchor(found.cell)}" title="${found.cell.title}">${found.cell.code ? "●" : "○"}</a></td>`;
+    });
+    return markup`<tr><th scope="row">${KINDS[kind]}</th>${cells}</tr>`;
   });
-  return `<div class="grid-scroll"><table class="grid">
+  return markup`<div class="grid-scroll"><table class="grid">
   <thead><tr><td></td>${head}</tr></thead>
-  <tbody>${rows.join("")}</tbody>
+  <tbody>${rows}</tbody>
 </table></div>
 <p class="how">${legend(cards)}</p>`;
 }
@@ -82,27 +83,27 @@ function renderGrid(cards: DecidedCell[]): string {
 function renderCard(
   { cell, after, appliedTo, skip }: DecidedCell,
   real: ExamplesData,
-): string {
+): Markup {
   const outcome =
     cell.outcome === "written"
       ? "Written"
-      : `Not written: <code>${escapeHtml(cell.outcome)}</code>`;
+      : markup`Not written: <code>${cell.outcome}</code>`;
   const panes =
     cell.code && after !== undefined
       ? appliedTo !== undefined
-        ? `<div class="panes three">
+        ? markup`<div class="panes three">
         <figure><figcaption>Run</figcaption><pre><code>${renderCode(cell.code, cell.code)}</code></pre></figure>
         <figure><figcaption>${cell.twice ? "After the first apply" : "Changed before apply"}</figcaption><pre><code>${renderCode(cell.code, appliedTo)}</code></pre></figure>
         <figure><figcaption>After <code>ts-capture apply</code></figcaption><pre><code>${renderCode(appliedTo, after)}</code></pre></figure>
       </div>`
-        : `<div class="panes">
+        : markup`<div class="panes">
         <figure><figcaption>Before</figcaption><pre><code>${renderCode(cell.code, cell.code)}</code></pre></figure>
         <figure><figcaption>After <code>ts-capture apply</code></figcaption><pre><code>${renderCode(cell.code, after)}</code></pre></figure>
       </div>`
-      : `<p class="note">${prose(cell.unreachable ?? "")}</p>`;
-  const saw = skip?.observed
-    ? `<dt>Observed</dt><dd><code>${escapeHtml(skip.observed)}</code>${skip.detail ? ` · ${escapeHtml(skip.detail)}` : ""}</dd>`
-    : "";
+      : markup`<p class="note">${prose(cell.unreachable ?? "")}</p>`;
+  const saw =
+    skip?.observed &&
+    markup`<dt>Observed</dt><dd><code>${skip.observed}</code>${skip.detail && markup` · ${skip.detail}`}</dd>`;
   const found = (cell.real ?? []).flatMap((id) => {
     const example = real.examples.find((candidate) => candidate.id === id);
     return example ? [example] : [];
@@ -113,35 +114,38 @@ function renderCard(
     .filter((example) => example.verdict !== "left")
     .map(
       (example) =>
-        `<a href="../examples/#${escapeHtml(example.id)}">${escapeHtml(example.title)}</a>`,
-    )
-    .join(", ");
-  const shown = found
-    .filter((example) => example.verdict === "left")
-    .map(
-      (example) =>
-        `<details class="real"><summary>In real code: ${escapeHtml(example.title)}</summary>${renderExampleBody(example, real.sources[example.source]!)}</details>`,
-    )
-    .join("\n");
+        markup`<a href="../examples/#${example.id}">${example.title}</a>`,
+    );
+  const shown = join(
+    found
+      .filter((example) => example.verdict === "left")
+      .map(
+        (example) =>
+          markup`<details class="real"><summary>In real code: ${example.title}</summary>${renderExampleBody(example, real.sources[example.source]!)}</details>`,
+      ),
+    "\n",
+  );
   const links = [
-    `<a href="${CORE}/${escapeHtml(cell.decidedBy.file)}">${escapeHtml(cell.decidedBy.file)}</a> <code>${escapeHtml(cell.decidedBy.symbol)}</code>`,
-    cell.code ? `<a href="${TEST}">the test that checks this card</a>` : "",
+    markup`<a href="${CORE}/${cell.decidedBy.file}">${cell.decidedBy.file}</a> <code>${cell.decidedBy.symbol}</code>`,
+    cell.code && markup`<a href="${TEST}">the test that checks this card</a>`,
     // The playground runs one text, as written, without looking for `this`.
-    cell.code && !cell.applyTo && !cell.twice && !cell.implicitThis
-      ? `<a href="../playground/#code=${encodeURIComponent(cell.code)}">open in the playground</a>`
-      : "",
-  ].filter(Boolean);
-  return `<article id="${anchor(cell)}" class="example">
+    cell.code &&
+      !cell.applyTo &&
+      !cell.twice &&
+      !cell.implicitThis &&
+      markup`<a href="../playground/#code=${encodeURIComponent(cell.code)}">open in the playground</a>`,
+  ].filter((link): link is Markup => link instanceof Markup);
+  return markup`<article id="${anchor(cell)}" class="example">
       <header>
-        <h3><a href="#${anchor(cell)}">${escapeHtml(cell.title)}</a></h3>
-        <p class="meta"><span class="source">${escapeHtml(KINDS[cell.kind])}${named(cell) ? ` <code>${escapeHtml(cell.name)}</code>` : ""}</span> <span>${outcome}</span></p>
+        <h3><a href="#${anchor(cell)}">${cell.title}</a></h3>
+        <p class="meta"><span class="source">${KINDS[cell.kind]}${named(cell) && markup` <code>${cell.name}</code>`}</span> <span>${outcome}</span></p>
       </header>
       ${panes}
       <p class="caption">${prose(cell.why)}</p>
       <dl class="note">
         ${saw}
-        <dt>Decided in</dt><dd>${links.join(" · ")}</dd>
-        ${examples ? `<dt>In real code</dt><dd>${examples}</dd>` : ""}
+        <dt>Decided in</dt><dd>${join(links, " · ")}</dd>
+        ${examples.length > 0 && markup`<dt>In real code</dt><dd>${join(examples, ", ")}</dd>`}
       </dl>
       ${shown}
     </article>`;
@@ -164,30 +168,28 @@ const GRID_STYLE = `
  * Outcome: every outcome, the ones the selected kind lacks disabled. Rendered
  * with the first kind selected, so the menu reads right before the script runs.
  */
-function renderToc(cards: DecidedCell[]): string {
+function renderToc(cards: DecidedCell[]): Markup {
   const kinds = [...new Set(cards.map(({ cell }) => cell.kind))];
   const outcomesOf = (kind: SiteKind): Outcome[] =>
     OUTCOMES.filter((o) =>
       cards.some(({ cell }) => cell.kind === kind && cell.outcome === o),
     );
   const first = kinds[0];
-  const kindItems = kinds
-    .map(
-      (kind) =>
-        `<li><a href="#${kind}-${outcomesOf(kind)[0]}" data-kind="${kind}" data-outcomes="${outcomesOf(kind).join(" ")}"${kind === first ? ' aria-current="true"' : ""}>${escapeHtml(KINDS[kind])}</a></li>`,
-    )
-    .join("");
+  const kindItems = kinds.map(
+    (kind) =>
+      markup`<li><a href="#${kind}-${outcomesOf(kind)[0]}" data-kind="${kind}" data-outcomes="${outcomesOf(kind).join(" ")}"${kind === first && trusted(' aria-current="true"')}>${KINDS[kind]}</a></li>`,
+  );
   const outcomeItems = OUTCOMES.map((outcome) => {
     const has = first !== undefined && outcomesOf(first).includes(outcome);
     return has
-      ? `<li><a data-outcome="${outcome}" href="#${first}-${outcome}">${escapeHtml(outcome)}</a></li>`
-      : `<li><a data-outcome="${outcome}" aria-disabled="true">${escapeHtml(outcome)}</a></li>`;
-  }).join("");
-  return `<nav class="toc" aria-label="Kinds and outcomes">
+      ? markup`<li><a data-outcome="${outcome}" href="#${first}-${outcome}">${outcome}</a></li>`
+      : markup`<li><a data-outcome="${outcome}" aria-disabled="true">${outcome}</a></li>`;
+  });
+  return markup`<nav class="toc" aria-label="Kinds and outcomes">
   <button type="button" class="toc-toggle" aria-expanded="false" aria-controls="toc-list"><span class="toc-current">Kinds and outcomes</span></button>
   <div id="toc-list" class="toc-list">
     <p class="toc-kind">Kind</p><ul id="kinds">${kindItems}</ul>
-    <p class="toc-kind" id="outcome-heading">Outcome${first ? ` — ${escapeHtml(KINDS[first])}` : ""}</p><ul id="outcomes">${outcomeItems}</ul>
+    <p class="toc-kind" id="outcome-heading">Outcome${first && markup` — ${KINDS[first]}`}</p><ul id="outcomes">${outcomeItems}</ul>
   </div>
 </nav>`;
 }
@@ -224,19 +226,22 @@ const named = (cell: Cell): boolean =>
   cell.name !== "" && cell.kind !== "return" && cell.kind !== "this";
 
 /** Each kind's cards in a section under the kind's name. */
-function renderSections(cards: DecidedCell[], real: ExamplesData): string {
+function renderSections(cards: DecidedCell[], real: ExamplesData): Markup {
   const kinds = [...new Set(cards.map(({ cell }) => cell.kind))];
-  return kinds
-    .map(
-      (kind) => `<section class="kind" id="kind-${kind}">
-  <h2 class="kind-heading">${escapeHtml(KINDS[kind])}</h2>
-${cards
-  .filter(({ cell }) => cell.kind === kind)
-  .map((card) => renderCard(card, real))
-  .join("\n")}
+  return join(
+    kinds.map(
+      (kind) => markup`<section class="kind" id="kind-${kind}">
+  <h2 class="kind-heading">${KINDS[kind]}</h2>
+${join(
+  cards
+    .filter(({ cell }) => cell.kind === kind)
+    .map((card) => renderCard(card, real)),
+  "\n",
+)}
 </section>`,
-    )
-    .join("\n");
+    ),
+    "\n",
+  );
 }
 
 const SECTION_STYLE = `
@@ -284,7 +289,7 @@ export function renderDecidesPage(
       kindOrder.indexOf(a.cell.kind) - kindOrder.indexOf(b.cell.kind) ||
       OUTCOMES.indexOf(a.cell.outcome) - OUTCOMES.indexOf(b.cell.outcome),
   );
-  return `<!doctype html>
+  return markup`<!doctype html>
 <html lang="en">
 <head>
 <meta charset="utf-8">
@@ -292,7 +297,7 @@ export function renderDecidesPage(
 ${ICON_LINK}
 <title>${pageTitle("How it decides")}</title>
 <meta name="description" content="Every way ts-capture apply treats a position: what it writes, what it refuses to write, and the code that decides it.">
-<style>${STYLE}${GRID_STYLE}${TOC_STYLE}${SECTION_STYLE}</style>
+<style>${trusted(STYLE + GRID_STYLE + TOC_STYLE + SECTION_STYLE)}</style>
 </head>
 <body>
 <div class="top">
@@ -312,5 +317,5 @@ ${renderSiteFooter(build, "how-it-decides")}
 <script type="module" src="../js/how-it-decides.js"></script>
 </body>
 </html>
-`;
+`.toString();
 }
