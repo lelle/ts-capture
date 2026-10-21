@@ -31,6 +31,11 @@ export function trusted(text: string): Markup {
   return new Markup(text);
 }
 
+/** The items with `separator`, as text, between each two. */
+export function join(items: Markup[], separator: string): Markup {
+  return new Markup(items.map(render).join(escapeHtml(separator)));
+}
+
 function render(value: Value): string {
   if (value instanceof Markup) return value.text;
   if (Array.isArray(value)) return value.map(render).join("");

@@ -56,14 +56,16 @@ const DATA: ExamplesData = {
 
 describe("renderCode", () => {
   it("wraps what apply added in ins and colours the rest", () => {
-    expect(renderCode("f(a)", "f(a: string)")).toBe(
+    expect(String(renderCode("f(a)", "f(a: string)"))).toBe(
       '<span class="t-name">f</span>(<span class="t-name">a</span><ins>: <span class="t-type">string</span></ins>)',
     );
   });
 
   it("escapes code that looks like markup", () => {
-    expect(renderCode("a", "a as Map<string, number>")).toContain("&lt;");
-    expect(renderCode("a", "a as Map<string, number>")).not.toContain(
+    expect(String(renderCode("a", "a as Map<string, number>"))).toContain(
+      "&lt;",
+    );
+    expect(String(renderCode("a", "a as Map<string, number>"))).not.toContain(
       "<string",
     );
   });
@@ -120,9 +122,8 @@ describe("renderPage", () => {
   });
 
   it("shows what was observed and why it was left, for a position not written", () => {
-    const body = renderExampleBody(
-      DATA.examples[0]!,
-      DATA.sources["mini-app"]!,
+    const body = String(
+      renderExampleBody(DATA.examples[0]!, DATA.sources["mini-app"]!),
     );
     expect(body).toContain("{ &quot;sku-lamp&quot;: number }");
     expect(body).toContain("can&#39;t index &lt;that&gt;.");

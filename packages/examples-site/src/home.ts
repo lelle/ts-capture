@@ -5,7 +5,7 @@ import {
   renderSiteFooter,
   REPO,
 } from "./frame.js";
-import { type Markup, markup, trusted } from "./markup.js";
+import { join, type Markup, markup, trusted } from "./markup.js";
 import { STYLE } from "./style.js";
 
 const DOCS = "docs";
@@ -45,8 +45,11 @@ export const INTEGRATIONS: Integration[] = [
 ];
 
 function renderIntegration(integration: Integration): Markup {
-  const packages = integration.packages.map(
-    (name, i) => markup`${i > 0 && " "}<span class="package">${name}</span>`,
+  const packages = join(
+    integration.packages.map(
+      (name) => markup`<span class="package">${name}</span>`,
+    ),
+    " ",
   );
   return markup`<li>
       <h3>${integration.name}</h3>
@@ -80,7 +83,7 @@ ${ICON_LINK}
   <p class="how">The recording is made by running every step for real; nothing in it is written by hand. See <a href="examples/">what it wrote into real projects</a>, the results a reviewer should change included, or <a href="playground/">try it in your browser</a>.</p>
   <h2>Install</h2>
   <ul class="install">
-    ${INTEGRATIONS.map((integration, i) => markup`${i > 0 && "\n    "}${renderIntegration(integration)}`)}
+    ${join(INTEGRATIONS.map(renderIntegration), "\n    ")}
   </ul>
   <p class="how">Then run your tests, and <code>npx ts-capture apply types.json --dry-run</code> to see what it would write. The <a href="${DOCS}/tutorials/getting-started/">getting started tutorial</a> takes a first run from install to <code>apply</code>.</p>
   <p class="how">Already typed? Run the tests with <code>TS_CAPTURE_OBSERVE_ANNOTATED=1</code> and <code>npx ts-capture verify</code> lists the types you wrote that the run contradicts. See <a href="${DOCS}/how-to/check-your-types/">check the types you wrote</a>.</p>

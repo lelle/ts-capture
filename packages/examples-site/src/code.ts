@@ -1,3 +1,4 @@
+import { type Markup, trusted } from "./markup.js";
 import { markAdded, tokenize } from "./tokens.js";
 
 const ENTITIES: Record<string, string> = {
@@ -13,7 +14,7 @@ export function escapeHtml(text: string): string {
 }
 
 /** `after` as highlighted HTML, with what `before` does not have wrapped in `ins`. */
-export function renderCode(before: string, after: string): string {
+export function renderCode(before: string, after: string): Markup {
   let html = "";
   let inAdded = false;
   for (const token of markAdded(tokenize(before), tokenize(after))) {
@@ -27,5 +28,5 @@ export function renderCode(before: string, after: string): string {
         ? text
         : `<span class="t-${token.kind}">${text}</span>`;
   }
-  return inAdded ? `${html}</ins>` : html;
+  return trusted(inAdded ? `${html}</ins>` : html);
 }

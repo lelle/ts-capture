@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { markup, trusted } from "./markup.js";
+import { join, markup, trusted } from "./markup.js";
 
 // Every value put into a page goes through the tag, so a value nobody thought
 // to escape is escaped anyway; only what is marked as HTML goes in as HTML.
@@ -39,5 +39,13 @@ describe("markup", () => {
         markup`<p>${3}${shown && markup`<i>no</i>`}${null}${undefined}</p>`,
       ),
     ).toBe("<p>3</p>");
+  });
+});
+
+describe("join", () => {
+  it("puts the separator between the items, as text", () => {
+    const items = ["a", "<b>"].map((name) => markup`<li>${name}</li>`);
+    expect(String(join(items, "\n"))).toBe("<li>a</li>\n<li>&lt;b&gt;</li>");
+    expect(String(join([], "\n"))).toBe("");
   });
 });

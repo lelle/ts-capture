@@ -1,4 +1,4 @@
-import { escapeHtml, renderCode } from "./code.js";
+import { renderCode } from "./code.js";
 import {
   type BuildInfo,
   ICON_LINK,
@@ -6,6 +6,7 @@ import {
   renderSiteBar,
   renderSiteFooter,
 } from "./frame.js";
+import { join, type Markup, markup, trusted } from "./markup.js";
 import { STYLE } from "./style.js";
 
 export interface ExampleSource {
@@ -58,11 +59,11 @@ const VERDICTS: Record<Example["verdict"], { label: string; summary: string }> =
 
 const VERDICT_ORDER: Example["verdict"][] = ["good", "weak", "left"];
 
-function fileReference(example: Example, source: ExampleSource): string {
-  const place = `${escapeHtml(example.file)}:${example.line}`;
-  if (!source.url) return `<span class="file">${place}</span>`;
+function fileReference(example: Example, source: ExampleSource): Markup {
+  const place = `${example.file}:${example.line}`;
+  if (!source.url) return markup`<span class="file">${place}</span>`;
   const href = `${source.url}/blob/${source.commit}/${example.file}#L${example.line}`;
-  return `<a class="file" href="${escapeHtml(href)}">${place}</a>`;
+  return markup`<a class="file" href="${href}">${place}</a>`;
 }
 
 /** A link from an example to the card on How it decides that shows its rule. */
@@ -75,28 +76,28 @@ export interface RuleLink {
 export function renderExampleBody(
   example: Example,
   source: ExampleSource,
-): string {
+): Markup {
   const verdict = VERDICTS[example.verdict];
-  const better = example.better
-    ? `<p class="note better"><span class="note-label">A reviewer would write</span> <code>${escapeHtml(example.better)}</code></p>`
-    : "";
-  const left = example.leftAlone
-    ? `<dl class="note left-alone">
-        <dt>Not written</dt><dd><code>${escapeHtml(example.leftAlone.name)}</code> · ${escapeHtml(example.leftAlone.group.toLowerCase())}</dd>
-        ${example.leftAlone.observed ? `<dt>Observed</dt><dd><code>${escapeHtml(example.leftAlone.observed)}</code></dd>` : ""}
-        ${example.leftAlone.reason ? `<dt>Why</dt><dd>${escapeHtml(example.leftAlone.reason)}</dd>` : ""}
-      </dl>`
-    : "";
-  return `<p class="meta">
-          <span class="verdict verdict-${example.verdict}" title="${escapeHtml(verdict.summary)}">${verdict.label}</span>
-          <span class="source">${escapeHtml(source.name)}</span>
+  const better =
+    example.better &&
+    markup`<p class="note better"><span class="note-label">A reviewer would write</span> <code>${example.better}</code></p>`;
+  const left =
+    example.leftAlone &&
+    markup`<dl class="note left-alone">
+        <dt>Not written</dt><dd><code>${example.leftAlone.name}</code> · ${example.leftAlone.group.toLowerCase()}</dd>
+        ${example.leftAlone.observed && markup`<dt>Observed</dt><dd><code>${example.leftAlone.observed}</code></dd>`}
+        ${example.leftAlone.reason && markup`<dt>Why</dt><dd>${example.leftAlone.reason}</dd>`}
+      </dl>`;
+  return markup`<p class="meta">
+          <span class="verdict verdict-${example.verdict}" title="${verdict.summary}">${verdict.label}</span>
+          <span class="source">${source.name}</span>
           ${fileReference(example, source)}
         </p>
       <div class="panes">
         <figure><figcaption>Before</figcaption><pre><code>${renderCode(example.before, example.before)}</code></pre></figure>
         <figure><figcaption>After <code>ts-capture apply</code></figcaption><pre><code>${renderCode(example.before, example.after)}</code></pre></figure>
       </div>
-      <p class="caption">${escapeHtml(example.caption)}</p>
+      <p class="caption">${example.caption}</p>
       ${better}${left}`;
 }
 
@@ -104,49 +105,48 @@ function renderExample(
   example: Example,
   source: ExampleSource,
   rule: RuleLink | undefined,
-): string {
-  const ruleLine = rule
-    ? `\n      <dl class="note rule"><dt>The rule</dt><dd><a href="${escapeHtml(rule.href)}">${escapeHtml(rule.label)} →</a></dd></dl>`
-    : "";
-  return `<article id="${escapeHtml(example.id)}" class="example" data-source="${escapeHtml(example.source)}" data-verdict="${example.verdict}">
+): Markup {
+  const ruleLine =
+    rule &&
+    markup`\n      <dl class="note rule"><dt>The rule</dt><dd><a href="${rule.href}">${rule.label} →</a></dd></dl>`;
+  return markup`<article id="${example.id}" class="example" data-source="${example.source}" data-verdict="${example.verdict}">
       <header>
-        <h2><a href="#${escapeHtml(example.id)}">${escapeHtml(example.title)}</a></h2>
+        <h2><a href="#${example.id}">${example.title}</a></h2>
       </header>
       ${renderExampleBody(example, source)}${ruleLine}
     </article>`;
 }
 
-function renderSources(data: ExamplesData): string {
-  return Object.entries(data.sources)
-    .map(([id, source]) => {
+function renderSources(data: ExamplesData): Markup {
+  return join(
+    Object.entries(data.sources).map(([id, source]) => {
       const count = data.examples.filter(
         (example) => example.source === id,
       ).length;
       const name = source.url
-        ? `<a href="${escapeHtml(source.url)}">${escapeHtml(source.name)}</a>`
-        : escapeHtml(source.name);
-      return `<li><strong>${name}</strong> at <code>${escapeHtml(source.commit)}</code>, ts-capture <code>${escapeHtml(source.tsCapture)}</code>, ${count} example${count === 1 ? "" : "s"}. ${escapeHtml(source.about)}</li>`;
-    })
-    .join("\n");
+        ? markup`<a href="${source.url}">${source.name}</a>`
+        : source.name;
+      return markup`<li><strong>${name}</strong> at <code>${source.commit}</code>, ts-capture <code>${source.tsCapture}</code>, ${count} example${count === 1 ? "" : "s"}. ${source.about}</li>`;
+    }),
+    "\n",
+  );
 }
 
-function renderFilters(data: ExamplesData): string {
+function renderFilters(data: ExamplesData): Markup {
   const button = (
     group: string,
     value: string,
     label: string,
     pressed = false,
   ) =>
-    `<button type="button" data-filter="${group}" data-value="${escapeHtml(value)}" aria-pressed="${pressed}">${escapeHtml(label)}</button>`;
-  const sources = Object.entries(data.sources)
-    .map(([id, source]) => button("source", id, source.name))
-    .join("");
+    markup`<button type="button" data-filter="${group}" data-value="${value}" aria-pressed="${String(pressed)}">${label}</button>`;
+  const sources = Object.entries(data.sources).map(([id, source]) =>
+    button("source", id, source.name),
+  );
   const verdicts = VERDICT_ORDER.filter((verdict) =>
     data.examples.some((example) => example.verdict === verdict),
-  )
-    .map((verdict) => button("verdict", verdict, VERDICTS[verdict].label))
-    .join("");
-  return `<nav class="filters" aria-label="Filter examples" hidden>
+  ).map((verdict) => button("verdict", verdict, VERDICTS[verdict].label));
+  return markup`<nav class="filters" aria-label="Filter examples" hidden>
       <div role="group" aria-label="Project">${button("source", "", "All projects", true)}${sources}</div>
       <div role="group" aria-label="Result">${button("verdict", "", "All results", true)}${verdicts}</div>
     </nav>`;
@@ -165,16 +165,17 @@ export function renderPage(
     ...data,
     examples: data.examples.filter((example) => example.verdict !== "left"),
   };
-  const examples = written.examples
-    .map((example) =>
+  const examples = join(
+    written.examples.map((example) =>
       renderExample(
         example,
         data.sources[example.source]!,
         rules.get(example.id),
       ),
-    )
-    .join("\n");
-  return `<!doctype html>
+    ),
+    "\n",
+  );
+  return markup`<!doctype html>
 <html lang="en">
 <head>
 <meta charset="utf-8">
@@ -182,7 +183,7 @@ export function renderPage(
 ${ICON_LINK}
 <title>${pageTitle("Examples")}</title>
 <meta name="description" content="Before and after: what ts-capture wrote into real code, including the results a reviewer should change.">
-<style>${STYLE}</style>
+<style>${trusted(STYLE)}</style>
 </head>
 <body>
 <div class="top">
@@ -207,5 +208,5 @@ ${renderSiteFooter(build, "examples")}
 <script type="module" src="../js/examples.js"></script>
 </body>
 </html>
-`;
+`.toString();
 }
