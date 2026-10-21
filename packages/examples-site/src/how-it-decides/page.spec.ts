@@ -115,6 +115,12 @@ const card = (id: string): string => {
 };
 
 describe("renderDecidesPage", () => {
+  it("loads its menu from the site's scripts", () => {
+    expect(page).toContain(
+      '<script type="module" src="../js/how-it-decides.js"></script>',
+    );
+  });
+
   it("leads with a grid: a row per kind, a link per outcome to its card", () => {
     expect(page).toContain('<th scope="row">Parameter</th>');
     expect(page).toContain('href="#parameter-written"');
@@ -309,12 +315,6 @@ describe("renderDecidesPage", () => {
       expect(menu).toContain(
         '<button type="button" class="toc-toggle" aria-expanded="false" aria-controls="toc-list">',
       );
-    });
-
-    it("marks what is on screen, lets a click pin a card, and takes the last at the bottom", () => {
-      expect(twoKinds).toContain("IntersectionObserver");
-      expect(twoKinds).toContain("pinned");
-      expect(twoKinds).toContain("atBottom");
     });
   });
 

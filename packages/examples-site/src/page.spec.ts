@@ -72,6 +72,12 @@ describe("renderCode", () => {
 describe("renderPage", () => {
   const html = renderPage(DATA, { version: "0.4.0" });
 
+  it("loads its filters from the site's scripts", () => {
+    expect(html).toContain(
+      '<script type="module" src="../js/examples.js"></script>',
+    );
+  });
+
   it("has a card for every example it wrote, and leaves the ones it left alone to How it decides", () => {
     expect(
       [...html.matchAll(/<article id="([^"]+)"/g)].map((m) => m[1]),

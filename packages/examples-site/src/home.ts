@@ -55,11 +55,6 @@ function renderIntegration(integration: Integration): string {
     </li>`;
 }
 
-const SCRIPT = `
-const video = document.querySelector(".demo video");
-if (!matchMedia("(prefers-reduced-motion: reduce)").matches) video.play().catch(() => {});
-`;
-
 export function renderHomePage(build: BuildInfo): string {
   return `<!doctype html>
 <html lang="en">
@@ -92,7 +87,7 @@ ${ICON_LINK}
   <p class="note">ts-capture rewrites your source files, runs your getters while observing, and writes what it observed to disk. Commit your work first, and read <a href="${DOCS}/how-to/review-and-apply-safely/">review and apply safely</a> before pointing it at a real codebase. The packages are 0.x: the API may change between minor versions.</p>
 </main>
 ${renderSiteFooter(build, "home")}
-<script>${SCRIPT}</script>
+<script type="module" src="js/home.js"></script>
 </body>
 </html>
 `;

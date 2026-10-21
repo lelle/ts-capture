@@ -39,6 +39,12 @@ const menu = page.slice(
 );
 
 describe("renderDocsPage", () => {
+  it("loads its menu from the site's scripts, however deep the page is", () => {
+    expect(page).toContain(
+      '<script type="module" src="../../../js/docs.js"></script>',
+    );
+  });
+
   it("is named after its heading", () => {
     expect(page).toContain(
       "<title>Check the types you wrote · ts-capture</title>",
@@ -87,9 +93,8 @@ describe("renderDocsPage", () => {
     );
   });
 
-  it("opens the menu without a script, and folds it with one on a narrow screen", () => {
+  it("opens the menu without a script", () => {
     expect(menu).toMatch(/^<details class="docs-menu" open>/);
-    expect(page).toContain('matchMedia("(max-width: 900px)")');
   });
 
   it("leads the menu back to the index", () => {
@@ -106,11 +111,6 @@ describe("renderDocsPage", () => {
     expect(cli).toContain(
       '<li><a href="#ts-capture-verify-typesjson---project-tsconfigjson"><code>verify</code></a></li>',
     );
-  });
-
-  it("adds a copy button to marked blocks once its script runs", () => {
-    expect(page).toContain('document.querySelectorAll("pre[data-copy]")');
-    expect(page).toContain("navigator.clipboard.writeText");
   });
 
   describe("previous and next", () => {

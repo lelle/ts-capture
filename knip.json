@@ -40,6 +40,7 @@
         "src/build.ts!",
         "src/playground/main.ts!",
         "src/playground/worker.ts!",
+        "src/client/pages/*.ts!",
         "src/**/*.spec.ts!"
       ],
       "project": ["src/**/*.ts!"],

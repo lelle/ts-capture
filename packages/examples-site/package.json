@@ -31,6 +31,7 @@
     "@typescript/vfs": "1.6.5",
     "@vitest/coverage-v8": "4.1.11",
     "esbuild": "0.28.2",
+    "jsdom": "29.1.1",
     "oxlint": "1.87.0",
     "vitest": "4.1.11"
   }

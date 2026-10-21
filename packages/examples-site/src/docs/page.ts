@@ -57,7 +57,7 @@ ${renderPager(file, menu)}
 </main>
 </div>
 ${renderSiteFooter(build, "docs", root)}
-<script>${MENU_SCRIPT}</script>
+<script type="module" src="${root}js/docs.js"></script>
 </body>
 </html>
 `;
@@ -110,45 +110,6 @@ ${groups}
 </nav>
 </details>`;
 }
-
-// Open in the HTML, so the menu is there without a script; folded on a narrow
-// screen, where it would push the page down. The section being read is the
-// last one whose heading has passed the top, or the last at the bottom.
-const MENU_SCRIPT = `
-const menu = document.querySelector(".docs-menu");
-const narrow = matchMedia("(max-width: 900px)");
-if (narrow.matches) menu.open = false;
-// Folded before the jump, so it lands where the page is once the menu is closed.
-menu.addEventListener("click", (event) => {
-  if (narrow.matches && event.target.closest("nav a")) menu.open = false;
-});
-const links = [...menu.querySelectorAll(".sections a")];
-const targets = links.map((link) => document.getElementById(decodeURIComponent(link.hash.slice(1))));
-let frame = 0;
-const update = () => {
-  frame = 0;
-  let at = -1;
-  targets.forEach((target, i) => {
-    if (target && target.getBoundingClientRect().top <= 80) at = i;
-  });
-  if (innerHeight + scrollY >= document.documentElement.scrollHeight - 2) at = targets.length - 1;
-  links.forEach((link, i) => link.classList.toggle("on-screen", i === at));
-};
-addEventListener("scroll", () => { if (!frame) frame = requestAnimationFrame(update); }, { passive: true });
-update();
-for (const pre of document.querySelectorAll("pre[data-copy]")) {
-  const button = document.createElement("button");
-  button.type = "button";
-  button.className = "copy";
-  button.textContent = "Copy";
-  button.addEventListener("click", async () => {
-    await navigator.clipboard.writeText(pre.querySelector("code").textContent);
-    button.textContent = "Copied";
-    setTimeout(() => (button.textContent = "Copy"), 1500);
-  });
-  pre.append(button);
-}
-`;
 
 const DOCS_STYLE = `
 .docs { display: grid; grid-template-columns: 240px minmax(0, 1fr); gap: 0 44px; max-width: 1180px; margin: 0 auto; padding: 0 20px; }

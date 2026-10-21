@@ -93,6 +93,18 @@ for (const [path, html] of docs) {
 }
 process.stdout.write(`${docs.size} docs pages -> ${outDir}/docs/\n`);
 await build({
+  entryPoints: ["home", "examples", "how-it-decides", "docs"].map((page) =>
+    resolve(packageDir, `src/client/pages/${page}.ts`),
+  ),
+  outdir: resolve(outDir, "js"),
+  bundle: true,
+  platform: "browser",
+  format: "iife",
+  target: "es2022",
+  minify: true,
+  logLevel: "warning",
+});
+await build({
   entryPoints: {
     main: resolve(packageDir, "src/playground/main.ts"),
     worker: resolve(packageDir, "src/playground/worker.ts"),

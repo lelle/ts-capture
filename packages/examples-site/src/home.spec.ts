@@ -23,7 +23,7 @@ describe("renderHomePage", () => {
   it("leaves starting the recording to the script, so reduced motion can keep it still", () => {
     const video = /<video\b[^>]*>/.exec(html)?.[0] ?? "";
     expect(video).not.toMatch(/\sautoplay[\s>]/);
-    expect(html).toContain("prefers-reduced-motion");
+    expect(html).toContain('<script type="module" src="js/home.js"></script>');
   });
 
   it("gives each integration its install command and a link to its guide", () => {

@@ -11,6 +11,7 @@ export default defineConfig({
         "src/build.ts",
         "src/playground/main.ts",
         "src/playground/worker.ts",
+        "src/client/pages/*.ts",
       ],
       reporter: ["text", "html"],
       thresholds: {

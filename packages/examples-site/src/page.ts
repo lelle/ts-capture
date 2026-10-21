@@ -152,31 +152,6 @@ function renderFilters(data: ExamplesData): string {
     </nav>`;
 }
 
-const SCRIPT = `
-const state = { source: "", verdict: "" };
-const nav = document.querySelector(".filters");
-const examples = [...document.querySelectorAll(".example")];
-const empty = document.querySelector(".empty");
-nav.hidden = false;
-nav.addEventListener("click", (event) => {
-  const button = event.target.closest("button[data-filter]");
-  if (!button) return;
-  state[button.dataset.filter] = button.dataset.value;
-  for (const other of nav.querySelectorAll('button[data-filter="' + button.dataset.filter + '"]')) {
-    other.setAttribute("aria-pressed", String(other === button));
-  }
-  let shown = 0;
-  for (const example of examples) {
-    const visible =
-      (!state.source || example.dataset.source === state.source) &&
-      (!state.verdict || example.dataset.verdict === state.verdict);
-    example.hidden = !visible;
-    if (visible) shown += 1;
-  }
-  empty.hidden = shown > 0;
-});
-`;
-
 /**
  * The examples apply wrote. What it left alone is shown on How it decides,
  * beside the rule that left it; `rules` links the rest to theirs.
@@ -229,7 +204,7 @@ ${renderSources(written)}
 </section>
 </main>
 ${renderSiteFooter(build, "examples")}
-<script>${SCRIPT}</script>
+<script type="module" src="../js/examples.js"></script>
 </body>
 </html>
 `;
