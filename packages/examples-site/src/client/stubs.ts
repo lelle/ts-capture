@@ -12,9 +12,25 @@ export function resetPageHeight(): void {
   Reflect.deleteProperty(document.documentElement, "scrollHeight");
 }
 
+let answer: (query: string) => boolean = () => false;
+let listeners: (() => void)[] = [];
+
 export function stubMatchMedia(matches: (query: string) => boolean): void {
+  answer = matches;
+  listeners = [];
   window.matchMedia = ((query: string) => ({
-    matches: matches(query),
+    get matches() {
+      return answer(query);
+    },
     media: query,
-  })) as typeof window.matchMedia;
+    addEventListener: (_: string, listener: () => void) => {
+      listeners.push(listener);
+    },
+  })) as unknown as typeof window.matchMedia;
+}
+
+/** As if the system's settings changed: the queries answer anew, and say so. */
+export function changeMedia(matches: (query: string) => boolean): void {
+  answer = matches;
+  for (const listener of listeners) listener();
 }

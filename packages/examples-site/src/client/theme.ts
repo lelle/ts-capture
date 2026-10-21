@@ -21,9 +21,10 @@ export function applySavedTheme(): void {
 /** The bar's switch, offering the theme the page is not in. */
 export function setUpThemeSwitch(): void {
   const button = document.querySelector<HTMLButtonElement>("button.theme")!;
+  const system = matchMedia("(prefers-color-scheme: dark)");
   const current = (): Theme =>
     (root.dataset.theme as Theme | undefined) ??
-    (matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light");
+    (system.matches ? "dark" : "light");
   const other = (): Theme => (current() === "dark" ? "light" : "dark");
   const show = (): void => {
     const next = other();
@@ -42,6 +43,8 @@ export function setUpThemeSwitch(): void {
     }
     show();
   });
+  // Until the reader picks, the page turns with the system, and so does the offer.
+  system.addEventListener("change", show);
   show();
   button.hidden = false;
 }

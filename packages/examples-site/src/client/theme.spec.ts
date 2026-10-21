@@ -2,7 +2,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { renderHomePage } from "../home.js";
-import { stubMatchMedia } from "./stubs.js";
+import { changeMedia, stubMatchMedia } from "./stubs.js";
 import { applySavedTheme, setUpThemeSwitch } from "./theme.js";
 
 const root = document.documentElement;
@@ -75,6 +75,13 @@ describe("setUpThemeSwitch", () => {
     button().click();
     expect(root.dataset.theme).toBe("light");
     expect(localStorage.getItem("theme")).toBe("light");
+  });
+
+  it("follows the system while the reader has not picked a theme", () => {
+    setUpThemeSwitch();
+    changeMedia(() => true);
+    expect(button().getAttribute("aria-label")).toBe("Switch to light theme");
+    expect(icon("to-light").hasAttribute("hidden")).toBe(false);
   });
 
   it("starts from the saved theme, not the system's", () => {
