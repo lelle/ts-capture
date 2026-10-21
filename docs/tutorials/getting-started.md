@@ -1,12 +1,22 @@
 # Getting started
 
 This tutorial takes you from zero to a successful `apply` on a tiny project,
-using **Vitest** (the most common setup). You'll instrument code, run it, and
-watch ts-capture write a real type back into your source.
+using **Vitest**. You'll instrument code, run it, and watch ts-capture write a
+real type back into your source.
 
-> Prerequisites: a project with Vitest and TypeScript, under git with a clean
-> working tree (step 6 writes into your source files). If you don't have one,
-> any folder with a `*.spec.ts` and `vitest` installed works.
+## What you need
+
+- Node 20 or later.
+- Vitest 1 or later, which brings the Vite 5 the plugin needs. A folder with
+  `vitest` installed and one `*.spec.ts` is enough.
+- TypeScript source files (`.ts` / `.tsx`).
+- git, with a clean working tree: step 6 writes into your source files.
+
+A different setup? Each guide walks the same steps for its own:
+[Jest (Babel)](../how-to/use-with-jest-babel.md) ·
+[Svelte](../how-to/use-with-svelte.md) ·
+[Vite dev server](../how-to/use-with-vite-vitest.md#browser-dev-sessions) ·
+[no bundler (plain Node)](../how-to/use-without-a-bundler.md).
 
 ## 1. Install
 
@@ -115,5 +125,3 @@ with a string. For the why behind each stage, read
   [Review & apply safely](../how-to/review-and-apply-safely.md) first.
 - Want literal types (`"a"`), pattern detection, or other tuning? See the
   [Configuration reference](../reference/configuration.md).
-- Not on Vitest? See [Use with Vite / Vitest](../how-to/use-with-vite-vitest.md)
-  for the browser-dev variant, or the other integration packages.
