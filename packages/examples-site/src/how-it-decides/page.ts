@@ -5,6 +5,7 @@ import {
   pageTitle,
   renderSiteBar,
   renderSiteFooter,
+  renderStylesheets,
   REPO,
 } from "../frame.js";
 import { join, Markup, markup, trusted } from "../markup.js";
@@ -13,7 +14,6 @@ import {
   renderExampleBody,
   type RuleLink,
 } from "../page.js";
-import { STYLE } from "../style.js";
 import { type Cell, type Outcome, OUTCOMES, type SiteKind } from "./cells.js";
 
 /** A cell, run: what apply wrote, and what it said where it wrote nothing. */
@@ -151,18 +151,6 @@ function renderCard(
     </article>`;
 }
 
-const GRID_STYLE = `
-.panes.three { grid-template-columns: repeat(3, minmax(0, 1fr)); }
-@media (max-width: 760px) { .panes.three { grid-template-columns: minmax(0, 1fr); } }
-.grid-scroll { overflow-x: auto; }
-.grid { border-collapse: collapse; font-size: 0.85rem; }
-.grid th, .grid td { padding: 0.35rem 0.5rem; text-align: center; }
-.grid thead th { font-weight: 500; font-family: ui-monospace, monospace; writing-mode: vertical-rl; transform: rotate(180deg); }
-.grid tbody th { text-align: left; }
-.grid a { text-decoration: none; }
-.grid .unreachable a { opacity: 0.6; }
-`;
-
 /**
  * The matrix's two axes. Kind: one selected, the kind of the card being read.
  * Outcome: every outcome, the ones the selected kind lacks disabled. Rendered
@@ -194,33 +182,6 @@ function renderToc(cards: DecidedCell[]): Markup {
 </nav>`;
 }
 
-const TOC_STYLE = `
-.layout { display: grid; grid-template-columns: 240px minmax(0, 1fr); gap: 0 44px; max-width: 1180px; margin: 0 auto; padding: 0 20px; }
-.layout main { max-width: none; margin: 0; padding: 0; min-width: 0; }
-.toc { position: sticky; top: 0; align-self: start; height: 100vh; box-sizing: border-box; display: flex; flex-direction: column; border-right: 1px solid var(--line); font-size: 13px; }
-.toc-toggle { display: none; }
-.toc-list { overflow-y: auto; padding: 24px 12px 24px 0; }
-.toc-kind { margin: 18px 0 6px; font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); }
-.toc-kind:first-child { margin-top: 0; }
-.toc ul { list-style: none; margin: 0; padding: 0; }
-.toc a { display: block; padding: 1px 8px; border-left: 2px solid transparent; color: var(--muted); text-decoration: none; font-family: ui-monospace, monospace; cursor: pointer; }
-.toc a:hover { color: var(--text); }
-#kinds a[aria-current] { color: var(--text); font-weight: 600; border-left-color: var(--accent); }
-#kinds a[aria-current]::before { content: "◉ "; color: var(--accent); }
-#outcomes a.on-screen { color: var(--text); border-left-color: var(--accent); background: var(--code-bg); }
-#outcomes a[aria-disabled="true"] { opacity: 0.4; text-decoration: line-through; cursor: default; pointer-events: none; }
-@media (max-width: 900px) {
-  .layout { display: block; padding: 0; }
-  .layout main { padding: 0 20px; }
-  .toc { z-index: 2; height: auto; border-right: 0; border-bottom: 1px solid var(--line); background: var(--bg); }
-  .toc-toggle { display: block; width: 100%; padding: 10px 20px; text-align: left; font: inherit; color: var(--text); background: var(--bg); border: 0; cursor: pointer; }
-  .toc-toggle::after { content: " ▾"; color: var(--muted); }
-  .toc-list { display: none; max-height: 60vh; padding-top: 4px; }
-  .toc.open .toc-list { display: block; }
-  .example { scroll-margin-top: 48px; }
-}
-`;
-
 /** A return or `this` has no name of its own beyond the kind. */
 const named = (cell: Cell): boolean =>
   cell.name !== "" && cell.kind !== "return" && cell.kind !== "this";
@@ -243,16 +204,6 @@ ${join(
     "\n",
   );
 }
-
-const SECTION_STYLE = `
-.kind { padding-top: 56px; }
-.kind:first-child { padding-top: 32px; }
-.kind-heading { margin: 0 0 18px; font-size: 13px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); }
-.kind .example { scroll-margin-top: 16px; }
-.real { margin: 18px 0 0; padding-top: 14px; border-top: 1px solid var(--line); }
-.real summary { cursor: pointer; font-weight: 600; margin: 0 0 12px; }
-@media (max-width: 900px) { .kind .example { scroll-margin-top: 56px; } }
-`;
 
 /** For each example a card shows, the card that shows the fewest: the most specific. */
 export function ruleLinks(cells: Cell[]): Map<string, RuleLink> {
@@ -297,7 +248,7 @@ export function renderDecidesPage(
 ${ICON_LINK}
 <title>${pageTitle("How it decides")}</title>
 <meta name="description" content="Every way ts-capture apply treats a position: what it writes, what it refuses to write, and the code that decides it.">
-<style>${trusted(STYLE + GRID_STYLE + TOC_STYLE + SECTION_STYLE)}</style>
+${renderStylesheets("how-it-decides")}
 </head>
 <body>
 <div class="top">

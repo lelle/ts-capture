@@ -3,10 +3,10 @@ import {
   ICON_LINK,
   renderSiteBar,
   renderSiteFooter,
+  renderStylesheets,
   REPO,
 } from "./frame.js";
-import { join, type Markup, markup, trusted } from "./markup.js";
-import { STYLE } from "./style.js";
+import { join, type Markup, markup } from "./markup.js";
 
 const DOCS = "docs";
 
@@ -67,7 +67,7 @@ export function renderHomePage(build: BuildInfo): string {
 ${ICON_LINK}
 <title>ts-capture — runtime values as TypeScript types</title>
 <meta name="description" content="ts-capture watches your code run and writes the types it saw back into your source.">
-<style>${trusted(STYLE)}</style>
+${renderStylesheets("home")}
 </head>
 <body>
 <div class="top">

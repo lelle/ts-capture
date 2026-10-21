@@ -7,9 +7,9 @@ import {
   pageTitle,
   renderSiteBar,
   renderSiteFooter,
+  renderStylesheets,
 } from "../frame.js";
 import { join, type Markup, markup, trusted } from "../markup.js";
-import { STYLE } from "../style.js";
 import {
   type Heading,
   relativeHref,
@@ -43,7 +43,7 @@ export function renderDocsPage(
 <meta name="viewport" content="width=device-width, initial-scale=1">
 ${ICON_LINK}
 <title>${pageTitle(name)}</title>
-<style>${trusted(STYLE + DOCS_STYLE)}</style>
+${renderStylesheets("docs", root)}
 </head>
 <body>
 <div class="top">
@@ -111,54 +111,3 @@ ${groups}
 </nav>
 </details>`;
 }
-
-const DOCS_STYLE = `
-.docs { display: grid; grid-template-columns: 240px minmax(0, 1fr); gap: 0 44px; max-width: 1180px; margin: 0 auto; padding: 0 20px; }
-.docs-menu { position: sticky; top: 0; align-self: start; max-height: 100vh; overflow-y: auto; padding: 4px 0 24px; font-size: 14px; }
-.docs-menu summary { display: none; }
-.docs-menu ul { list-style: none; margin: 0; padding: 0; }
-.docs-group { margin: 18px 0 6px; font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); }
-.docs-menu a { display: block; padding: 2px 8px; border-left: 2px solid transparent; color: var(--muted); text-decoration: none; }
-.docs-menu a:hover { color: var(--text); }
-.docs-menu a[aria-current="page"] { color: var(--text); font-weight: 600; border-left-color: var(--accent); }
-.docs-menu .sections a { padding-left: 20px; font-size: 13px; font-weight: 400; }
-.docs-menu .sections a.on-screen { color: var(--text); border-left-color: var(--accent); background: var(--code-bg); }
-main.doc { max-width: 80ch; margin: 0; padding: 0 0 20px; min-width: 0; }
-.doc h2, .doc h3 { scroll-margin-top: 16px; }
-.doc h3 { font-size: 19px; margin: 28px 0 10px; }
-.doc h4 { font-size: 17px; margin: 24px 0 8px; }
-.doc p, .doc ul, .doc ol { margin: 0 0 14px; }
-.doc li { margin-bottom: 4px; }
-.doc pre, .doc figure { margin: 0 0 16px; }
-.doc pre[data-copy] { position: relative; }
-.doc .copy { position: absolute; top: 8px; right: 8px; font: 12px/1 system-ui, sans-serif; padding: 5px 8px; border: 1px solid var(--line); border-radius: 6px; background: var(--surface); color: var(--muted); cursor: pointer; opacity: 0; }
-.doc pre:hover .copy,
-.doc .copy:focus-visible { opacity: 1; color: var(--text); }
-@media (hover: none) { .doc .copy { opacity: 0.8; } }
-.doc .anchor { color: var(--muted); text-decoration: none; font-weight: 400; opacity: 0.35; }
-.doc :is(h2, h3, h4):hover .anchor, .doc .anchor:focus-visible { opacity: 1; }
-.doc .t-inserted { color: var(--good); }
-.doc .t-deleted { color: var(--weak); }
-.doc :not(pre) > code { background: var(--code-bg); border-radius: 4px; padding: 1px 5px; font-size: 0.88em; overflow-wrap: anywhere; }
-.doc :is(h2, h3, h4) code { background: none; padding: 0; font-size: 0.92em; }
-.doc .word { white-space: nowrap; }
-.doc table { display: block; overflow-x: auto; border-collapse: collapse; margin: 0 0 18px; font-size: 14.5px; }
-.doc th, .doc td { border: 1px solid var(--line); padding: 6px 10px; text-align: left; vertical-align: top; }
-.doc td code { overflow-wrap: normal; }
-.doc td:first-child code { white-space: nowrap; }
-.pager { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin: 40px 0 0; }
-.pager a { display: flex; flex-direction: column; gap: 2px; padding: 12px 16px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); color: var(--text); text-decoration: none; }
-.pager a:hover { border-color: var(--accent); }
-.pager .next { grid-column: 2; text-align: right; }
-.pager .dir { font-size: 13px; color: var(--accent); }
-.pager .group { font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); }
-.pager .name { font-weight: 600; }
-.doc blockquote { margin: 0 0 16px; padding: 2px 14px; border-left: 3px solid var(--line); color: var(--muted); }
-@media (max-width: 900px) {
-  .docs { display: block; }
-  .pager { grid-template-columns: 1fr; }
-  .pager .next { grid-column: 1; }
-  .docs-menu { position: static; max-height: none; padding: 0 0 8px; margin: 0 0 20px; border-bottom: 1px solid var(--line); }
-  .docs-menu summary { display: list-item; padding: 8px 0; font-weight: 600; cursor: pointer; }
-}
-`;

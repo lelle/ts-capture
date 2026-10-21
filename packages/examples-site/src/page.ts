@@ -5,9 +5,9 @@ import {
   pageTitle,
   renderSiteBar,
   renderSiteFooter,
+  renderStylesheets,
 } from "./frame.js";
-import { join, type Markup, markup, trusted } from "./markup.js";
-import { STYLE } from "./style.js";
+import { join, type Markup, markup } from "./markup.js";
 
 export interface ExampleSource {
   about: string;
@@ -183,7 +183,7 @@ export function renderPage(
 ${ICON_LINK}
 <title>${pageTitle("Examples")}</title>
 <meta name="description" content="Before and after: what ts-capture wrote into real code, including the results a reviewer should change.">
-<style>${trusted(STYLE)}</style>
+${renderStylesheets("examples")}
 </head>
 <body>
 <div class="top">

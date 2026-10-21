@@ -1,4 +1,4 @@
-import { globSync, readFileSync } from "node:fs";
+import { existsSync, globSync, readFileSync } from "node:fs";
 import { dirname, posix, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
@@ -20,6 +20,9 @@ const docsDir = resolve(
 const read = (file: string): string =>
   readFileSync(resolve(docsDir, file), "utf-8");
 const pages = renderDocsSite(read, { version: "0.4.0" });
+
+// The stylesheets the build copies to css/, which every page links to.
+const stylesDir = resolve(dirname(fileURLToPath(import.meta.url)), "../styles");
 
 // The pages built beside the docs, which a docs page may link to.
 const OTHER_PAGES = ["", "examples/", "how-it-decides/", "playground/"];
@@ -76,6 +79,11 @@ describe("the docs on the site", () => {
           ? `${posix.normalize(posix.join(path, target))}/`.replace(/\/+$/, "/")
           : path;
         const at = resolved === "./" ? "" : resolved;
+        const sheet = /^css\/([\w-]+\.css)\/$/.exec(at)?.[1];
+        if (sheet) {
+          if (!existsSync(resolve(stylesDir, sheet))) broken.push(href!);
+          continue;
+        }
         const page = pages.get(at);
         if (!page && !OTHER_PAGES.includes(at)) broken.push(href!);
         else if (anchor && page && !page.includes(`id="${anchor}"`))

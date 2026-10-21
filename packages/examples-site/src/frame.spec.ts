@@ -42,7 +42,26 @@ const marked = (page: string): string[] =>
     (m) => m[1]!,
   );
 
+const stylesheets = (page: string): string[] =>
+  [...page.matchAll(/<link rel="stylesheet" href="([^"]+)">/g)].map(
+    (m) => m[1]!,
+  );
+
 describe("the site frame", () => {
+  it.each([
+    ["home", ["css/site.css"]],
+    ["examples", ["../css/site.css"]],
+    ["how-it-decides", ["../css/site.css", "../css/how-it-decides.css"]],
+    ["playground", ["../css/site.css"]],
+    ["docs", ["../../../css/site.css", "../../../css/docs.css"]],
+  ] as const)(
+    "%s loads the site's stylesheet, and its own where it has one",
+    (id, sheets) => {
+      expect(stylesheets(pages[id])).toEqual(sheets);
+      expect(pages[id]).not.toContain("<style>");
+    },
+  );
+
   it.each(Object.entries(pages))(
     "%s has the same bar as the others",
     (_, page) => {

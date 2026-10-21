@@ -33,6 +33,24 @@ const ICON_SVG =
 /** Inline, so no page sends the browser after a /favicon.ico the site lacks. */
 export const ICON_LINK = markup`<link rel="icon" type="image/svg+xml" href="data:image/svg+xml,${encodeURIComponent(ICON_SVG)}">`;
 
+// Each page's own rules, beside the ones every page shares.
+const OWN_STYLESHEET: Partial<Record<PageId, string>> = {
+  docs: "docs",
+  "how-it-decides": "how-it-decides",
+};
+
+export function renderStylesheets(
+  current: PageId,
+  root = rootOf(current),
+): Markup {
+  const own = OWN_STYLESHEET[current];
+  return markup`<link rel="stylesheet" href="${root}css/site.css">${
+    own &&
+    markup`
+<link rel="stylesheet" href="${root}css/${own}.css">`
+  }`;
+}
+
 export function pageTitle(name: string): string {
   return `${name} · ts-capture`;
 }

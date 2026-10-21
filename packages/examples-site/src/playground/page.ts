@@ -6,9 +6,9 @@ import {
   pageTitle,
   renderSiteBar,
   renderSiteFooter,
+  renderStylesheets,
 } from "../frame.js";
 import { type Markup, markup, trusted } from "../markup.js";
-import { STYLE } from "../style.js";
 
 /** JSON that can sit inside a `script` element: no `<` to end the element with. */
 function embeddedJson(value: unknown): Markup {
@@ -31,7 +31,7 @@ export function renderPlaygroundPage(
 ${ICON_LINK}
 <title>${pageTitle("Playground")}</title>
 <meta name="description" content="Run ts-capture in your browser: write untyped TypeScript, call it, and see the types it observed written back.">
-<style>${trusted(STYLE)}</style>
+${renderStylesheets("playground")}
 </head>
 <body>
 <div class="top">

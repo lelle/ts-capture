@@ -51,6 +51,11 @@ const buildInfo: BuildInfo = {
 mkdirSync(playgroundDir, { recursive: true });
 mkdirSync(examplesDir, { recursive: true });
 writeFileSync(resolve(outDir, "index.html"), renderHomePage(buildInfo));
+const stylesDir = resolve(packageDir, "src/styles");
+mkdirSync(resolve(outDir, "css"), { recursive: true });
+for (const sheet of readdirSync(stylesDir)) {
+  copyFileSync(resolve(stylesDir, sheet), resolve(outDir, "css", sheet));
+}
 copyFileSync(
   resolve(root, "docs/assets/demo.mp4"),
   resolve(outDir, "demo.mp4"),
