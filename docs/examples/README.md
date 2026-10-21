@@ -1,50 +1,14 @@
 # Examples
 
-Before and after: what ts-capture wrote into real code, including the results
-a reviewer should change. What a real run left alone is shown on the How it
-decides page, beside the rule that left it.
+[`examples.json`](examples.json) is what the Examples page shows: what
+ts-capture wrote into real code, including the results a reviewer should
+change, and what a real run left alone, which How it decides shows beside the
+rule that left it.
 
-The page is built from [`examples.json`](examples.json):
+Nothing in it is written by hand. Each entry is cut from the diff of an actual
+`apply` run, with the project, its commit and the ts-capture revision recorded
+beside it. The file is regenerated from those runs, not edited: a change to
+what ts-capture writes shows up as a diff in this file.
 
-```sh
-pnpm examples        # writes site/, with examples/ and playground/ under it
-```
-
-Nothing in `examples.json` is written by hand. Each entry is cut from the
-diff of an actual `apply` run, with the project, its commit and the ts-capture
-revision recorded beside it. The file is regenerated from those runs, not
-edited: a change to what ts-capture writes shows up as a diff in this file.
-
-## How it decides
-
-`site/how-it-decides/` is a map of what `apply` does to a position: one card
-per outcome (written, or each reason it leaves a position alone), for each
-kind of position. Each card is a small file from
-[`cells.ts`](../../packages/examples-site/src/how-it-decides/cells.ts), run
-through the same applier as the playground when the page is built;
-`cells.spec.ts` checks that every card still ends where it says, and names
-the function in `packages/core/src` that decides it. A card links to that
-function, to the test, to the real examples in its cell, and opens in the
-playground. Every kind of position is mapped: parameters, return types, variables, class fields, callbacks and `this`, and every card runs: a card about code that changed after the run, or about observations applied twice, shows the text the last apply was given. A menu down the side
-follows the two axes: the kind being read (one at a time) and its outcomes,
-with the cards on screen marked.
-
-## Playground
-
-`site/playground/` runs ts-capture in the visitor's browser, with no server
-behind it: write a file, call its functions, and see the observed types
-written back. It is built on
-[`@ts-capture/core/browser`](../reference/packages.md), so it runs the same
-applier and type-check gate as the CLI, on one file with only the JavaScript
-standard library. The code runs in a worker that is stopped after ten
-seconds.
-
-To look at either page locally, serve the folder; the playground does not
-work from a `file:` address:
-
-```sh
-pnpm examples && python3 -m http.server --directory site 8000
-```
-
-`.github/workflows/pages.yml` publishes both pages to GitHub Pages once Pages is
-switched on for the repository with "GitHub Actions" as its source.
+How the site is built from it is in
+[`packages/examples-site`](../../packages/examples-site/README.md).
