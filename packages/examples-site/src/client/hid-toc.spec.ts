@@ -87,4 +87,18 @@ describe("setUpToc", () => {
     outcome("type-error").click();
     expect(scrolledTo).toEqual([]);
   });
+
+  it("reads the last card once the page is scrolled to the bottom", () => {
+    Object.defineProperty(document.documentElement, "scrollHeight", {
+      configurable: true,
+      value: innerHeight,
+    });
+    dispatchEvent(new Event("scroll"));
+    vi.advanceTimersToNextFrame();
+    Reflect.deleteProperty(document.documentElement, "scrollHeight");
+    expect(kind("variable").hasAttribute("aria-current")).toBe(true);
+    expect(document.querySelector(".toc-current")!.textContent).toBe(
+      `${kind("variable").textContent} · written`,
+    );
+  });
 });
