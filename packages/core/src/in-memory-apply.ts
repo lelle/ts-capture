@@ -39,8 +39,9 @@ export function applyInMemory(input: InMemoryApplyInput): InMemoryApplyResult {
   const { fileNames, compilerOptions, rootDir, system } = input;
   const project = createProjectVerificationContext(fileNames, compilerOptions, rootDir, system);
   const sources = new Map<string, string>();
+  const listed = new Set(fileNames);
   const run = annotateProject({
-    types: input.types.filter(([file]) => fileNames.includes(file)),
+    types: input.types.filter(([file]) => listed.has(file)),
     readFile: (file) => {
       const source = system.readFile(file);
       if (source !== undefined) sources.set(file, source);
