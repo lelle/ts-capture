@@ -1,6 +1,5 @@
 import type { Starter } from "./starters.js";
 
-import { escapeHtml } from "../code.js";
 import {
   type BuildInfo,
   ICON_LINK,
@@ -8,24 +7,23 @@ import {
   renderSiteBar,
   renderSiteFooter,
 } from "../frame.js";
+import { type Markup, markup, trusted } from "../markup.js";
 import { STYLE } from "../style.js";
 
 /** JSON that can sit inside a `script` element: no `<` to end the element with. */
-function embeddedJson(value: unknown): string {
-  return JSON.stringify(value).replaceAll("<", "\\u003c");
+function embeddedJson(value: unknown): Markup {
+  return trusted(JSON.stringify(value).replaceAll("<", "\\u003c"));
 }
 
 export function renderPlaygroundPage(
   starters: Starter[],
   build: BuildInfo,
 ): string {
-  const options = starters
-    .map(
-      (starter) =>
-        `<option value="${escapeHtml(starter.id)}">${escapeHtml(starter.title)}</option>`,
-    )
-    .join("");
-  return `<!doctype html>
+  const options = starters.map(
+    (starter) =>
+      markup`<option value="${starter.id}">${starter.title}</option>`,
+  );
+  return markup`<!doctype html>
 <html lang="en">
 <head>
 <meta charset="utf-8">
@@ -33,7 +31,7 @@ export function renderPlaygroundPage(
 ${ICON_LINK}
 <title>${pageTitle("Playground")}</title>
 <meta name="description" content="Run ts-capture in your browser: write untyped TypeScript, call it, and see the types it observed written back.">
-<style>${STYLE}</style>
+<style>${trusted(STYLE)}</style>
 </head>
 <body>
 <div class="top">
@@ -47,12 +45,12 @@ ${ICON_LINK}
   <div class="controls">
     <label for="starter">Start from</label>
     <select id="starter">${options}</select>
-    <span class="option"><input type="checkbox" id="name-shapes"${starters[0]?.nameShapes ? " checked" : ""}> <label for="name-shapes">Name repeated shapes</label></span>
+    <span class="option"><input type="checkbox" id="name-shapes"${starters[0]?.nameShapes && trusted(" checked")}> <label for="name-shapes">Name repeated shapes</label></span>
     <button type="button" id="run">Run</button>
     <span class="status" id="status" role="status"></span>
   </div>
   <div class="panes playground">
-    <figure><figcaption><label for="code">Your code</label></figcaption><textarea id="code" spellcheck="false" autocapitalize="off" autocomplete="off">${escapeHtml(starters[0].code)}</textarea></figure>
+    <figure><figcaption><label for="code">Your code</label></figcaption><textarea id="code" spellcheck="false" autocapitalize="off" autocomplete="off">${starters[0].code}</textarea></figure>
     <figure class="result"><figcaption>After <code>ts-capture apply</code></figcaption><pre><code id="result"></code></pre></figure>
   </div>
   <div class="outcome"><pre id="report"></pre></div>
@@ -68,5 +66,5 @@ ${renderSiteFooter(build, "playground")}
 <script type="module" src="main.js"></script>
 </body>
 </html>
-`;
+`.toString();
 }
