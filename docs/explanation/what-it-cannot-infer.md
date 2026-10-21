@@ -78,13 +78,6 @@ ts-capture never overwrites an existing annotation (unless
 measurement mode, is on). `const f = (x: T): U => …` keeps its `T` and `U`;
 only _missing_ annotations inside it get filled.
 
-## Observation is not side-effect free
-
-Describing a value means reading its properties, so **getters run and `Proxy`
-get-traps fire** during observation. Accessors that lazily initialize, count,
-mutate, or issue requests will run more often with ts-capture loaded. See
-[Observation reads your values](how-it-works.md#observation-reads-your-values--including-getters).
-
 ## Only the code paths you actually ran
 
 Nothing warns you that a position was under-observed — it simply gets a type

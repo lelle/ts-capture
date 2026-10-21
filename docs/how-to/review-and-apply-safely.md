@@ -155,8 +155,8 @@ leading `!` re-includes:
 - **Over-narrow types** — a single test run may show `string` where the real
   contract is `string | URL`. Public API surfaces especially warrant a closer
   look.
-- **Flattened unions** — a function called with `string` and `number` becomes
-  `(x: string | number)`, not a generic `<T>(x: T)`.
+- **Flattened unions** — `(x: string | number)` where a generic `<T>(x: T)`
+  was meant ([why](../explanation/what-it-cannot-infer.md#generics-are-flattened-to-observed-unions)).
 - **Huge annotations** — logger/serializer functions passed whole app state can
   produce enormous types. `infer.maxAnnotationChars` (default 4096) suppresses
   these so TS inference takes over instead; tune it if needed.
@@ -198,18 +198,9 @@ observed a value the position's own type forbids, and `[proposal]` /
 `[applied]` in the preview modes above. The reference has
 [the formats](../reference/configuration.md#notes).
 
-One rule is worth knowing before you meet it:
-
-> **Every whole line and every block comment carrying `// @ts-capture[…]:` or
-> `/* @ts-capture[…]:` belongs to apply.** Each run removes the ones it finds
-> and writes the ones that hold now — including a note you wrote by hand.
-
-Nothing checks a comment the way `tsc` checks an annotation, so a note left
-behind would simply lie: about a conflict since fixed, or about code since
-deleted. Rewriting them every run is what keeps them honest.
-
-`@ts-capture-ignore` is **not** touched by this. It is a directive you write,
-and apply never removes it.
+Apply rewrites every `@ts-capture[…]:` note on each run, one you typed
+yourself too; `@ts-capture-ignore` it leaves alone
+([why](../reference/configuration.md#apply-owns-every-note)).
 
 ## After apply: format and type-check
 

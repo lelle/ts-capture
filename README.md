@@ -69,11 +69,10 @@ npx ts-capture apply types.json --dry-run
 # → preview what would change
 
 npx ts-capture apply types.json
-# → write inferred types back to source files (commit first — this edits
-#   your files on disk)
+# → write inferred types back to source files
 ```
 
-Commit first; `apply` edits your source
+Read the diff before you keep it
 ([review & apply safely](docs/how-to/review-and-apply-safely.md)). Test files
 are skipped; other files to skip go under
 [`apply.skipFiles`](docs/reference/configuration.md#apply).

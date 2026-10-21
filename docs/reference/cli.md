@@ -115,9 +115,8 @@ contextual type, a variable's initializer type, a function's inferred return
 type.
 
 Run the tests with `TS_CAPTURE_OBSERVE_ANNOTATED=1` and parameters and return
-types you wrote are observed too, and compared with what you wrote. A written
-type wider than what ran is a match: `string | null` that only ever saw a
-`string` is not reported. See [Check the types you wrote](../how-to/check-your-types.md).
+types you wrote are observed too, and compared with what you wrote
+([what is checked](../how-to/check-your-types.md#what-is-checked)).
 
 - `--project <tsconfig.json>` — the project to verify against (required).
 - `--threshold=N` — exit 2 when fewer than N of the verifiable positions
