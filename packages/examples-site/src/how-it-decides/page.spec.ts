@@ -155,6 +155,15 @@ describe("renderDecidesPage", () => {
     );
   });
 
+  it("lays out like a docs page: bar and heading first, then the menu beside the cards", () => {
+    const at = (marker: string): number => page.indexOf(marker);
+    expect(at('<nav class="site"')).toBeLessThan(at("<h1>"));
+    expect(at("<h1>")).toBeLessThan(at('<div class="layout">'));
+    expect(at('<div class="layout">')).toBeLessThan(at('<nav class="toc"'));
+    expect(at('<nav class="toc"')).toBeLessThan(at("<main>"));
+    expect(at("</main>")).toBeLessThan(at('<footer class="site"'));
+  });
+
   it("shows a real example it left alone in full, inside its own card", () => {
     const left = card("parameter-type-error");
     expect(left).toContain(
@@ -255,10 +264,8 @@ describe("renderDecidesPage", () => {
       REAL,
       BUILD,
     );
-    const menu = twoKinds.slice(
-      twoKinds.indexOf('<nav class="toc"'),
-      twoKinds.indexOf("</nav>"),
-    );
+    const start = twoKinds.indexOf('<nav class="toc"');
+    const menu = twoKinds.slice(start, twoKinds.indexOf("</nav>", start));
     const between = (from: string, to: string): string =>
       menu.slice(menu.indexOf(from), menu.indexOf(to, menu.indexOf(from)));
 

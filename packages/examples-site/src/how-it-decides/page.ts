@@ -323,10 +323,11 @@ for (const card of cards) observer.observe(card);
 `;
 
 const TOC_STYLE = `
-.layout { display: grid; grid-template-columns: 230px minmax(0, 1fr); max-width: calc(230px + 1180px); margin: 0 auto; }
+.layout { display: grid; grid-template-columns: 240px minmax(0, 1fr); gap: 0 44px; max-width: 1180px; margin: 0 auto; padding: 0 20px; }
+.layout main { max-width: none; margin: 0; padding: 0; min-width: 0; }
 .toc { position: sticky; top: 0; align-self: start; height: 100vh; box-sizing: border-box; display: flex; flex-direction: column; border-right: 1px solid var(--line); font-size: 13px; }
 .toc-toggle { display: none; }
-.toc-list { overflow-y: auto; padding: 24px 12px 24px 20px; }
+.toc-list { overflow-y: auto; padding: 24px 12px 24px 0; }
 .toc-kind { margin: 18px 0 6px; font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); }
 .toc-kind:first-child { margin-top: 0; }
 .toc ul { list-style: none; margin: 0; padding: 0; }
@@ -337,7 +338,8 @@ const TOC_STYLE = `
 #outcomes a.on-screen { color: var(--text); border-left-color: var(--accent); background: var(--code-bg); }
 #outcomes a[aria-disabled="true"] { opacity: 0.4; text-decoration: line-through; cursor: default; pointer-events: none; }
 @media (max-width: 900px) {
-  .layout { display: block; }
+  .layout { display: block; padding: 0; }
+  .layout main { padding: 0 20px; }
   .toc { z-index: 2; height: auto; border-right: 0; border-bottom: 1px solid var(--line); background: var(--bg); }
   .toc-toggle { display: block; width: 100%; padding: 10px 20px; text-align: left; font: inherit; color: var(--text); background: var(--bg); border: 0; cursor: pointer; }
   .toc-toggle::after { content: " ▾"; color: var(--muted); }
@@ -423,9 +425,6 @@ ${ICON_LINK}
 <style>${STYLE}${GRID_STYLE}${TOC_STYLE}${SECTION_STYLE}</style>
 </head>
 <body>
-<div class="layout">
-${renderToc(cards)}
-<div class="content">
 <div class="top">
   ${renderSiteBar("how-it-decides")}
   <h1>How it decides</h1>
@@ -433,12 +432,13 @@ ${renderToc(cards)}
   <p class="how">The cards are not written by hand: each is run through the same applier as the playground when the page is built, and a test checks that it still ends where the card says.</p>
   ${renderGrid(cards)}
 </div>
+<div class="layout">
+${renderToc(cards)}
 <main>
 ${renderSections(cards, real)}
 </main>
+</div>
 ${renderSiteFooter(build, "how-it-decides")}
-</div>
-</div>
 <script>${TOC_SCRIPT}</script>
 </body>
 </html>
