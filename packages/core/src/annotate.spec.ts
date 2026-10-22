@@ -408,6 +408,48 @@ describe("a tier with more to check writes no more than one with less, or says w
   });
 });
 
+// TypeScript infers the binding from the return type written in the same run,
+// and that is wider than what this one call returned.
+describe("annotate, a binding narrower than its initializer's type", () => {
+  it("leaves the binding to TypeScript instead of reporting a type error", () => {
+    const source =
+      "function dd(...all) { return all; }\n" +
+      "dd(1, 2);\n" +
+      "dd('1', 2);\n" +
+      "const f = dd(null);\n";
+    const { result, out } = annotated("project", source, collect(source));
+    expect(out).toAnnotate({ returnOf: "dd" }, "(number | string | null)[]");
+    expect(out).toLeaveUntyped("f");
+    expect(result.skips).toContainEqual(
+      expect.objectContaining({
+        pos: source.indexOf("f =") + 1,
+        reason: "left-to-typescript",
+      }),
+    );
+    expect(result.skips.filter((skip) => skip.reason === "type-error")).toEqual([]);
+  });
+
+  it("leaves a binding seen at one arm of a declared union to TypeScript", () => {
+    const source = "declare function get(): string | undefined;\nconst u = get();\n";
+    const pos = source.indexOf("u =") + 1;
+    const { result } = annotated("project", source, [
+      entry("target.ts", pos, [["string"]], { varDecl: true }),
+    ]);
+    expect(result.text).toBe(source);
+    expect(result.skips).toEqual([expect.objectContaining({ pos, reason: "left-to-typescript" })]);
+  });
+
+  it("still reports a binding outside the initializer's type as a type error", () => {
+    const source = "declare function get(): string | undefined;\nconst u = get();\n";
+    const pos = source.indexOf("u =") + 1;
+    const { result } = annotated("project", source, [
+      entry("target.ts", pos, [["number"]], { varDecl: true }),
+    ]);
+    expect(result.text).toBe(source);
+    expect(result.skips).toEqual([expect.objectContaining({ pos, reason: "type-error" })]);
+  });
+});
+
 // A Svelte block is checked as a file of its own, next to the component, that
 // the project's tsconfig never listed.
 describe("annotate, a file the project does not hold, under the project oracle", () => {

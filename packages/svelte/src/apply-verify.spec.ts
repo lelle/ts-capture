@@ -149,7 +149,7 @@ describe("svelte apply typecheck-verify", () => {
         entry(
           `${filename}__script.ts`,
           endOf(body, "const unsound"),
-          [["string"]],
+          [["number"]],
           {
             varDecl: true,
           },

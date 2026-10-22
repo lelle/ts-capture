@@ -454,6 +454,50 @@ export function explainRejection(
 }
 
 /**
+ * True when `candidate` annotates a variable whose initializer, with the
+ * `accepted` annotations written, infers a type wider than the annotation:
+ * TypeScript already has a type there that holds what the run saw.
+ */
+export function initializerInfersWider(
+  ctx: VerificationContext,
+  accepted: ReadonlyArray<SpanReplacement>,
+  candidate: SpanReplacement,
+  supportingFor?: SupportingReplacements,
+): boolean {
+  const { service, host } = ctx.project;
+  const probe = withSupport([...accepted, candidate], supportingFor);
+  host.setFileSnapshot(ctx.filename, applyReplacementsForProbe(ctx.currentSource, probe));
+  try {
+    const program = service.getProgram();
+    const sf = program?.getSourceFile(ctx.filename);
+    if (!program || !sf) return false;
+    const checker = program.getTypeChecker();
+    const declaration = findVariableDeclaration(
+      sf,
+      (d) => sourceOffsetOfProbeOffset(d.name.end, probe) === candidate.start,
+    );
+    if (!declaration?.type || !declaration.initializer) return false;
+    const annotated = checker.getTypeFromTypeNode(declaration.type);
+    const inferred = checker.getTypeAtLocation(declaration.initializer);
+    if (inferred.flags & (ts.TypeFlags.Any | ts.TypeFlags.Unknown)) return false;
+    return (
+      checker.isTypeAssignableTo(annotated, inferred) &&
+      !checker.isTypeAssignableTo(inferred, annotated)
+    );
+  } finally {
+    host.setFileSnapshot(ctx.filename, ctx.currentSource);
+  }
+}
+
+function findVariableDeclaration(
+  node: ts.Node,
+  matches: (declaration: ts.VariableDeclaration) => boolean,
+): ts.VariableDeclaration | undefined {
+  if (ts.isVariableDeclaration(node) && matches(node)) return node;
+  return ts.forEachChild(node, (child) => findVariableDeclaration(child, matches));
+}
+
+/**
  * Persist a set of accepted replacements into the context so future
  * `wouldIntroduceErrors` probes layer on top of them. The new
  * baseline diagnostics are also re-snapshotted — any errors apply

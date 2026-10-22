@@ -10,6 +10,7 @@ import { buildDiagnosticMarkerSuffix } from "./apply-diagnostics.js";
 import {
   explainRejection,
   filterAcceptedReplacements,
+  initializerInfersWider,
   type SupportingReplacements,
   type VerificationContext,
 } from "./apply-types-verify.js";
@@ -637,9 +638,21 @@ export function buildCstReplacements(
     accepted = filterAcceptedReplacements(verify, probes, supporting);
     const acceptedSet = new Set(accepted);
     if (telemetry) {
-      telemetry.verifyReject += buffered.length - acceptedSet.size;
+      const acceptedProbes = accepted.map((i) => probes[i]);
       buffered.forEach((candidate, i) => {
         if (acceptedSet.has(i)) return;
+        // Narrower than what TypeScript infers once the rest is written, as a
+        // binding to one call of a function whose return type was just written.
+        if (initializerInfersWider(verify, acceptedProbes, probes[i], supporting)) {
+          telemetry.skipped.push({
+            pos: candidate.pos,
+            reason: "left-to-typescript",
+            observed: observedByCandidatePos.get(candidate.pos) ?? "",
+            detail: "TypeScript infers a wider type from the initializer",
+          });
+          return;
+        }
+        telemetry.verifyReject++;
         const diagnostic = explainRejection(verify, probes[i], supporting);
         telemetry.skipped.push({
           pos: candidate.pos,
