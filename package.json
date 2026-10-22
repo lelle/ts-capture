@@ -2,7 +2,7 @@
   "name": "ts-capture-monorepo",
   "version": "0.0.0",
   "private": true,
-  "description": "ts-capture — capture runtime values, shape them as TypeScript types",
+  "description": "ts-capture — turn runtime values into TypeScript types, and check existing types against them",
   "license": "MIT",
   "scripts": {
     "build": "pnpm -r build",

@@ -1,7 +1,7 @@
 # ts-capture documentation
 
-ts-capture observes how your code is actually called at runtime and writes the
-inferred TypeScript types back into your source. It's a **process**, not just a
+ts-capture turns the values your code is called with into TypeScript types in
+your source. It's a **process**, not just a
 library — these docs are organized so you can find what you need by intent.
 
 ## Start here

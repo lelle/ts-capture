@@ -1,7 +1,7 @@
 # @ts-capture/babel-plugin
 
-Babel plugin for [ts-capture](../core) — automatic TypeScript type annotation via
-runtime observation.
+Babel plugin for [ts-capture](../core) — collects the types your code is called
+with when Jest or another Babel build runs it.
 
 Mirrors the [`@istanbuljs/babel-plugin-istanbul`](https://github.com/istanbuljs/babel-plugin-istanbul)
 pattern: the user's existing Babel chain (Jest preset, Vite-with-Babel, webpack,

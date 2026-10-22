@@ -4,11 +4,11 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](./LICENSE)
 ![Status: pre-release](https://img.shields.io/badge/status-pre--release-orange)
 
-> **Capture runtime values, shape them as TypeScript types.**
+> **Turn runtime values into TypeScript types — and check existing types against them.**
 
-ts-capture observes how your code is actually called at runtime — in tests, in
-dev, in the browser — and writes inferred TypeScript types back into your
-source. Turns the implicit `any` your tests exercise into precise types.
+ts-capture watches how your code is called — in tests, in dev, in the
+browser — and writes the types it saw back into your source. It also flags
+existing types that the run contradicts.
 
 **[▶ Try it in the browser](https://lelle.github.io/ts-capture/playground/)** — no install
 

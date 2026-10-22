@@ -1,7 +1,7 @@
 # @ts-capture/esbuild
 
-esbuild plugin for [ts-capture](../core) — automatic TypeScript type
-annotation via runtime observation.
+esbuild plugin for [ts-capture](../core) — collects the types your code is
+called with during tsup, Bun or plain esbuild builds.
 
 Targets the esbuild plugin API directly. Works with **tsup**, **direct
 esbuild builds**, and any tool that accepts esbuild plugins.

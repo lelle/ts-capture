@@ -1,8 +1,8 @@
 # @ts-capture/vite
 
-Vite plugin for [ts-capture](../core) — automatic TypeScript type annotation
-via runtime observation. Works for both **Vitest** (Node-side) and
-**browser dev sessions** (Vite dev server).
+Vite plugin for [ts-capture](../core) — collects the types your code is called
+with, in **Vitest** (Node-side) and in **browser dev sessions** (Vite dev
+server).
 
 Instrumentation happens in Vite's transform pipeline, so source on disk is
 never modified and projects that lint, format-check or type-check before their

@@ -1,10 +1,9 @@
 # @ts-capture/svelte
 
-Svelte 5 preprocessor for [ts-capture](../core) — automatic TypeScript
-type annotation via runtime observation. Instruments `<script lang="ts">`
-blocks in `.svelte` files so ts-capture can fill in implicit `any` from
-observed runtime values, then writes the inferred types back into the
-right `<script>` block.
+Svelte 5 preprocessor for [ts-capture](../core) — collects the types your
+`<script>` blocks are called with. Instruments `<script lang="ts">` blocks in
+`.svelte` files so ts-capture can fill in implicit `any` from observed runtime
+values, then writes the observed types back into the right `<script>` block.
 
 Plain TypeScript tools cannot place a type inside a `<script>` block, so this
 package instruments the blocks through the Svelte preprocess chain and remaps

@@ -74,7 +74,7 @@ export function renderHomePage(build: BuildInfo): string {
       description:
         "ts-capture watches your code run and writes the types it saw back into your source.",
       top: markup`<h1>ts-capture</h1>
-  <p class="lede">Capture runtime values, shape them as TypeScript types. ts-capture watches how your code is called — in tests, in dev, in the browser — and writes the types it saw back into your source.</p>`,
+  <p class="lede">Turn runtime values into TypeScript types — and check existing types against them. ts-capture watches how your code is called — in tests, in dev, in the browser — and writes the types it saw back into your source. It also flags existing types that the run contradicts.</p>`,
       body: markup`<main id="content">
   <figure class="demo">
     <img class="shown" src="demo-1.webp" srcset="demo-1@2x.webp 2x" width="960" height="720" alt="1. ${DEMO_STEPS[0]}" aria-describedby="demo-description">
