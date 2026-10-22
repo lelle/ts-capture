@@ -6,7 +6,7 @@ const SITE = "https://lelle.github.io/ts-capture/";
 export const SITE_ROOT = new URL(SITE).pathname;
 const NPM = "https://www.npmjs.com/package/@ts-capture/core";
 // Counts visits without cookies; the numbers are private to the maintainer.
-const COUNTER = markup`<script defer data-goatcounter="https://ts-capture.goatcounter.com/count" src="https://gc.zgo.at/count.js"></script>`;
+const COUNTER = markup`<script async data-goatcounter="https://ts-capture.goatcounter.com/count" src="https://gc.zgo.at/count.js"></script>`;
 const COUNTER_PRIVACY = "https://www.goatcounter.com/help/privacy";
 
 /**

@@ -222,7 +222,7 @@ describe("the site frame", () => {
         page.match(/<script [^>]*data-goatcounter="[^"]+"[^>]*><\/script>/g) ??
         [];
       expect(counters).toEqual([
-        '<script defer data-goatcounter="https://ts-capture.goatcounter.com/count" src="https://gc.zgo.at/count.js"></script>',
+        '<script async data-goatcounter="https://ts-capture.goatcounter.com/count" src="https://gc.zgo.at/count.js"></script>',
       ]);
       const footer = page.slice(page.indexOf('<footer class="site"'));
       expect(footer).toContain(
