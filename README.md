@@ -12,7 +12,7 @@ source. Turns the implicit `any` your tests exercise into precise types.
 
 **[▶ Try it in the browser](https://lelle.github.io/ts-capture/playground/)** — no install
 
-![An order form whose code has no types. The ts-capture plugin is added to the Vite config, two orders are placed in the browser, and `ts-capture apply` writes four named types and six annotations into the source, taking type coverage from 77% to 100%.](docs/assets/demo.gif)
+![An order form whose code has no types. The ts-capture plugin is added to the Vite config, two orders are placed in the browser, and `ts-capture apply` writes four named types and six annotations into the source, taking type coverage from 77% to 100%.](docs/assets/demo.webp)
 
 The recording is made by [`pnpm demo`](packages/demo), which runs every step
 for real; nothing in it is written by hand.

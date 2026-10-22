@@ -18,3 +18,18 @@ export function terminalLines(output: string): string[] {
     .map((line) => line.trimEnd())
     .filter((line) => line.length > 0);
 }
+
+/** Where step `step`'s still goes; a page loads the 1x one unless the screen is dense. */
+export function stillName(step: number, scale: 1 | 2): string {
+  return scale === 1 ? `demo-${step}.webp` : `demo-${step}@2x.webp`;
+}
+
+/** `img2webp`'s arguments for the README's animation of the steps. */
+export function animationArgs(frames: string[], out: string): string[] {
+  const held = frames.flatMap((frame, i) => [
+    "-d",
+    i === frames.length - 1 ? "5000" : "3500",
+    frame,
+  ]);
+  return ["-loop", "0", "-lossless", "-m", "6", ...held, "-o", out];
+}

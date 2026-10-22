@@ -21,19 +21,26 @@ import {
   TYPES_FILE,
   WORK_DIR,
 } from "./run.js";
-import { coveragePercent, terminalLines } from "./scenes.js";
+import {
+  animationArgs,
+  coveragePercent,
+  stillName,
+  terminalLines,
+} from "./scenes.js";
 import { stageHtml, VIEWPORT } from "./stage.js";
 
-// Records the README demo. The demo is run twice. The first run is the real
-// one and is not filmed: it produces the code, the numbers and the terminal
-// output. The second is the film, which shows those results at a pace a reader
-// can follow and fills the form in again, live, for the browser scene. Nothing
-// on screen is written by hand: a change to what ts-capture does changes the
+// Records the README demo. The first run is the real one: it produces the
+// code, the numbers and the terminal output. Then the stage shows those
+// results step by step, the form is filled in again for the browser step,
+// and the end of each step is screenshotted, at 1x and at 2x. Nothing on
+// screen is written by hand: a change to what ts-capture does changes the
 // recording.
 
 const SOURCE = "src/order.ts";
 const VITE_CONFIG = "vite.config.ts";
 const CAPTURE_CONFIG = "ts-capture.config.json";
+// The stage's highlight on written code fades over 1.4 s.
+const ARRIVED = 1600;
 
 interface Measured {
   before: string;
@@ -108,23 +115,25 @@ async function onStage<K extends keyof Stage>(
   );
 }
 
-/** Film the scenes; returns the video and how long it ran before the first scene. */
-async function film(
-  measured: Measured,
-): Promise<{ video: string; lead: number }> {
-  const app = freshApp("filmed");
+/** The stage at the end of each step, as PNG files, in order. */
+async function shoot(measured: Measured, scale: 1 | 2): Promise<string[]> {
+  const app = freshApp(`shot-${scale}x`);
   addCapture(app);
   const { server, url } = await serve(app);
-  const videoDir = path.join(WORK_DIR, "video");
-  fs.rmSync(videoDir, { recursive: true, force: true });
+  const dir = path.join(WORK_DIR, "stills");
+  fs.mkdirSync(dir, { recursive: true });
+  const shots: string[] = [];
+  const shot = async (page: Page): Promise<void> => {
+    const file = path.join(dir, `step${shots.length + 1}@${scale}x.png`);
+    await page.screenshot({ path: file });
+    shots.push(file);
+  };
   const browser = await chromium.launch();
-  const started = Date.now();
-  const context = await browser.newContext({
-    viewport: VIEWPORT,
-    recordVideo: { dir: videoDir, size: VIEWPORT },
-  });
   try {
-    const page = await context.newPage();
+    const page = await browser.newPage({
+      viewport: VIEWPORT,
+      deviceScaleFactor: scale,
+    });
     await page.setContent(stageHtml());
 
     await onStage(
@@ -140,8 +149,7 @@ async function film(
       ],
       { text: measured.coverageBefore, tone: "low" },
     );
-    const lead = Date.now() - started;
-    await sleep(4000);
+    await shot(page);
 
     await onStage(page, "code", "2", "Add ts-capture to the build", [
       {
@@ -154,25 +162,22 @@ async function film(
         html: renderCode("", readCapture(CAPTURE_CONFIG)).text,
       },
     ]);
-    await sleep(4000);
+    // The added lines arrive highlighted, then settle; shoot them settled.
+    await sleep(ARRIVED);
+    await shot(page);
 
     await onStage(page, "browser", "3", "Use the app", url);
     const form = page.frameLocator("#app");
     await form.locator("#order").waitFor();
-    await sleep(600);
-    await placeOrder(form, ORDERS[0], 45);
-    await sleep(1300);
-    await placeOrder(form, ORDERS[1], 30);
-    await sleep(1500);
+    for (const order of ORDERS) await placeOrder(form, order);
+    await shot(page);
 
     await onStage(page, "terminal", "4", "Apply what it observed");
-    await sleep(400);
     for (const { command, output } of measured.commands) {
       await onStage(page, "typeCommand", command);
       await onStage(page, "print", output);
-      await sleep(900);
     }
-    await sleep(900);
+    await shot(page);
 
     await onStage(
       page,
@@ -187,48 +192,36 @@ async function film(
       ],
       { text: measured.coverageAfter, tone: "full" },
     );
-    await sleep(6000);
-
-    const video = await page.video()!.path();
-    await context.close();
-    return { video, lead };
+    await sleep(ARRIVED);
+    await shot(page);
+    return shots;
   } finally {
     await browser.close();
     await server.close();
   }
 }
 
-function ffmpeg(args: string[]): void {
-  execFileSync("ffmpeg", ["-y", "-loglevel", "error", ...args], {
-    stdio: "inherit",
-  });
+function run(tool: string, args: string[]): void {
+  execFileSync(tool, args, { stdio: "inherit" });
 }
 
-function encode(video: string, lead: number): void {
+/** Each still as lossless WebP at both scales, and the README's animation at 2x. */
+function encode(stills: Record<1 | 2, string[]>): void {
   fs.mkdirSync(ASSETS_DIR, { recursive: true });
-  const from = ["-ss", (lead / 1000).toFixed(2), "-i", video];
-  ffmpeg([
-    ...from,
-    "-vf",
-    "fps=12,split[a][b];[a]palettegen=stats_mode=diff[p];[b][p]paletteuse=dither=none:diff_mode=rectangle",
-    path.join(ASSETS_DIR, "demo.gif"),
-  ]);
-  ffmpeg([
-    ...from,
-    "-movflags",
-    "+faststart",
-    "-pix_fmt",
-    "yuv420p",
-    path.join(ASSETS_DIR, "demo.mp4"),
-  ]);
+  for (const scale of [1, 2] as const) {
+    stills[scale].forEach((png, i) => {
+      const webp = path.join(ASSETS_DIR, stillName(i + 1, scale));
+      run("cwebp", ["-quiet", "-lossless", "-z", "9", png, "-o", webp]);
+    });
+  }
+  run("img2webp", animationArgs(stills[2], path.join(ASSETS_DIR, "demo.webp")));
 }
 
 const measured = await measure();
 console.log(
   `measured: coverage ${measured.coverageBefore} -> ${measured.coverageAfter}; ${measured.commands[0].output.join(" ")}`,
 );
-const { video, lead } = await film(measured);
-encode(video, lead);
+encode({ 1: await shoot(measured, 1), 2: await shoot(measured, 2) });
 console.log(
-  `recorded: ${path.relative(process.cwd(), path.join(ASSETS_DIR, "demo.gif"))}`,
+  `recorded: ${path.relative(process.cwd(), path.join(ASSETS_DIR, "demo.webp"))} and the stills beside it`,
 );
