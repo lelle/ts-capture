@@ -459,7 +459,7 @@ textarea {
 .demo {
   margin: 8px 0 14px;
 }
-.demo video {
+.demo img.shown {
   display: block;
   width: 100%;
   max-width: 960px;
@@ -467,6 +467,48 @@ textarea {
   border: 1px solid var(--line);
   border-radius: 8px;
   background: var(--code-bg);
+}
+.demo .steps {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 10px;
+  max-width: 960px;
+  margin: 10px 0 0;
+  padding: 0;
+  list-style: none;
+}
+.demo .steps a {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.3;
+  text-decoration: none;
+}
+.demo .steps img {
+  display: block;
+  width: 100%;
+  height: auto;
+  border: 2px solid transparent;
+  border-radius: 6px;
+}
+.demo .steps a:hover img {
+  border-color: var(--line);
+}
+.demo .steps a[aria-current="step"] {
+  color: var(--text);
+}
+.demo .steps a[aria-current="step"] img {
+  border-color: var(--accent);
+}
+@media (max-width: 600px) {
+  .demo .steps {
+    gap: 6px;
+  }
+  .demo .steps span {
+    display: none;
+  }
 }
 .demo figcaption {
   text-transform: none;

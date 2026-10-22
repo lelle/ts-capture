@@ -1,3 +1,5 @@
+import { existsSync } from "node:fs";
+import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 
 import { INTEGRATIONS, renderHomePage } from "./home.js";
@@ -10,19 +12,32 @@ describe("renderHomePage", () => {
     expect(html).toContain('<a href="playground/">');
   });
 
-  it("plays the recording muted and inline, with a text alternative", () => {
-    const video = /<video\b[^>]*>/.exec(html)?.[0] ?? "";
-    expect(video).toContain('src="demo.mp4"');
-    for (const attribute of ["muted", "loop", "playsinline", "controls"]) {
-      expect(video).toMatch(new RegExp(`\\s${attribute}[\\s>]`));
-    }
-    const described = /aria-describedby="([^"]+)"/.exec(video)?.[1];
+  const shown = (): string => /<img class="shown"[^>]*>/.exec(html)?.[0] ?? "";
+  const steps = (): string[] =>
+    [...html.matchAll(/<li><a href="([^"]+)"/g)].map((m) => m[1]!);
+
+  it("shows the first step large, sharp on a dense screen, with a text alternative", () => {
+    expect(shown()).toContain('src="demo-1.webp"');
+    expect(shown()).toContain('srcset="demo-1@2x.webp 2x"');
+    expect(shown()).toMatch(/alt="[^"]+"/);
+    const described = /aria-describedby="([^"]+)"/.exec(shown())?.[1];
     expect(html).toContain(`id="${described}"`);
   });
 
-  it("leaves starting the recording to the script, so reduced motion can keep it still", () => {
-    const video = /<video\b[^>]*>/.exec(html)?.[0] ?? "";
-    expect(video).not.toMatch(/\sautoplay[\s>]/);
+  it("offers the five steps under it, each a link to its full-size still, the first marked", () => {
+    expect(steps()).toEqual([1, 2, 3, 4, 5].map((n) => `demo-${n}@2x.webp`));
+    expect(html).toMatch(/<a href="demo-1@2x.webp" aria-current="step">/);
+  });
+
+  it("names only stills the recording wrote", () => {
+    const assets = resolve(import.meta.dirname, "../../../docs/assets");
+    const named = [...html.matchAll(/"(demo-[^" ]+\.webp)/g)].map((m) => m[1]!);
+    expect(named.length).toBeGreaterThan(0);
+    for (const file of named)
+      expect(existsSync(resolve(assets, file))).toBe(true);
+  });
+
+  it("leaves turning the steps to the script, so reduced motion can keep them still", () => {
     expect(html).toContain('<script type="module" src="js/home.js"></script>');
   });
 

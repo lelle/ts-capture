@@ -51,6 +51,21 @@ function renderIntegration(integration: Integration): Markup {
     </li>`;
 }
 
+// The recording's steps, as its stage names them; @ts-capture/demo writes a
+// still of each, demo-<n>.webp and demo-<n>@2x.webp.
+const DEMO_STEPS = [
+  "A codebase without types",
+  "Add ts-capture to the build",
+  "Use the app",
+  "Apply what it observed",
+  "Types, written into your source",
+];
+
+function renderDemoStep(caption: string, i: number): Markup {
+  const n = i + 1;
+  return markup`<li><a href="demo-${n}@2x.webp"${i === 0 && markup` aria-current="step"`}><img src="demo-${n}.webp" width="192" height="144" alt="" loading="lazy"><span>${n}. ${caption}</span></a></li>`;
+}
+
 export function renderHomePage(build: BuildInfo): string {
   return renderLayout(
     {
@@ -62,7 +77,10 @@ export function renderHomePage(build: BuildInfo): string {
   <p class="lede">Capture runtime values, shape them as TypeScript types. ts-capture watches how your code is called — in tests, in dev, in the browser — and writes the types it saw back into your source.</p>`,
       body: markup`<main id="content">
   <figure class="demo">
-    <video src="demo.mp4" width="960" height="720" muted loop playsinline controls preload="metadata" aria-describedby="demo-description"></video>
+    <img class="shown" src="demo-1.webp" srcset="demo-1@2x.webp 2x" width="960" height="720" alt="1. ${DEMO_STEPS[0]}" aria-describedby="demo-description">
+    <ol class="steps">
+      ${join(DEMO_STEPS.map(renderDemoStep), "\n      ")}
+    </ol>
     <figcaption id="demo-description">An order form whose code has no types. The ts-capture plugin is added to the Vite config, two orders are placed in the browser, and <code>ts-capture apply</code> writes four named types and six annotations into the source, taking type coverage from 77% to 100%.</figcaption>
   </figure>
   <p class="how">The recording is made by running every step for real; nothing in it is written by hand. See <a href="examples/">what it wrote into real projects</a>, the results a reviewer should change included, or <a href="playground/">try it in your browser</a>.</p>

@@ -58,8 +58,12 @@ mkdirSync(resolve(outDir, "css"), { recursive: true });
 for (const sheet of readdirSync(stylesDir)) {
   copyFileSync(resolve(stylesDir, sheet), resolve(outDir, "css", sheet));
 }
-for (const asset of ["demo.mp4", "og.png"]) {
-  copyFileSync(resolve(root, "docs/assets", asset), resolve(outDir, asset));
+// The recording's stills (not the README's animation) and the share card.
+const assetsDir = resolve(root, "docs/assets");
+for (const asset of readdirSync(assetsDir)) {
+  if (/^demo-\d/.test(asset) || asset === "og.png") {
+    copyFileSync(resolve(assetsDir, asset), resolve(outDir, asset));
+  }
 }
 writeFileSync(
   resolve(examplesDir, "index.html"),

@@ -1,3 +1,3 @@
-import { playDemo } from "../demo.js";
+import { setUpDemo } from "../demo.js";
 
-playDemo();
+setUpDemo();
