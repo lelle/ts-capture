@@ -215,6 +215,22 @@ describe("the site frame", () => {
     expect(page).not.toContain('<script type="module"');
   });
 
+  it.each(Object.entries(pages))(
+    "%s is counted, once, and says so in the footer",
+    (_, page) => {
+      const counters =
+        page.match(/<script [^>]*data-goatcounter="[^"]+"[^>]*><\/script>/g) ??
+        [];
+      expect(counters).toEqual([
+        '<script defer data-goatcounter="https://ts-capture.goatcounter.com/count" src="https://gc.zgo.at/count.js"></script>',
+      ]);
+      const footer = page.slice(page.indexOf('<footer class="site"'));
+      expect(footer).toContain(
+        'Visits are counted by <a href="https://www.goatcounter.com/help/privacy">GoatCounter</a>, without cookies.',
+      );
+    },
+  );
+
   it("leaves the commit out when the build does not know it", () => {
     expect(renderHomePage({ version: "0.4.0" })).not.toContain("/commit/");
   });

@@ -5,6 +5,9 @@ const SITE = "https://lelle.github.io/ts-capture/";
 /** Where the site sits on its host, as Pages and `pnpm site` serve it. */
 export const SITE_ROOT = new URL(SITE).pathname;
 const NPM = "https://www.npmjs.com/package/@ts-capture/core";
+// Counts visits without cookies; the numbers are private to the maintainer.
+const COUNTER = markup`<script defer data-goatcounter="https://ts-capture.goatcounter.com/count" src="https://gc.zgo.at/count.js"></script>`;
+const COUNTER_PRIVACY = "https://www.goatcounter.com/help/privacy";
 
 /**
  * What the site was built from; the commit is left out when git is not there.
@@ -92,6 +95,7 @@ function renderSiteFooter(build: BuildInfo, root: string): Markup {
   return markup`<footer class="site">
   <p><a href="${REPO}">GitHub</a> · <a href="${NPM}">npm</a> · <a href="${root}docs/">Docs</a> · MIT licence</p>
   <p>${builtFrom}</p>
+  <p>Visits are counted by <a href="${COUNTER_PRIVACY}">GoatCounter</a>, without cookies.</p>
 </footer>`;
 }
 
@@ -140,6 +144,7 @@ ${
 }${renderShareCard(title, page.description, path)}
 <script src="${root}js/theme.js"></script>
 ${renderStylesheets(id, root)}
+${COUNTER}
 </head>
 <body>
 <a class="skip" href="#content">Skip to content</a>

@@ -25,7 +25,9 @@ the browser scripts with esbuild.
 ## How a page is made
 
 - **`layout.ts`** holds what every page shares: the head, the bar, the footer,
-  the stylesheets, the scripts and the share card's tags. A page calls
+  the stylesheets, the scripts, the share card's tags and the visit counter
+  (GoatCounter, no cookies; the numbers are private, at
+  `ts-capture.goatcounter.com`, and a page on localhost is not counted). A page calls
   `renderLayout` with its id, title, description and content; a page deeper
   than one level adds its `path`, from which its links to the rest of the
   site are worked out.
