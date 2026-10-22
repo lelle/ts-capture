@@ -154,20 +154,21 @@ export function crossReferenceObservations(input: CrossRefInput): CollectedTypeI
       const fnKeys = recordedFnKeys.get(key);
       let crossRefUpgraded = false;
       if (fnKeys) {
-        for (const fnKey of fnKeys) {
-          const sig = fnSignatures.get(fnKey);
-          if (sig) {
-            types = types.map(([typeName, srcLoc, reason]) => {
-              if (typeName && isGenericFunctionType(typeName)) {
-                // Cross-ref upgrade: drop the implicit "generic-fn"
-                // approximation since we now have a real signature.
-                return [sig, srcLoc, reason];
-              }
-              return [typeName, srcLoc, reason];
-            });
-            crossRefUpgraded = true;
-            break;
-          }
+        // Different functions can stringify to one generic type, so each
+        // generic entry stands for every recorded function's signature.
+        const sigs = [
+          ...new Set(fnKeys.map((fnKey) => fnSignatures.get(fnKey)).filter((sig) => sig != null)),
+        ];
+        if (sigs.length > 0) {
+          types = types.flatMap(([typeName, srcLoc, reason]) => {
+            if (typeName && isGenericFunctionType(typeName)) {
+              // Cross-ref upgrade: drop the implicit "generic-fn"
+              // approximation since we now have a real signature.
+              return sigs.map((sig) => [sig, srcLoc, reason] as (typeof types)[number]);
+            }
+            return [[typeName, srcLoc, reason]];
+          });
+          crossRefUpgraded = true;
         }
       }
 

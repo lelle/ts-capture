@@ -52,6 +52,28 @@ describe("crossReferenceObservations — plain-data engine (no live functions)",
     expect(entry[2][0][2]).toBeUndefined();
   });
 
+  it("upgrades a generic function value to every distinct recorded fn's signature", () => {
+    const logs = new Map<string, Set<string>>([
+      [logKey("h.ts", 51, { returnType: true }), new Set([typeEntry("number")])],
+      [logKey("h.ts", 67, { returnType: true }), new Set([typeEntry("string")])],
+      [logKey("h.ts", 80, { returnType: true }), new Set([typeEntry("number")])],
+      // Three arrows stringify to one generic type, so the set holds it once.
+      [logKey("app.ts", 19, { fnRetPos: 20 }), new Set([typeEntry(GENERIC_FN)])],
+    ]);
+    const input: CrossRefInput = {
+      ...emptyInput(logs),
+      recordedFnKeys: new Map([
+        [logKey("app.ts", 19, { fnRetPos: 20 }), ["h.ts:51", "h.ts:67", "h.ts:80"]],
+      ]),
+    };
+
+    const entry = find(crossReferenceObservations(input), "app.ts", 19)!;
+    expect(entry[2].map(([type]) => type)).toEqual([
+      buildFunctionSignature([], ["number"], false),
+      buildFunctionSignature([], ["string"], false),
+    ]);
+  });
+
   it("tags an un-upgraded generic function value with the generic-fn reason", () => {
     const logs = new Map<string, Set<string>>([
       [logKey("app.ts", 42, { varDecl: true }), new Set([typeEntry(GENERIC_FN)])],

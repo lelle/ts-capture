@@ -105,6 +105,16 @@ onDone(() => {});`);
     expect(out).toTypeAs("callback", "() => void");
   });
 
+  it("types a callback passed different functions as accepting each of them", () => {
+    const out = pipeline(`
+function total(func) {
+    return func();
+}
+total(() => 1);
+total(() => 'one');`);
+    expect(out).toTypeAs("func", "(() => number) | (() => string)");
+  });
+
   it("handles optional parameters", () => {
     const out = pipeline(`
 function calculate(a, b?) {
