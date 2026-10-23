@@ -1,7 +1,7 @@
 import ts from "typescript";
 
 import type { InferOptions } from "./configuration.js";
-import type { ApplySkipReason, ApplyTelemetry } from "./contract.js";
+import type { ApplyRule, ApplySkipReason, ApplyTelemetry } from "./contract.js";
 import type { CstSiteIndex, VarDeclSite } from "./cst-site-index.js";
 import type { CollectedTypeInfo } from "./type-collector.js";
 
@@ -44,13 +44,19 @@ export function routeEntries(
     typedParamEnds,
   } = index;
   const cstEligible: RoutedEntry[] = [];
-  const skip = (entry: CollectedTypeInfo[number], reason: ApplySkipReason, detail?: string) => {
+  const skip = (
+    entry: CollectedTypeInfo[number],
+    reason: ApplySkipReason,
+    rule: ApplyRule,
+    detail?: string,
+  ) => {
     if (!telemetry) return;
     if (reason === "already-annotated") telemetry.idempotent++;
     if (reason === "no-site") telemetry.positionMismatch++;
     telemetry.skipped.push({
       pos: entry[1],
       reason,
+      rule,
       observed: [...new Set(entry[2].map(([name]) => name).filter(Boolean))].join(" | "),
       ...(detail ? { detail } : {}),
     });
@@ -89,18 +95,18 @@ export function routeEntries(
   for (const entry of bySite.values()) {
     const [, pos, , opts] = entry;
     if (ignoredRanges.some(([s, e]) => pos >= s && pos < e)) {
-      skip(entry, "ignored");
+      skip(entry, "ignored", "syntax.ignored");
       continue;
     }
     if (opts?.thisType) {
       const site = thisTypeSites.get(pos);
       const first = site?.node.parameters[0];
       if (first && ts.isIdentifier(first.name) && first.name.text === "this") {
-        skip(entry, "already-annotated");
+        skip(entry, "already-annotated", "syntax.already-typed");
       } else if (site) {
         cstEligible.push({ entry, kind: "thisType" });
       } else {
-        skip(entry, "no-site");
+        skip(entry, "no-site", "syntax.no-site");
       }
       continue;
     }
@@ -125,15 +131,25 @@ export function routeEntries(
       if (verdict === "annotate") {
         cstEligible.push({ entry, kind: "varDecl" });
       } else if (verdict === "no-site") {
-        skip(entry, "no-site");
+        skip(entry, "no-site", "syntax.no-site");
       } else if (verdict === "idempotent") {
-        skip(entry, "already-annotated");
+        skip(entry, "already-annotated", "syntax.already-typed");
       } else if (verdict === "outer-conflict") {
-        skip(entry, "kept-existing", outerConflictDetail(site!));
+        skip(entry, "kept-existing", "syntax.outer-conflict", outerConflictDetail(site!));
       } else if (verdict === "one-branch") {
-        skip(entry, "left-to-typescript", "one branch of the initializer observed");
+        skip(
+          entry,
+          "left-to-typescript",
+          "syntax.one-branch-seen",
+          "one branch of the initializer observed",
+        );
       } else if (verdict === "only-undefined") {
-        skip(entry, "left-to-typescript", "only `undefined` observed");
+        skip(
+          entry,
+          "left-to-typescript",
+          "syntax.only-undefined-seen",
+          "only `undefined` observed",
+        );
       }
       continue;
     }
@@ -141,23 +157,23 @@ export function routeEntries(
       const site = returnTypeSites.get(pos);
       // Bypassed when `infer.ignoreExistingTypes` is on.
       if (site && site.hasReturnType && !infer.ignoreExistingTypes) {
-        skip(entry, "already-annotated");
+        skip(entry, "already-annotated", "syntax.already-typed");
         continue;
       }
       if (site) {
         cstEligible.push({ entry, kind: "returnType" });
       } else {
-        skip(entry, "no-site");
+        skip(entry, "no-site", "syntax.no-site");
       }
       continue;
     }
     // Plain param entry.
     if (typedParamEnds.has(pos)) {
-      skip(entry, "already-annotated");
+      skip(entry, "already-annotated", "syntax.already-typed");
     } else if (paramSites.has(pos)) {
       cstEligible.push({ entry, kind: "param" });
     } else {
-      skip(entry, "no-site");
+      skip(entry, "no-site", "syntax.no-site");
     }
   }
 

@@ -111,7 +111,9 @@ export function annotateProject(input: AnnotateProjectInput): AnnotateProjectRes
     const result = annotateWith(text, grouped.get(file)!, options, verify);
     // The next file is checked against this one as written.
     if (verify) advanceCurrentSource(verify, result.text);
-    for (const skip of result.skips) skip.file = file;
+    for (const record of [...result.skips, ...(result.telemetry.written ?? [])]) {
+      record.file = file;
+    }
     addTelemetry(telemetry, result.telemetry);
     results.set(file, result);
   }
@@ -156,4 +158,5 @@ export function addTelemetry(into: ApplyTelemetry, from: ApplyTelemetry): void {
   into.verifyReject += from.verifyReject;
   into.redundant += from.redundant;
   into.skipped.push(...from.skipped);
+  if (from.written) (into.written ??= []).push(...from.written);
 }

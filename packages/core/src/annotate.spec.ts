@@ -184,7 +184,9 @@ describe.each(TIERS)("annotate, oracle %s", (tier) => {
     const pos = source.indexOf("a)") + 1;
     const { result } = annotated(tier, source, [entry("target.ts", pos, [["number"]])]);
     expect(result.text).toBe(source);
-    expect(result.skips).toEqual([{ pos, reason: "ignored", observed: "number" }]);
+    expect(result.skips).toEqual([
+      { pos, reason: "ignored", rule: "syntax.ignored", observed: "number" },
+    ]);
   });
 
   // Parallel workers record the same site many times, one observation each.
@@ -361,7 +363,9 @@ describe.each(TIERS)("annotate, oracle %s", (tier) => {
       const pos = source.indexOf("return");
       const { result } = annotated(tier, source, [entry("target.ts", pos, [["string"]], opts)]);
       expect(result.text).toBe(source);
-      expect(result.skips).toEqual([{ pos, reason: "no-site", observed: "string" }]);
+      expect(result.skips).toEqual([
+        { pos, reason: "no-site", rule: "syntax.no-site", observed: "string" },
+      ]);
     });
   });
 });

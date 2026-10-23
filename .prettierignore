@@ -26,3 +26,6 @@ ts-capture-test/
 
 # Built examples page
 site/
+
+# Generated answer keys for the apply-rules corpus
+packages/core/corpus/**/*.after.ts

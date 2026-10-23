@@ -1,6 +1,7 @@
 import type ts from "typescript";
 
 import type { InferOptions } from "./configuration.js";
+import type { ApplyRule } from "./contract.js";
 
 import {
   carriesPolymorphicThis,
@@ -28,12 +29,12 @@ import {
 
 export type GateVerdict =
   | { kind: "write" }
-  | { kind: "suppress" }
+  | { kind: "suppress"; rule: ApplyRule }
   | { kind: "contradiction"; observed: string[] }
   | { kind: "redundant" };
 
 const WRITE: GateVerdict = { kind: "write" };
-const SUPPRESS: GateVerdict = { kind: "suppress" };
+const suppress = (rule: ApplyRule): GateVerdict => ({ kind: "suppress", rule });
 
 /**
  * What the checker says about writing `emitted` where it infers `inferred`.
@@ -57,11 +58,11 @@ export function checkerGate(
   // `this` has no single value to write down: a concrete type here costs every
   // subclass its own. Not just return types — `const self = this` and a
   // contextually typed callback parameter are inferred `this` as well.
-  if (carriesPolymorphicThis(checker, inferred)) return SUPPRESS;
-  if (writesOverCallSignature(checker, inferred, emitted)) return SUPPRESS;
-  if (erasesNamedType(checker, inferred, emitted)) return SUPPRESS;
-  if (erasesEnum(checker, inferred, emitted)) return SUPPRESS;
-  if (discardsUnionArm(checker, inferred, emitted)) return SUPPRESS;
+  if (carriesPolymorphicThis(checker, inferred)) return suppress("gate.polymorphic-this");
+  if (writesOverCallSignature(checker, inferred, emitted)) return suppress("gate.call-signature");
+  if (erasesNamedType(checker, inferred, emitted)) return suppress("gate.erases-named-type");
+  if (erasesEnum(checker, inferred, emitted)) return suppress("gate.erases-enum");
+  if (discardsUnionArm(checker, inferred, emitted)) return suppress("gate.discards-union-arm");
 
   // Asked unconditionally. Whether a note is *written* is a question about
   // output, settled by the caller; whether the run contradicts the type is a

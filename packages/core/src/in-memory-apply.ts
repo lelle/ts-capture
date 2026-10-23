@@ -6,7 +6,7 @@ import type { ApplyTelemetry } from "./contract.js";
 
 import { annotateProject } from "./annotate.js";
 import { createProjectVerificationContext } from "./apply-types-verify.js";
-import { type LocatedSkip, locateSkip } from "./cli/apply-report.js";
+import { type LocatedSkip, type LocatedWrite, locateSite } from "./cli/apply-report.js";
 
 export interface InMemoryApplyInput {
   /** The project's files, as paths `system` can read. */
@@ -29,6 +29,7 @@ export interface InMemoryApplyResult {
   files: Record<string, string>;
   telemetry: ApplyTelemetry;
   skips: LocatedSkip[];
+  written: LocatedWrite[];
 }
 
 /**
@@ -52,9 +53,13 @@ export function applyInMemory(input: InMemoryApplyInput): InMemoryApplyResult {
   });
   const files: Record<string, string> = {};
   const skips: LocatedSkip[] = [];
+  const written: LocatedWrite[] = [];
   for (const [file, result] of run.files) {
     files[file] = result.text;
-    for (const skip of result.skips) skips.push(locateSkip(skip, file, sources.get(file)!));
+    const source = sources.get(file)!;
+    for (const skip of result.skips) skips.push(locateSite(skip, file, source));
+    for (const write of result.telemetry.written ?? [])
+      written.push(locateSite(write, file, source));
   }
-  return { files, telemetry: run.telemetry, skips };
+  return { files, telemetry: run.telemetry, skips, written };
 }

@@ -2,6 +2,7 @@ import ts from "typescript";
 
 import type { DiscoveredType } from "./collector-contract.js";
 import type { InferOptions } from "./configuration.js";
+import type { ApplyRule } from "./contract.js";
 import type { ExtraOptions, SourceLocation } from "./type-collector.js";
 
 import { rewriteCommonBase, stripAllChainMarkers } from "./class-chain.js";
@@ -65,6 +66,21 @@ export function computeAnnotationTypeString(
   isOptionalBinding: boolean,
   program?: ts.Program,
 ): string | null {
+  const computed = computeAnnotation(types, opts, infer, isOptionalBinding, program);
+  return typeof computed === "string" ? computed : null;
+}
+
+/** Why nothing is written at a site, when {@link computeAnnotation} finds nothing. */
+export type NothingComputed = { rule: Extract<ApplyRule, `info.${string}`> };
+
+/** {@link computeAnnotationTypeString}, saying which rule left nothing to write. */
+export function computeAnnotation(
+  types: DiscoveredType[],
+  opts: ExtraOptions | undefined,
+  infer: InferOptions,
+  isOptionalBinding: boolean,
+  program?: ts.Program,
+): string | NothingComputed {
   let sortedTypes = types
     .map(([name, sourcePos]) => findType(program, name, sourcePos))
     .filter((t): t is string => t != null)
@@ -120,7 +136,7 @@ export function computeAnnotationTypeString(
 
   sortedTypes = applyMemberFilters(sortedTypes, unconditional, priorities);
 
-  if (sortedTypes.length === 0) return null;
+  if (sortedTypes.length === 0) return { rule: "info.nothing-left" };
 
   // Idiomatic return types: a function body that doesn't intentionally
   // return (event handlers, side-effect callbacks, `state => handle(state)`)
@@ -161,7 +177,7 @@ export function computeAnnotationTypeString(
   // Gated by `emitDiagnosticComments`: with it on, the user is asking to see
   // where coverage is thin, so the gaps stay visible.
   if (!infer.emitDiagnosticComments && carriesNoInformation(finalType)) {
-    return null;
+    return { rule: "info.describes-nothing" };
   }
 
   // Suppress the annotation when the final union exceeds the
@@ -184,7 +200,7 @@ export function computeAnnotationTypeString(
         return candidate;
       }
     }
-    return null;
+    return { rule: "info.too-long" };
   }
 
   return finalType;

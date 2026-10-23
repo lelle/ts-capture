@@ -24,7 +24,7 @@ import { type ApplyTelemetry, newApplyTelemetry } from "../contract.js";
 import { unifiedDiff } from "../unified-diff.js";
 import {
   type LocatedSkip,
-  locateSkip,
+  locateSite,
   notWrittenLine,
   reportLines,
   summaryLines,
@@ -377,7 +377,7 @@ export async function cmdApply(args: string[], flags: Set<string>) {
   addTelemetry(telemetry, run.telemetry);
   for (const [file, result] of run.files) {
     results.set(file, result.text);
-    for (const skip of result.skips) located.push(locateSkip(skip, file, sources.get(file)!));
+    for (const skip of result.skips) located.push(locateSite(skip, file, sources.get(file)!));
   }
 
   // After the built-in files, so a block is checked against the files it imports as written.
@@ -404,7 +404,7 @@ export async function cmdApply(args: string[], flags: Set<string>) {
     } else {
       result = applied.text;
       addTelemetry(telemetry, { ...applied.telemetry, skipped: [...applied.skips] });
-      for (const skip of applied.skips) located.push(locateSkip(skip, file, source));
+      for (const skip of applied.skips) located.push(locateSite(skip, file, source));
     }
     // Later files are checked against this one as written; `--dry-run` too,
     // or its preview would list files the real run rejects.

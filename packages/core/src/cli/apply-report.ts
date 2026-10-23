@@ -1,12 +1,18 @@
-import type { ApplySkip, ApplySkipReason, ApplyTelemetry } from "../contract.js";
+import type { ApplySkip, ApplySkipReason, ApplyTelemetry, ApplyWrite } from "../contract.js";
 
-/** A skip with the place it happened resolved against the file's source. */
-export interface LocatedSkip extends ApplySkip {
+/** Where in the file's source a site is, and what to call it. */
+interface Location {
   file: string;
   line: number;
   column: number;
   name: string;
 }
+
+/** A skip with the place it happened resolved against the file's source. */
+export type LocatedSkip = ApplySkip & Location;
+
+/** A written type with its place resolved against the file's source. */
+export type LocatedWrite = ApplyWrite & Location;
 
 // Reasons that leave an observation unused. The rest are positions where the
 // code already says as much or more, so nothing is lost by writing nothing.
@@ -40,7 +46,11 @@ const MESSAGE_LIMIT = 200;
  * Where a skipped site is, and what to call it. `pos` is where the annotation
  * would go — just after a name, or just after a parameter list.
  */
-export function locateSkip(skip: ApplySkip, file: string, source: string): LocatedSkip {
+export function locateSite<T extends ApplySkip | ApplyWrite>(
+  skip: T,
+  file: string,
+  source: string,
+): T & Location {
   const named = /([A-Za-z_$][\w$]*)\??\s*$/.exec(source.slice(0, skip.pos));
   const start = named ? named.index : skip.pos;
   const before = source.slice(0, start);
@@ -111,6 +121,7 @@ export function reportLines(
       for (const skip of group.skips) {
         lines.push(`    ${display(skip.file)}:${skip.line}:${skip.column}  ${skip.name}`);
         if (skip.observed) lines.push(`      observed  ${skip.observed}`);
+        if (skip.rule) lines.push(`      rule  ${skip.rule}`);
         if (skip.diagnostic) {
           const { code, message, file, line } = skip.diagnostic;
           const text =

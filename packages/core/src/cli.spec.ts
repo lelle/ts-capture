@@ -933,6 +933,7 @@ describe("cli", () => {
             expect(stdout).toContain(
               "  Refers to a type this file cannot name (1)\n    a.ts:1:27  widget\n" +
                 "      observed  Widget\n" +
+                "      rule  info.out-of-scope\n" +
                 "      Widget is not in scope\n",
             );
           },

@@ -24,10 +24,17 @@ export { notWrittenLine, reportLines, summaryLines } from "./cli/apply-report.js
 /** Inference defaults, for a caller that overrides some of them. */
 export { INFER_DEFAULTS } from "./configuration.js";
 
-export type { LocatedSkip } from "./cli/apply-report.js";
+export type { LocatedSkip, LocatedWrite } from "./cli/apply-report.js";
 export type { CollectedTypeInfo, CollectorOptions } from "./collector-contract.js";
 export type { InferOptions } from "./configuration.js";
-export type { ApplySkip, ApplySkipReason, ApplyTelemetry } from "./contract.js";
+export type {
+  ApplyRule,
+  ApplySkip,
+  ApplySkipReason,
+  ApplyTelemetry,
+  ApplyWrite,
+} from "./contract.js";
+export { APPLY_RULES } from "./contract.js";
 export type { InMemoryApplyInput, InMemoryApplyResult } from "./in-memory-apply.js";
 export type { TscptrFn } from "./tscptr-hook.js";
 

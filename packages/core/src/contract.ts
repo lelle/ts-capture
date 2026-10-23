@@ -42,10 +42,52 @@ export type ApplySkipReason =
   /** The position is no place a type can be written, as when the code changed since the run. */
   | "no-site";
 
+/**
+ * Every rule apply decides a site by. A reason says what happened; a rule says
+ * which check made it so, since one reason has several.
+ */
+export const APPLY_RULES = [
+  // From the code's syntax, before any type is asked for.
+  "syntax.ignored",
+  "syntax.already-typed",
+  "syntax.no-site",
+  "syntax.outer-conflict",
+  "syntax.one-branch-seen",
+  "syntax.only-undefined-seen",
+  "syntax.as-cast",
+  "syntax.as-const",
+  "syntax.unique-symbol",
+  "syntax.array-callback-shape",
+  "syntax.redundant-initializer",
+  // From what was observed.
+  "info.never-passed",
+  "info.nothing-left",
+  "info.too-long",
+  "info.out-of-scope",
+  "info.unparseable",
+  "info.describes-nothing",
+  // From what TypeScript infers at the site (`checker-gate.ts`).
+  "gate.polymorphic-this",
+  "gate.call-signature",
+  "gate.erases-named-type",
+  "gate.erases-enum",
+  "gate.discards-union-arm",
+  "gate.contradiction",
+  "gate.redundant",
+  // From type-checking the file with the annotations written.
+  "verify.type-error",
+  "verify.wider-after-run",
+  "written",
+] as const;
+
+export type ApplyRule = (typeof APPLY_RULES)[number];
+
 export interface ApplySkip {
   /** Offset in the source handed to the applier. */
   pos: number;
   reason: ApplySkipReason;
+  /** Set by core's applier; a plugin's own skips may leave it out. */
+  rule?: ApplyRule;
   /** The observed type-strings, joined as a union. */
   observed: string;
   detail?: string;
@@ -65,6 +107,18 @@ export interface ApplyTelemetry {
   redundant: number;
   /** One record per observed position that was not written. */
   skipped: ApplySkip[];
+  /** One record per position written. A plugin's telemetry may leave it out. */
+  written?: ApplyWrite[];
+}
+
+export interface ApplyWrite {
+  /** Offset in the source handed to the applier. */
+  pos: number;
+  rule: ApplyRule;
+  /** The type written. */
+  type: string;
+  /** Filled in by the caller that knows which file was being applied. */
+  file?: string;
 }
 
 /**
@@ -81,6 +135,7 @@ export function newApplyTelemetry(): ApplyTelemetry {
     verifyReject: 0,
     redundant: 0,
     skipped: [],
+    written: [],
   };
 }
 

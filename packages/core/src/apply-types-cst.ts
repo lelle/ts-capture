@@ -192,6 +192,7 @@ export function applyTypesToFileCst(
           telemetry.skipped.push({
             pos,
             reason: "no-site",
+            rule: "syntax.no-site",
             observed: [...new Set(types.map(([name]) => name).filter(Boolean))].join(" | "),
           });
         }
@@ -201,6 +202,7 @@ export function applyTypesToFileCst(
       moved.set(key, { kind: routed.kind, entry: [file, newPos, types, opts] });
     }
     const skippedBefore = telemetry?.skipped.length ?? 0;
+    const writtenBefore = telemetry?.written?.length ?? 0;
     // The names in scope are read again from the file as the first pass left
     // it, so a type that pass declared is one the second can write.
     const secondScoped = scopedTypeNamesFor(afterFirst, secondProgram, options.filename, infer);
@@ -215,9 +217,12 @@ export function applyTypesToFileCst(
       source: afterFirst,
       stripNotes: false,
     });
-    // The report locates a skip in the source the caller handed over.
-    for (const skip of telemetry?.skipped.slice(skippedBefore) ?? []) {
-      skip.pos = originalPos.get(skip.pos) ?? skip.pos;
+    // The report locates a skip or a write in the source the caller handed over.
+    for (const record of [
+      ...(telemetry?.skipped.slice(skippedBefore) ?? []),
+      ...(telemetry?.written?.slice(writtenBefore) ?? []),
+    ]) {
+      record.pos = originalPos.get(record.pos) ?? record.pos;
     }
     afterCst = applyReplacements(afterFirst, secondReplacements);
   }

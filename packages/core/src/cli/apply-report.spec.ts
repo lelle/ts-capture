@@ -36,6 +36,15 @@ describe("reportLines", () => {
     expect(lines.join("\n")).toContain("Nothing to add (1)\n  1 marked @ts-capture-ignore");
   });
 
+  it("names the rule that left a position unwritten", () => {
+    const lines = reportLines(newApplyTelemetry(), [
+      { ...skip("type-error", "total"), rule: "verify.type-error" },
+    ]);
+    expect(lines.join("\n")).toContain(
+      "    /src/a.ts:1:1  total\n      observed  number\n      rule  verify.type-error",
+    );
+  });
+
   it("lists a position that is no place for a type under what was not written", () => {
     const lines = reportLines(newApplyTelemetry(), [skip("no-site", "total")]);
     expect(lines.join("\n")).toContain(
