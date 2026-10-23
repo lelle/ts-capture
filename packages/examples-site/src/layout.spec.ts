@@ -69,7 +69,7 @@ describe("the site frame", () => {
     (_, page) => {
       expect(items(page)).toEqual([
         "ts-capture",
-        "Examples",
+        "In real code",
         "How it decides",
         "Playground",
         "Docs",
@@ -105,7 +105,7 @@ describe("the site frame", () => {
 
   it.each([
     ["home", "ts-capture"],
-    ["examples", "Examples"],
+    ["examples", "In real code"],
     ["how-it-decides", "How it decides"],
     ["playground", "Playground"],
     ["docs", "Docs"],
@@ -114,7 +114,7 @@ describe("the site frame", () => {
   });
 
   it.each([
-    ["examples", "Examples"],
+    ["examples", "In real code"],
     ["how-it-decides", "How it decides"],
     ["playground", "Playground"],
   ] as const)(

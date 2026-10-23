@@ -13,7 +13,7 @@ pnpm site       # serves site/ at http://localhost:4173/ts-capture/; the playgro
 | Page           | Source                | Built from                                                                                                     |
 | -------------- | --------------------- | -------------------------------------------------------------------------------------------------------------- |
 | Home           | `src/home.ts`         | the recording made by [`@ts-capture/demo`](../demo)                                                            |
-| Examples       | `src/page.ts`         | [`docs/examples/examples.json`](../../docs/examples/README.md)                                                 |
+| In real code   | `src/page.ts`         | [`docs/examples/examples.json`](../../docs/examples/README.md)                                                 |
 | How it decides | `src/how-it-decides/` | [`packages/core/corpus`](../core/corpus/README.md), each example run through the playground's applier at build |
 | Playground     | `src/playground/`     | `starters.ts`; runs `@ts-capture/core/browser` in a worker                                                     |
 | Docs           | `src/docs/`           | `docs/**/*.md`, menu from `docs/README.md`, code coloured by Shiki                                             |

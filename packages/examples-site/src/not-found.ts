@@ -18,7 +18,7 @@ export function renderNotFoundPage(build: BuildInfo): string {
   <ul>
     <li><a href="${ROOT}">The front page</a>, with the recording and the install line</li>
     <li><a href="${ROOT}docs/">The docs</a>, from getting started to the reference</li>
-    <li><a href="${ROOT}examples/">The examples</a>, from real projects</li>
+    <li><a href="${ROOT}examples/">In real code</a>: what it wrote into real projects</li>
   </ul>
 </main>`,
     },

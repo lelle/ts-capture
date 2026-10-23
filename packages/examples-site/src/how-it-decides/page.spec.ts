@@ -346,6 +346,12 @@ describe("renderDecidesPage", () => {
     );
   });
 
+  it("sends how good a written type is to the page of real code", () => {
+    expect(page).toContain(
+      'How good the types it writes are, in real projects, is on <a href="../examples/">In real code</a>.',
+    );
+  });
+
   describe("the menu", () => {
     const start = page.indexOf('<nav class="toc"');
     const menu = page.slice(start, page.indexOf("</nav>", start));

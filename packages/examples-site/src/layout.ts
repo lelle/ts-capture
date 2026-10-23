@@ -24,7 +24,7 @@ export type PageId =
 
 // In the order a reader learns it: what it writes, why, then try it.
 const PAGES: { id: Exclude<PageId, "home" | "not-found">; name: string }[] = [
-  { id: "examples", name: "Examples" },
+  { id: "examples", name: "In real code" },
   { id: "how-it-decides", name: "How it decides" },
   { id: "playground", name: "Playground" },
   { id: "docs", name: "Docs" },

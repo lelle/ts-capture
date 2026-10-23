@@ -244,7 +244,7 @@ export function renderDecidesPage(
       description:
         "Every rule ts-capture apply decides a position by: what it writes, what it refuses to write, and the code that decides it.",
       top: markup`<h1>How it decides</h1>
-  <p class="lede">For every position the tests passed through, <code>apply</code> either writes the type it saw or leaves the position alone, and says why. Each section below is one rule it decides by, with small files that end there: run, applied, and the code that made the call.</p>
+  <p class="lede">For every position the tests passed through, <code>apply</code> either writes the type it saw or leaves the position alone, and says why. Each section below is one rule it decides by, with small files that end there: run, applied, and the code that made the call. How good the types it writes are, in real projects, is on <a href="../examples/">In real code</a>.</p>
   <p class="how">The examples are not written by hand: each is run through the same applier as the playground when the page is built, and a test checks that it still ends in its rule.</p>
   ${renderGrid(rules)}`,
       body: markup`<div class="layout">

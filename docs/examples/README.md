@@ -1,6 +1,6 @@
 # Examples
 
-[`examples.json`](examples.json) is what the Examples page shows: what
+[`examples.json`](examples.json) is what the In real code page shows: what
 ts-capture wrote into real code, including the results a reviewer should
 change, and what a real run left alone, which How it decides shows beside the
 rule that left it.
