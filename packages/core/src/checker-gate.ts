@@ -29,12 +29,15 @@ import {
 
 export type GateVerdict =
   | { kind: "write" }
-  | { kind: "suppress"; rule: ApplyRule }
+  | { kind: "suppress"; rule: ApplyRule; reason: "kept-existing" | "left-to-typescript" }
   | { kind: "contradiction"; observed: string[] }
   | { kind: "redundant" };
 
 const WRITE: GateVerdict = { kind: "write" };
-const suppress = (rule: ApplyRule): GateVerdict => ({ kind: "suppress", rule });
+const suppress = (
+  rule: ApplyRule,
+  reason: "kept-existing" | "left-to-typescript" = "kept-existing",
+): GateVerdict => ({ kind: "suppress", rule, reason });
 
 /**
  * What the checker says about writing `emitted` where it infers `inferred`.
@@ -62,7 +65,10 @@ export function checkerGate(
   if (writesOverCallSignature(checker, inferred, emitted)) return suppress("gate.call-signature");
   if (erasesNamedType(checker, inferred, emitted)) return suppress("gate.erases-named-type");
   if (erasesEnum(checker, inferred, emitted)) return suppress("gate.erases-enum");
-  if (discardsUnionArm(checker, inferred, emitted)) return suppress("gate.discards-union-arm");
+  // TypeScript's type is wider and holds what the run saw; the code says no more.
+  if (discardsUnionArm(checker, inferred, emitted)) {
+    return suppress("gate.discards-union-arm", "left-to-typescript");
+  }
 
   // Asked unconditionally. Whether a note is *written* is a question about
   // output, settled by the caller; whether the run contradicts the type is a

@@ -10,9 +10,10 @@ import { buildDiagnosticMarkerSuffix } from "./apply-diagnostics.js";
 import {
   explainRejection,
   filterAcceptedReplacements,
-  initializerInfersWider,
   type SupportingReplacements,
   type VerificationContext,
+  widerTypeWithOthers,
+  wouldIntroduceErrors,
 } from "./apply-types-verify.js";
 import { checkerGate } from "./checker-gate.js";
 import { carriesNoInformation, computeAnnotation } from "./compute-annotation.js";
@@ -47,7 +48,7 @@ import {
 import { Replacement } from "./replacement.js";
 import { expandCtorArity, unreachableTypeRefs } from "./scope-reachability.js";
 import { planShapeAliases } from "./shape-aliases.js";
-import { typeStringForSource } from "./type-canonical.js";
+import { canonicalTypeString, sameTypeString, typeStringForSource } from "./type-canonical.js";
 
 // Replacement-building for the AST-aware applier. Turns
 // the routed CST-eligible entries into a list of `Replacement`s, running each
@@ -211,7 +212,7 @@ export function buildCstReplacements(
     }
     if (verdict.kind === "suppress") {
       skip(
-        "kept-existing",
+        verdict.reason,
         verdict.rule,
         lastInferredString && `TypeScript has ${lastInferredString}`,
       );
@@ -244,6 +245,8 @@ export function buildCstReplacements(
     wrap: (type: string) => string;
     name?: string;
     priority?: number;
+    /** For a return type: what TypeScript inferred there before the run. */
+    returnType?: { inferredBefore?: string };
   }> = [];
 
   // Paren wraps for paren-less arrows (`x => …` needs `(x) => …` before an
@@ -309,8 +312,9 @@ export function buildCstReplacements(
     wrap: (type: string) => string,
     name?: string,
     priority?: number,
+    returnType?: { inferredBefore?: string },
   ): void {
-    buffered.push({ pos, emitted, wrap, name, priority });
+    buffered.push({ pos, emitted, wrap, name, priority, returnType });
     observedByCandidatePos.set(pos, currentObserved);
   }
 
@@ -523,7 +527,9 @@ export function buildCstReplacements(
       const parensOpenPos = paramSites.get(pos)?.parensOpenPos;
       if (parensOpenPos !== undefined) requestParenWrap(parensOpenPos, pos);
       recordPreview(pos, nameAt("returnType", pos), emitted, types.length);
-      bufferAnnotation(pos, emitted, annotation(markerSuffix), undefined, -1);
+      bufferAnnotation(pos, emitted, annotation(markerSuffix), undefined, -1, {
+        inferredBefore: lastInferredString,
+      });
     } else {
       // varDecl: user-written `as Type` / `<Type>` cast on RHS — defer
       // to the cast unless honorAsCasts is explicitly off.
@@ -626,6 +632,8 @@ export function buildCstReplacements(
   };
 
   const texts = buffered.map((candidate) => candidate.wrap(candidate.emitted));
+  // A candidate verify replaced with TypeScript's type, by index.
+  const writtenAs = new Map<number, { rule: ApplyRule; type: string }>();
   let accepted = buffered.map((_, i) => i);
 
   // Batch verify pass for the CST applier. Buffered
@@ -647,35 +655,68 @@ export function buildCstReplacements(
       : undefined;
     accepted = filterAcceptedReplacements(verify, probes, supporting);
     const acceptedSet = new Set(accepted);
-    if (telemetry) {
-      const acceptedProbes = accepted.map((i) => probes[i]);
-      buffered.forEach((candidate, i) => {
-        if (acceptedSet.has(i)) return;
-        // Narrower than what TypeScript infers once the rest is written, as a
-        // binding to one call of a function whose return type was just written.
-        if (initializerInfersWider(verify, acceptedProbes, probes[i], supporting)) {
-          telemetry.skipped.push({
-            pos: candidate.pos,
-            reason: "left-to-typescript",
-            rule: "verify.wider-after-run",
-            observed: observedByCandidatePos.get(candidate.pos) ?? "",
-            detail: "TypeScript infers a wider type from the initializer",
-          });
+    const acceptedProbes = accepted.map((i) => probes[i]);
+    const introducesErrors = (subset: typeof probes): boolean =>
+      wouldIntroduceErrors(verify, [...(supporting?.(subset) ?? []), ...subset]);
+    buffered.forEach((candidate, i) => {
+      if (acceptedSet.has(i)) return;
+      const observed = observedByCandidatePos.get(candidate.pos) ?? "";
+      // Judged before the file's other annotations existed; with them
+      // written, TypeScript may infer a type that holds what the run saw.
+      const wider = widerTypeWithOthers(
+        verify,
+        acceptedProbes,
+        probes[i],
+        candidate.emitted,
+        supporting,
+      );
+      if (wider !== undefined) {
+        // A function's return type is written even where TypeScript could
+        // infer it, once the run's annotations made the inference. The run
+        // missed some of what it can return, so the type written is TypeScript's,
+        // spelled as apply spells its own. One TypeScript inferred before the run
+        // is a restatement, written only when restatements are asked for.
+        const { returnType } = candidate;
+        const spelled = typeStringForSource(canonicalTypeString(wider) ?? wider) ?? wider;
+        const probe = { ...probes[i], text: candidate.wrap(spelled) };
+        const knownBefore =
+          returnType?.inferredBefore !== undefined &&
+          sameTypeString(returnType.inferredBefore, wider);
+        if (
+          returnType &&
+          !(knownBefore && infer.skipRedundantAnnotations) &&
+          unreachableTypeRefs(wider, scopedTypeNames).length === 0 &&
+          !introducesErrors([...acceptedProbes, probe])
+        ) {
+          texts[i] = probe.text;
+          accepted.push(i);
+          acceptedProbes.push(probe);
+          writtenAs.set(i, { rule: "verify.wider-after-run", type: spelled });
           return;
         }
+        telemetry?.skipped.push({
+          pos: candidate.pos,
+          reason: "left-to-typescript",
+          rule: "verify.wider-after-run",
+          observed,
+          detail: "TypeScript infers a wider type once the other annotations are written",
+        });
+        return;
+      }
+      if (telemetry) {
         telemetry.verifyReject++;
         const diagnostic = explainRejection(verify, probes[i], supporting);
         telemetry.skipped.push({
           pos: candidate.pos,
           reason: "type-error",
           rule: "verify.type-error",
-          observed: observedByCandidatePos.get(candidate.pos) ?? "",
+          observed,
           ...(diagnostic
             ? { diagnostic }
             : { detail: "type-checks alone, but not with the other annotations in this file" }),
         });
-      });
-    }
+      }
+    });
   }
 
   const written: string[] = [];
@@ -690,8 +731,10 @@ export function buildCstReplacements(
       telemetry.emitted++;
       telemetry.written?.push({
         pos: candidate.pos,
-        rule: "written",
-        type: typeStringForSource(candidate.emitted) ?? candidate.emitted,
+        ...(writtenAs.get(i) ?? {
+          rule: "written",
+          type: typeStringForSource(candidate.emitted) ?? candidate.emitted,
+        }),
       });
     }
   }

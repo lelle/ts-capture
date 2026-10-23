@@ -1,9 +1,9 @@
 // rule: gate.discards-union-arm
 // site: fromNull
-// verdict: questionable
-// Reported as kept-existing, while the same binding without the `return null`
-// branch is left to TypeScript (see verify.wider-after-run). Both observed less
-// than TypeScript infers; they differ only in which rule noticed first.
+// verdict: ok
+// The run saw only `null`; TypeScript has the array as well. Left to TypeScript,
+// as the same binding without the `return null` branch is (see
+// verify.wider-after-run); the rule says which check noticed.
 function valuesOrNull(...values) {
   if (!values[0]) {
     return null;

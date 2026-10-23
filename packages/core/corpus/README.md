@@ -14,6 +14,7 @@ was seen. The spec checks two things:
 // rule: gate.discards-union-arm   the folder's rule
 // site: fromNull                  the name the report gives the site; `*` for any
 // apply: twice                    optional: twice | moved | no-project
+// infer: skipRedundantAnnotations=false   optional: options over the defaults
 // verdict: questionable           ok | questionable
 // Why apply does this, and what makes it questionable.
 ```

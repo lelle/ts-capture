@@ -454,47 +454,71 @@ export function explainRejection(
 }
 
 /**
- * True when `candidate` annotates a variable whose initializer, with the
- * `accepted` annotations written, infers a type wider than the annotation:
- * TypeScript already has a type there that holds what the run saw.
+ * The type TypeScript infers where `candidate` would go, with `others`
+ * written, when it is wider than `emitted` and holds it. Asked of a binding
+ * and a return type, whose inference other annotations in the file can change.
  */
-export function initializerInfersWider(
+export function widerTypeWithOthers(
   ctx: VerificationContext,
-  accepted: ReadonlyArray<SpanReplacement>,
+  others: ReadonlyArray<SpanReplacement>,
   candidate: SpanReplacement,
+  emitted: string,
   supportingFor?: SupportingReplacements,
-): boolean {
+): string | undefined {
+  if (others.some((r) => r.start === candidate.start)) return undefined;
   const { service, host } = ctx.project;
-  const probe = withSupport([...accepted, candidate], supportingFor);
+  const end = ctx.currentSource.length;
+  const alias = { start: end, end, text: `\ntype ${PROBE_ALIAS} = ${emitted};\n` };
+  const probe = withSupport([...others, alias], supportingFor);
   host.setFileSnapshot(ctx.filename, applyReplacementsForProbe(ctx.currentSource, probe));
   try {
     const program = service.getProgram();
     const sf = program?.getSourceFile(ctx.filename);
-    if (!program || !sf) return false;
+    if (!program || !sf) return undefined;
     const checker = program.getTypeChecker();
-    const declaration = findVariableDeclaration(
-      sf,
-      (d) => sourceOffsetOfProbeOffset(d.name.end, probe) === candidate.start,
+    const at = probeOffsetOfSourceOffset(candidate.start, probe);
+    const site = inferredAt(checker, sf, at);
+    const aliasDeclaration = sf.statements.find(
+      (s): s is ts.TypeAliasDeclaration =>
+        ts.isTypeAliasDeclaration(s) && s.name.text === PROBE_ALIAS,
     );
-    if (!declaration?.type || !declaration.initializer) return false;
-    const annotated = checker.getTypeFromTypeNode(declaration.type);
-    const inferred = checker.getTypeAtLocation(declaration.initializer);
-    if (inferred.flags & (ts.TypeFlags.Any | ts.TypeFlags.Unknown)) return false;
-    return (
+    if (!site || !aliasDeclaration) return undefined;
+    const { node, inferred } = site;
+    if (inferred.flags & (ts.TypeFlags.Any | ts.TypeFlags.Unknown)) return undefined;
+    const annotated = checker.getTypeFromTypeNode(aliasDeclaration.type);
+    const wider =
       checker.isTypeAssignableTo(annotated, inferred) &&
-      !checker.isTypeAssignableTo(inferred, annotated)
-    );
+      !checker.isTypeAssignableTo(inferred, annotated);
+    return wider
+      ? checker.typeToString(inferred, node, ts.TypeFormatFlags.NoTruncation)
+      : undefined;
   } finally {
     host.setFileSnapshot(ctx.filename, ctx.currentSource);
   }
 }
 
-function findVariableDeclaration(
-  node: ts.Node,
-  matches: (declaration: ts.VariableDeclaration) => boolean,
-): ts.VariableDeclaration | undefined {
-  if (ts.isVariableDeclaration(node) && matches(node)) return node;
-  return ts.forEachChild(node, (child) => findVariableDeclaration(child, matches));
+const PROBE_ALIAS = "__TsCaptureJudged";
+
+function inferredAt(
+  checker: ts.TypeChecker,
+  sf: ts.SourceFile,
+  at: number,
+): { node: ts.Node; inferred: ts.Type } | undefined {
+  const visit = (node: ts.Node): { node: ts.Node; inferred: ts.Type } | undefined => {
+    if (ts.isVariableDeclaration(node) && !node.type && node.name.end === at) {
+      return { node, inferred: checker.getTypeAtLocation(node.name) };
+    }
+    if (ts.isFunctionLike(node) && !node.type && closeParenEnd(node) === at) {
+      const signature = checker.getSignatureFromDeclaration(node);
+      return signature && { node, inferred: checker.getReturnTypeOfSignature(signature) };
+    }
+    return ts.forEachChild(node, visit);
+  };
+  return visit(sf);
+}
+
+function closeParenEnd(node: ts.Node): number | undefined {
+  return node.getChildren().find((child) => child.kind === ts.SyntaxKind.CloseParenToken)?.end;
 }
 
 /**
@@ -686,6 +710,17 @@ function diagnosticIdentity(d: ts.Diagnostic, start: number = d.start ?? -1): st
  * does not give every diagnostic below it a new identity. `undefined` means the
  * offset lies inside inserted text, which is new by construction.
  */
+function probeOffsetOfSourceOffset(
+  offset: number,
+  replacements: ReadonlyArray<SpanReplacement>,
+): number {
+  let shift = 0;
+  for (const r of replacements) {
+    if (r.end <= offset && r.start < offset) shift += r.text.length - (r.end - r.start);
+  }
+  return offset + shift;
+}
+
 function sourceOffsetOfProbeOffset(
   offset: number,
   replacements: ReadonlyArray<SpanReplacement>,

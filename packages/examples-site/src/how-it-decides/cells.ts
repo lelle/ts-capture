@@ -221,18 +221,21 @@ first([{ id: 1, name: "Ada" }]);
     kind: "return",
     outcome: "type-error",
     name: "return type",
-    title: "A branch the tests never took",
-    why: "Every call returned the object, so that is what the run saw. But the other branch returns `null`, and written, the type would make that line an error.",
+    title: "A caller the tests never ran",
+    why: "Every call returned a number, so that is what the run saw. But `label` hands the result on as a `string`, and written, the type would make that line an error.",
     decidedBy: {
       file: "apply-types-verify.ts",
       symbol: "filterAcceptedReplacements",
     },
-    code: `function find(id) {
-  if (id > 0) return { id };
-  return null;
+    code: `function parse(text) {
+  return JSON.parse(text);
 }
 
-find(1);
+parse("1");
+
+function label(): string {
+  return parse('"a"');
+}
 `,
   },
   {

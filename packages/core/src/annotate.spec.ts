@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 
+import type { InferOptions } from "./configuration.js";
 import type { CollectedTypeInfo } from "./type-collector.js";
 
 import { annotate, annotateProject, type AnnotateResult, type TypeOracle } from "./annotate.js";
@@ -16,7 +17,13 @@ type Tier = TypeOracle["kind"];
 const TIERS: Tier[] = ["none", "program", "project"];
 
 /** Annotate `source` as `file` of a fresh project, with the tier's oracle. */
-function annotated(tier: Tier, source: string, entries: CollectedTypeInfo, file = "target.ts") {
+function annotated(
+  tier: Tier,
+  source: string,
+  entries: CollectedTypeInfo,
+  file = "target.ts",
+  infer?: Partial<InferOptions>,
+) {
   const project = makeProject({ [file]: source });
   const filename = project.pathOf(file);
   const oracle: TypeOracle =
@@ -32,7 +39,7 @@ function annotated(tier: Tier, source: string, entries: CollectedTypeInfo, file 
               project.dir,
             ),
           };
-  const result = annotate(source, entries, { filename, oracle });
+  const result = annotate(source, entries, { filename, oracle, infer });
   return { result, out: checked(source, result.text) };
 }
 
@@ -417,16 +424,16 @@ describe("a tier with more to check writes no more than one with less, or says w
 describe("annotate, a binding narrower than its initializer's type", () => {
   it("leaves the binding to TypeScript instead of reporting a type error", () => {
     const source =
-      "function dd(...all) { return all; }\n" +
-      "dd(1, 2);\n" +
-      "dd('1', 2);\n" +
-      "const f = dd(null);\n";
+      "function valuesOrNull(...values) { return values; }\n" +
+      "valuesOrNull(1, 2);\n" +
+      "valuesOrNull('1', 2);\n" +
+      "const fromNull = valuesOrNull(null);\n";
     const { result, out } = annotated("project", source, collect(source));
-    expect(out).toAnnotate({ returnOf: "dd" }, "(number | string | null)[]");
-    expect(out).toLeaveUntyped("f");
+    expect(out).toAnnotate("values", "(number | string | null)[]");
+    expect(out).toLeaveUntyped("fromNull");
     expect(result.skips).toContainEqual(
       expect.objectContaining({
-        pos: source.indexOf("f =") + 1,
+        pos: source.indexOf("fromNull =") + "fromNull".length,
         reason: "left-to-typescript",
       }),
     );
@@ -443,6 +450,22 @@ describe("annotate, a binding narrower than its initializer's type", () => {
     expect(result.skips).toEqual([expect.objectContaining({ pos, reason: "left-to-typescript" })]);
   });
 
+  it("leaves a binding missing a payload arm of the inferred union to TypeScript", () => {
+    const source = "declare function find(): { id: number } | null;\nconst found = find();\n";
+    const pos = source.indexOf("found =") + "found".length;
+    const { result } = annotated("project", source, [
+      entry("target.ts", pos, [["null"]], { varDecl: true }),
+    ]);
+    expect(result.text).toBe(source);
+    expect(result.skips).toEqual([
+      expect.objectContaining({
+        pos,
+        reason: "left-to-typescript",
+        rule: "gate.discards-union-arm",
+      }),
+    ]);
+  });
+
   it("still reports a binding outside the initializer's type as a type error", () => {
     const source = "declare function get(): string | undefined;\nconst u = get();\n";
     const pos = source.indexOf("u =") + 1;
@@ -451,6 +474,64 @@ describe("annotate, a binding narrower than its initializer's type", () => {
     ]);
     expect(result.text).toBe(source);
     expect(result.skips).toEqual([expect.objectContaining({ pos, reason: "type-error" })]);
+  });
+});
+
+// The parameter written in the same run decides what TypeScript infers for the
+// return, which before the run was `any[]`.
+describe("annotate, a return type judged with the parameters written", () => {
+  it("writes what TypeScript infers where the run saw a narrower return", () => {
+    const source =
+      "function valuesOrNull(...values) {\n" +
+      "  if (!values[0]) { return null; }\n" +
+      "  return values;\n" +
+      "}\n" +
+      "valuesOrNull(1, 2);\n" +
+      "valuesOrNull('1', 2);\n" +
+      "valuesOrNull(null);\n";
+    const { result, out } = annotated("project", source, collect(source));
+    expect(out).toAnnotate("values", "(number | string | null)[]");
+    expect(out).toAnnotate({ returnOf: "valuesOrNull" }, "(number | string | null)[] | null");
+    expect(out).toHaveNoNewDiagnostics();
+    expect(result.skips.filter((skip) => skip.pos === source.indexOf(") {") + 1)).toEqual([]);
+  });
+
+  it("spells TypeScript's type the way apply spells its own", () => {
+    const source =
+      "function valuesOrNull(...values) {\n" +
+      "  if (!values[0]) { return null; }\n" +
+      "  return values;\n" +
+      "}\n" +
+      "valuesOrNull(1, 2);\n" +
+      "valuesOrNull('1', 2);\n";
+    const { result } = annotated("project", source, collect(source));
+    expect(result.text).toContain(
+      "function valuesOrNull(...values: (number | string)[]): (number | string)[] | null {",
+    );
+  });
+
+  // Before the run TypeScript already inferred this return; writing it is a
+  // restatement, made only when restatements are asked for.
+  const known =
+    "function findUser(id: number) {\n" +
+    "  if (id < 0) return null;\n" +
+    "  return { id };\n" +
+    "}\n" +
+    "findUser(1);\n";
+
+  it("leaves a return TypeScript inferred before the run to TypeScript", () => {
+    const { result } = annotated("project", known, collect(known));
+    expect(result.text).toBe(known);
+    expect(result.skips).toContainEqual(
+      expect.objectContaining({ reason: "left-to-typescript", rule: "verify.wider-after-run" }),
+    );
+  });
+
+  it("restates it when redundant annotations are asked for", () => {
+    const { result } = annotated("project", known, collect(known), "target.ts", {
+      skipRedundantAnnotations: false,
+    });
+    expect(result.text).toContain("function findUser(id: number): { id: number } | null {");
   });
 });
 

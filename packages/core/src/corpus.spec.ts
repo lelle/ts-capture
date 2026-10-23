@@ -5,7 +5,13 @@ import ts from "typescript";
 import { describe, expect, it } from "vitest";
 
 import { annotate } from "./annotate.js";
-import { applyInMemory, createObserver, instrumentSource } from "./browser.js";
+import {
+  applyInMemory,
+  createObserver,
+  INFER_DEFAULTS,
+  type InferOptions,
+  instrumentSource,
+} from "./browser.js";
 import { locateSite } from "./cli/apply-report.js";
 import { APPLY_RULES } from "./contract.js";
 
@@ -36,11 +42,20 @@ interface Example {
    * a line after the run. `no-project`: apply with no tsconfig, so no checker.
    */
   apply?: string;
+  /** `name=true|false` pairs over the defaults, as `skipRedundantAnnotations=false`. */
+  infer: Partial<InferOptions>;
 }
 
 const MOVED = "// A line added after the run moves everything below it.\n";
 
 const isExample = (name: string) => name.endsWith(".ts") && !name.endsWith(".after.ts");
+
+function inferFrom(header: string | undefined): Partial<InferOptions> {
+  const pairs = (header ?? "").split(/\s+/).filter(Boolean);
+  return Object.fromEntries(
+    pairs.map((pair) => pair.split("=")).map(([k, v]) => [k, v === "true"]),
+  );
+}
 
 const ruleFolders = (): string[] =>
   readdirSync(CORPUS, { withFileTypes: true })
@@ -61,6 +76,7 @@ function examples(): Example[] {
           site: header("site") ?? "",
           source,
           apply: header("apply"),
+          infer: inferFrom(header("infer")),
         };
       }),
   );
@@ -100,6 +116,7 @@ async function run(
   source: string,
   target = source,
   project = true,
+  infer: Partial<InferOptions> = {},
 ): Promise<{ after: string; decided: Decided[] }> {
   const observer = createObserver();
   const js = ts.transpileModule(instrumentSource(source, FILE), {
@@ -114,8 +131,9 @@ async function run(
         compilerOptions,
         rootDir: "/",
         system: memorySystem(target),
+        infer: { ...INFER_DEFAULTS, ...infer },
       })
-    : located(target, annotate(target, types, { filename: FILE }));
+    : located(target, annotate(target, types, { filename: FILE, infer }));
   const decided: Decided[] = [
     ...result.written.map((w) => ({ ...w, outcome: "written" })),
     ...result.skips.map((s) => ({ ...s, outcome: s.reason, rule: s.rule ?? "", type: s.observed })),
@@ -156,7 +174,12 @@ describe("corpus: each example ends in the rule its folder names", () => {
           : example.apply === "moved"
             ? MOVED + source
             : source;
-      const { after, decided } = await run(source, target, example.apply !== "no-project");
+      const { after, decided } = await run(
+        source,
+        target,
+        example.apply !== "no-project",
+        example.infer,
+      );
       await expect(answerKey(after, decided)).toMatchFileSnapshot(
         example.file.replace(/\.ts$/, ".after.ts"),
       );
