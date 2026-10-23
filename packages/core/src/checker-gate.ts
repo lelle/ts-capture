@@ -1,7 +1,7 @@
 import type ts from "typescript";
 
 import type { InferOptions } from "./configuration.js";
-import type { ApplyRule } from "./contract.js";
+import type { SkipRule } from "./contract.js";
 
 import {
   carriesPolymorphicThis,
@@ -29,15 +29,12 @@ import {
 
 export type GateVerdict =
   | { kind: "write" }
-  | { kind: "suppress"; rule: ApplyRule; reason: "kept-existing" | "left-to-typescript" }
+  | { kind: "suppress"; rule: SkipRule }
   | { kind: "contradiction"; observed: string[] }
   | { kind: "redundant" };
 
 const WRITE: GateVerdict = { kind: "write" };
-const suppress = (
-  rule: ApplyRule,
-  reason: "kept-existing" | "left-to-typescript" = "kept-existing",
-): GateVerdict => ({ kind: "suppress", rule, reason });
+const suppress = (rule: SkipRule): GateVerdict => ({ kind: "suppress", rule });
 
 /**
  * What the checker says about writing `emitted` where it infers `inferred`.
@@ -67,7 +64,7 @@ export function checkerGate(
   if (erasesEnum(checker, inferred, emitted)) return suppress("gate.erases-enum");
   // TypeScript's type is wider and holds what the run saw; the code says no more.
   if (discardsUnionArm(checker, inferred, emitted)) {
-    return suppress("gate.discards-union-arm", "left-to-typescript");
+    return suppress("gate.discards-union-arm");
   }
 
   // Asked unconditionally. Whether a note is *written* is a question about

@@ -89,6 +89,8 @@ function examples(): Example[] {
   );
 }
 
+const EXAMPLES = examples();
+
 function memorySystem(source: string): ts.System {
   const read = (file: string): string | undefined =>
     file === FILE
@@ -194,7 +196,7 @@ function answerKey(after: string, decided: Decided[]): string {
 }
 
 describe("corpus: each example ends in the rule its folder names", () => {
-  it.each(examples().map((e) => [path.relative(CORPUS, e.file), e] as const))(
+  it.each(EXAMPLES.map((e) => [path.relative(CORPUS, e.file), e] as const))(
     "%s",
     async (_, example) => {
       expect(example.rule, "the header's rule").toBe(path.basename(path.dirname(example.file)));
@@ -247,9 +249,7 @@ describe("corpus: completeness", () => {
         .slice(2),
     );
     const repeated = folders.flatMap((folder) => {
-      const titles = examples()
-        .filter((e) => e.rule === folder)
-        .map((e) => e.title);
+      const titles = EXAMPLES.filter((e) => e.rule === folder).map((e) => e.title);
       return titles
         .filter((title, i) => ruleTitles.includes(title) || titles.indexOf(title) !== i)
         .map((title) => `${folder}: ${title}`);

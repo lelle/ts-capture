@@ -82,6 +82,39 @@ export const APPLY_RULES = [
 
 export type ApplyRule = (typeof APPLY_RULES)[number];
 
+/** A rule that writes nothing. */
+export type SkipRule = Exclude<ApplyRule, "written">;
+
+/** What a rule that writes nothing reports as its reason: always the same one. */
+export const REASON_OF: Record<SkipRule, ApplySkipReason> = {
+  "syntax.ignored": "ignored",
+  "syntax.already-typed": "already-annotated",
+  "syntax.no-site": "no-site",
+  "syntax.outer-conflict": "kept-existing",
+  "syntax.one-branch-seen": "left-to-typescript",
+  "syntax.only-undefined-seen": "left-to-typescript",
+  "syntax.as-cast": "kept-existing",
+  "syntax.as-const": "kept-existing",
+  "syntax.unique-symbol": "kept-existing",
+  "syntax.array-callback-shape": "redundant",
+  "syntax.redundant-initializer": "redundant",
+  "info.never-passed": "no-information",
+  "info.nothing-left": "no-information",
+  "info.too-long": "no-information",
+  "info.out-of-scope": "out-of-scope",
+  "info.unparseable": "no-information",
+  "info.describes-nothing": "no-information",
+  "gate.polymorphic-this": "kept-existing",
+  "gate.call-signature": "kept-existing",
+  "gate.erases-named-type": "kept-existing",
+  "gate.erases-enum": "kept-existing",
+  "gate.discards-union-arm": "left-to-typescript",
+  "gate.contradiction": "contradiction",
+  "gate.redundant": "redundant",
+  "verify.type-error": "type-error",
+  "verify.wider-after-run": "left-to-typescript",
+};
+
 export interface ApplySkip {
   /** Offset in the source handed to the applier. */
   pos: number;
