@@ -1,6 +1,6 @@
 // rule: syntax.ignored
 // site: input
-// title: Asked to stay out
+// title: An ignored function's parameter
 // verdict: ok
 // A `@ts-capture-ignore` comment above a declaration keeps apply away from all
 // of it.

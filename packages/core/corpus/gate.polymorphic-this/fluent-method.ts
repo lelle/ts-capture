@@ -1,6 +1,6 @@
 // rule: gate.polymorphic-this
 // site: return type
-// title: A method that returns `this`
+// title: A builder that chains with `return this`
 // verdict: ok
 // TypeScript types the return as `this`, which in a subclass is the subclass.
 // The run saw a `Builder`. Writing `Builder` would make every subclass's

@@ -1,6 +1,6 @@
 // rule: gate.erases-enum
 // site: return type
-// title: A name would be replaced by what it is made of
+// title: A function returning an enum member
 // verdict: ok
 // TypeScript infers the enum `Mode`. The run only sees the string underneath,
 // and writing `string` would throw the enum away.

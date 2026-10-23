@@ -1,6 +1,6 @@
 // rule: syntax.one-branch-seen
 // site: label
-// title: Only one branch was seen
+// title: A field where `??` only gave its left side
 // verdict: ok
 // The initializer can give either side of `??`, and the run only ever saw one.
 // Writing what it saw would forbid the other, so the type is left to

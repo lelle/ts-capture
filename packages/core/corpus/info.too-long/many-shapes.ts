@@ -1,6 +1,6 @@
 // rule: info.too-long
 // site: record
-// title: Too long to be worth writing
+// title: 400 shapes passed to one parameter
 // verdict: ok
 // The calls passed 400 different shapes. Their union is longer than
 // `maxAnnotationChars` (4096 characters by default), and an annotation that

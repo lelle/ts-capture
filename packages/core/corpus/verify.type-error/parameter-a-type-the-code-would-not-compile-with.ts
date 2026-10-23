@@ -1,6 +1,6 @@
 // rule: verify.type-error
 // site: settings
-// title: A type the code would not compile with
+// title: A parameter the function adds a field to
 // real: left-alone
 // verdict: ok
 // The run saw `{ name: string }`, but the function adds a field. Written, that

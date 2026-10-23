@@ -1,6 +1,6 @@
 // rule: syntax.no-site
 // site: items
-// title: The code moved
+// title: A field moved down a line
 // apply: moved
 // verdict: ok
 // A line was added above the code after the run. Every recorded position now

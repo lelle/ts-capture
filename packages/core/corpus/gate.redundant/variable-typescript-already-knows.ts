@@ -1,6 +1,6 @@
 // rule: gate.redundant
 // site: largest
-// title: TypeScript already knows
+// title: A variable inferred from `Math.max`
 // verdict: ok
 // TypeScript infers `number` from the call, which is what the run saw.
 

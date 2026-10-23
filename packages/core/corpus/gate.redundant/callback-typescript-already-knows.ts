@@ -1,6 +1,6 @@
 // rule: gate.redundant
 // site: task
-// title: TypeScript already knows
+// title: A callback over an array of functions
 // verdict: ok
 // The array's type says what each element is, so TypeScript types the
 // callback's parameter already.

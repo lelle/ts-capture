@@ -1,6 +1,6 @@
 // rule: gate.erases-named-type
 // site: user
-// title: A name would be replaced by what it is made of
+// title: An interface the run saw one field more on
 // verdict: ok
 // TypeScript types `user` as the interface `User` from where the callback is
 // passed. The run saw a shape with one more field. Writing that shape would

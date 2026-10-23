@@ -1,6 +1,6 @@
 // rule: info.out-of-scope
 // site: factory
-// title: A name the function cannot see
+// title: A class declared at the call
 // verdict: ok
 // The parameter received a class declared at the call. Its name means nothing
 // where the parameter is.

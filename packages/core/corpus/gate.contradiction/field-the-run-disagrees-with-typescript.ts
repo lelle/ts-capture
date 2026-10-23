@@ -1,6 +1,6 @@
 // rule: gate.contradiction
 // site: word
-// title: The run disagrees with TypeScript
+// title: A field read one past the end of an array
 // verdict: ok
 // TypeScript types an element of a `string[]` as `string`. The second instance
 // read one past the end, so the run saw `undefined` too.

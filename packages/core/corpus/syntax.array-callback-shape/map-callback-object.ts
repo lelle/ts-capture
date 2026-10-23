@@ -1,6 +1,6 @@
 // rule: syntax.array-callback-shape
 // site: point
-// title: An array's callback, typed by the array
+// title: Objects mapped by a callback
 // verdict: ok
 // The callback's parameter is typed by the array it is called on. Writing the
 // element's shape again at the callback adds a long type and nothing else.

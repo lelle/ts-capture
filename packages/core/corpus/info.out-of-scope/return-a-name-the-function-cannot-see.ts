@@ -1,6 +1,6 @@
 // rule: info.out-of-scope
 // site: return type
-// title: A name the function cannot see
+// title: Returning a class local to a callback
 // verdict: ok
 // What came back was an instance of a class declared inside the callback. Its
 // name means nothing at `build`, so writing it would not compile.

@@ -1,6 +1,6 @@
 // rule: gate.discards-union-arm
 // site: fromNull
-// title: A value that was one arm of what TypeScript infers
+// title: Only `null` back from a call that can return an array
 // verdict: ok
 // The tests only ever got `null` back here, but TypeScript knows the call can
 // also return the array. Writing `null` would forbid the array, so the type is

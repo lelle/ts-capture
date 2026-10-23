@@ -1,6 +1,6 @@
 // rule: gate.contradiction
 // site: return type
-// title: The run disagrees with TypeScript
+// title: A field the test's object did not have
 // verdict: ok
 // TypeScript reads the return as `string` from the parameter's type. The run
 // got `undefined`, because a test passed an object without the field. Apply

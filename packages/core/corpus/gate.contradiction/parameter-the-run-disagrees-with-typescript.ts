@@ -1,6 +1,6 @@
 // rule: gate.contradiction
 // site: word
-// title: The run disagrees with TypeScript
+// title: A `string` callback parameter given `undefined`
 // verdict: ok
 // TypeScript already types this callback parameter as `string`, but the run
 // passed `undefined` too. Apply does not write a type the checker contradicts;

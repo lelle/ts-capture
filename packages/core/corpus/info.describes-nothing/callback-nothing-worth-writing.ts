@@ -1,6 +1,6 @@
 // rule: info.describes-nothing
 // site: job
-// title: Nothing worth writing
+// title: A callback that returned an empty object
 // verdict: ok
 // The function came back with an empty object, so all the run knows is `() =>
 // {}`, which says nothing about what the callback is for.

@@ -240,6 +240,23 @@ describe("corpus: completeness", () => {
     expect(missing).toEqual([]);
   });
 
+  it("titles every example apart from every rule and from its rule's other examples", () => {
+    const ruleTitles = folders.map((folder) =>
+      readFileSync(path.join(CORPUS, folder, "README.md"), "utf-8")
+        .split("\n")[0]!
+        .slice(2),
+    );
+    const repeated = folders.flatMap((folder) => {
+      const titles = examples()
+        .filter((e) => e.rule === folder)
+        .map((e) => e.title);
+      return titles
+        .filter((title, i) => ruleTitles.includes(title) || titles.indexOf(title) !== i)
+        .map((title) => `${folder}: ${title}`);
+    });
+    expect(repeated).toEqual([]);
+  });
+
   it("names no folder after a rule that does not exist", () => {
     expect(
       folders.filter((folder) => !(APPLY_RULES as readonly string[]).includes(folder)),

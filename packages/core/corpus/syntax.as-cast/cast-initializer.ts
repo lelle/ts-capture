@@ -1,6 +1,6 @@
 // rule: syntax.as-cast
 // site: port
-// title: The author cast the value
+// title: `JSON.parse` cast `as number`
 // verdict: ok
 // The initializer says `as number`. The cast is what the author asked for, so
 // apply writes nothing over it, whatever the run saw.

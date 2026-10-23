@@ -1,6 +1,6 @@
 // rule: gate.contradiction
 // site: word
-// title: The run disagrees with TypeScript
+// title: A variable read one past the end of an array
 // real: conflict-note
 // verdict: ok
 // TypeScript types an element of a `string[]` as `string`. The loop read one

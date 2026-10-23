@@ -1,6 +1,6 @@
 // rule: gate.redundant
 // site: word
-// title: TypeScript already knows
+// title: A `map` callback over strings
 // verdict: ok
 // A callback's parameter is typed by where the callback is passed. Writing the
 // same type again adds nothing.

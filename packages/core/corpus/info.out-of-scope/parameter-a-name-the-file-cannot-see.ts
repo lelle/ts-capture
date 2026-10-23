@@ -1,6 +1,6 @@
 // rule: info.out-of-scope
 // site: shape
-// title: A name the file cannot see
+// title: A class local to another function
 // verdict: ok
 // The value was an instance of a class declared inside another function. Its
 // name means nothing where the parameter is, so writing it would not compile.

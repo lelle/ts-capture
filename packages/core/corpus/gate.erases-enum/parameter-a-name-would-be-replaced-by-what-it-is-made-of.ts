@@ -1,6 +1,6 @@
 // rule: gate.erases-enum
 // site: mode
-// title: A name would be replaced by what it is made of
+// title: A callback parameter typed as an enum
 // verdict: ok
 // TypeScript types this parameter as the enum `Mode`. The run only sees the
 // string underneath. Writing `string` would throw the enum away, and with it

@@ -1,6 +1,6 @@
 // rule: syntax.redundant-initializer
 // site: count
-// title: Without a project, read from the initializer
+// title: `let count = 0` with no tsconfig
 // apply: no-project
 // verdict: questionable
 // With no tsconfig there is no type checker, so whether TypeScript would infer

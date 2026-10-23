@@ -1,6 +1,6 @@
 // rule: info.never-passed
 // site: options
-// title: Nothing worth writing
+// title: An options parameter left out of every call
 // verdict: ok
 // No call passed this parameter, so all the run saw was `undefined`. That says
 // nothing about what the parameter is for, and written as `options: undefined`

@@ -1,6 +1,6 @@
 // rule: gate.redundant
 // site: return type
-// title: TypeScript already knows
+// title: A return inferred from the body
 // verdict: ok
 // TypeScript infers `number` from the body, which is what the run saw.
 

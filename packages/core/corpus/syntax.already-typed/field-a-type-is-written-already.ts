@@ -1,6 +1,6 @@
 // rule: syntax.already-typed
 // site: items
-// title: A type is written already
+// title: A field typed by the first apply
 // apply: twice
 // verdict: ok
 // The same observations applied a second time meet the type the first apply

@@ -1,6 +1,6 @@
 // rule: gate.redundant
 // site: count
-// title: TypeScript already knows, from the constructor
+// title: A field assigned in the constructor
 // verdict: ok
 // Once the constructor's parameter has a type, TypeScript infers the field from
 // the assignment in the constructor. Writing it again adds nothing.
