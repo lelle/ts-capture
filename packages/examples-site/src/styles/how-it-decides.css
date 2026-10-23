@@ -30,9 +30,6 @@
 .grid a {
   text-decoration: none;
 }
-.grid .unreachable a {
-  opacity: 0.6;
-}
 .layout {
   display: grid;
   grid-template-columns: 240px minmax(0, 1fr);
@@ -86,31 +83,15 @@
   border-left: 2px solid transparent;
   color: var(--muted);
   text-decoration: none;
-  font-family: ui-monospace, monospace;
   cursor: pointer;
 }
 .toc a:hover {
   color: var(--text);
 }
-#kinds a[aria-current] {
-  color: var(--text);
-  font-weight: 600;
-  border-left-color: var(--accent);
-}
-#kinds a[aria-current]::before {
-  content: "◉ ";
-  color: var(--accent);
-}
-#outcomes a.on-screen {
+.toc a.on-screen {
   color: var(--text);
   border-left-color: var(--accent);
   background: var(--code-bg);
-}
-#outcomes a[aria-disabled="true"] {
-  opacity: 0.4;
-  text-decoration: line-through;
-  cursor: default;
-  pointer-events: none;
 }
 @media (max-width: 900px) {
   .layout {
@@ -150,7 +131,8 @@
   .toc.open .toc-list {
     display: block;
   }
-  .example {
+  .example,
+  .rule-section {
     scroll-margin-top: 48px;
   }
 }
@@ -167,8 +149,25 @@
   text-transform: uppercase;
   color: var(--muted);
 }
-.kind .example {
+.kind .example,
+.rule-section {
   scroll-margin-top: 16px;
+}
+.rule-section {
+  padding-top: 24px;
+}
+.rule-section + .rule-section {
+  margin-top: 32px;
+  border-top: 1px solid var(--line);
+}
+.rule-section > h3 {
+  margin: 0 0 4px;
+}
+.rule-section .about {
+  margin: 8px 0 20px;
+}
+.rule-section .example h4 {
+  margin: 0;
 }
 .real {
   margin: 18px 0 0;
@@ -181,7 +180,8 @@
   margin: 0 0 12px;
 }
 @media (max-width: 900px) {
-  .kind .example {
+  .kind .example,
+  .rule-section {
     scroll-margin-top: 56px;
   }
 }

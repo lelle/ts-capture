@@ -2,8 +2,10 @@ import {
   applyInMemory,
   createObserver,
   INFER_DEFAULTS,
+  type InferOptions,
   instrumentSource,
   type LocatedSkip,
+  type LocatedWrite,
   reportLines,
   summaryLines,
 } from "@ts-capture/core/browser";
@@ -23,6 +25,8 @@ export type PlaygroundResult =
       report: string[];
       /** What apply observed and did not write, and why. */
       skips: LocatedSkip[];
+      /** What apply wrote, and by which rule. */
+      written: LocatedWrite[];
     };
 
 export const COMPILER_OPTIONS: ts.CompilerOptions = {
@@ -46,6 +50,8 @@ export interface RunOptions {
   implicitThis?: boolean;
   /** Declare a shape written more than once as a named type (`infer.aliasRepeatedShapes`). */
   nameShapes?: boolean;
+  /** Options over the defaults; `nameShapes` sets `aliasRepeatedShapes` on top. */
+  infer?: Partial<InferOptions>;
 }
 
 /**
@@ -88,6 +94,7 @@ export async function runPlayground(
       summary: [NOTHING_OBSERVED],
       report: [],
       skips: [],
+      written: [],
     };
   }
 
@@ -95,10 +102,11 @@ export async function runPlayground(
     ...createSystem(new Map(libs).set(FILE, target)),
     getExecutingFilePath: () => "/typescript.js",
   };
-  const { files, telemetry, skips } = applyInMemory({
+  const { files, telemetry, skips, written } = applyInMemory({
     fileNames: [FILE],
     infer: {
       ...INFER_DEFAULTS,
+      ...options.infer,
       aliasRepeatedShapes: options.nameShapes ?? false,
     },
     types,
@@ -114,6 +122,7 @@ export async function runPlayground(
     summary: summaryLines(telemetry, after === target ? 0 : 1, skips, false),
     report: reportLines(telemetry, skips, () => SHOWN_AS),
     skips,
+    written,
   };
 }
 

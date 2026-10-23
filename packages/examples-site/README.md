@@ -10,14 +10,14 @@ pnpm site       # serves site/ at http://localhost:4173/ts-capture/; the playgro
 
 ## The pages
 
-| Page           | Source                | Built from                                                                             |
-| -------------- | --------------------- | -------------------------------------------------------------------------------------- |
-| Home           | `src/home.ts`         | the recording made by [`@ts-capture/demo`](../demo)                                    |
-| Examples       | `src/page.ts`         | [`docs/examples/examples.json`](../../docs/examples/README.md)                         |
-| How it decides | `src/how-it-decides/` | `cells.ts`, each cell run through the playground's applier at build                    |
-| Playground     | `src/playground/`     | `starters.ts`; runs `@ts-capture/core/browser` in a worker                             |
-| Docs           | `src/docs/`           | `docs/**/*.md`, menu from `docs/README.md`, code coloured by Shiki                     |
-| 404            | `src/not-found.ts`    | nothing; Pages serves it for any missing address, so its links start at `/ts-capture/` |
+| Page           | Source                | Built from                                                                                                     |
+| -------------- | --------------------- | -------------------------------------------------------------------------------------------------------------- |
+| Home           | `src/home.ts`         | the recording made by [`@ts-capture/demo`](../demo)                                                            |
+| Examples       | `src/page.ts`         | [`docs/examples/examples.json`](../../docs/examples/README.md)                                                 |
+| How it decides | `src/how-it-decides/` | [`packages/core/corpus`](../core/corpus/README.md), each example run through the playground's applier at build |
+| Playground     | `src/playground/`     | `starters.ts`; runs `@ts-capture/core/browser` in a worker                                                     |
+| Docs           | `src/docs/`           | `docs/**/*.md`, menu from `docs/README.md`, code coloured by Shiki                                             |
+| 404            | `src/not-found.ts`    | nothing; Pages serves it for any missing address, so its links start at `/ts-capture/`                         |
 
 `src/build.ts` writes them all to `site/`, copies the stylesheets and bundles
 the browser scripts with esbuild.
@@ -49,8 +49,9 @@ the browser scripts with esbuild.
 
 ## What the tests guard
 
-- `cells.spec.ts`: every card on How it decides still ends where it says, and
-  the function it names is in the file it names.
+- `how-it-decides/corpus.spec.ts`: every example on How it decides ends, run
+  the playground's way, in the text and the rule core's corpus spec recorded,
+  and the function each rule names is in the file it names.
 - `docs/site.spec.ts`: every docs page is in the menu, and every link and
   stylesheet on a docs page leads somewhere that exists.
 - `docs/repeats.spec.ts` (run from `site.spec.ts`): no twelve words in a row

@@ -1,3 +1,3 @@
-import { setUpToc } from "../hid-toc.js";
+import { setUpRulesToc } from "../rules-toc.js";
 
-setUpToc();
+setUpRulesToc();

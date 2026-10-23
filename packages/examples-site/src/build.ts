@@ -17,7 +17,7 @@ import type { BuildInfo } from "./layout.js";
 import { createCodeHighlighter } from "./docs/highlight.js";
 import { renderDocsSite } from "./docs/site.js";
 import { renderHomePage } from "./home.js";
-import { CELLS } from "./how-it-decides/cells.js";
+import { published, readCorpus } from "./how-it-decides/corpus.js";
 import { decide } from "./how-it-decides/decide.js";
 import { renderDecidesPage, ruleLinks } from "./how-it-decides/page.js";
 import { renderNotFoundPage } from "./not-found.js";
@@ -65,32 +65,41 @@ for (const asset of readdirSync(assetsDir)) {
     copyFileSync(resolve(assetsDir, asset), resolve(outDir, asset));
   }
 }
+const libs = reachableLibs(
+  createDefaultMapFromNodeModules(COMPILER_OPTIONS, ts),
+  (COMPILER_OPTIONS.lib ?? []).map((lib) => `/${lib}`),
+);
+// Each corpus example is run when the page is built, the same way the
+// playground runs a file. Examples links to the ones that stand for its own.
+const rules = await Promise.all(
+  readCorpus().map(async (rule) => ({
+    rule,
+    examples: await Promise.all(
+      published(rule.examples).map((example) => decide(example, libs)),
+    ),
+  })),
+);
+
 writeFileSync(
   resolve(examplesDir, "index.html"),
-  renderPage(data, buildInfo, ruleLinks(CELLS)),
+  renderPage(data, buildInfo, ruleLinks(rules)),
 );
 process.stdout.write(
   `${data.examples.length} examples -> ${examplesDir}/index.html\n`,
 );
 
-const libs = reachableLibs(
-  createDefaultMapFromNodeModules(COMPILER_OPTIONS, ts),
-  (COMPILER_OPTIONS.lib ?? []).map((lib) => `/${lib}`),
-);
 writeFileSync(resolve(playgroundDir, "libs.json"), JSON.stringify([...libs]));
 writeFileSync(
   resolve(playgroundDir, "index.html"),
   renderPlaygroundPage(STARTERS, buildInfo),
 );
 
-// Each card is run when the page is built, the same way the playground runs a file.
-const decided = await Promise.all(CELLS.map((cell) => decide(cell, libs)));
 mkdirSync(decidesDir, { recursive: true });
 writeFileSync(
   resolve(decidesDir, "index.html"),
-  renderDecidesPage(decided, data, buildInfo),
+  renderDecidesPage(rules, data, buildInfo),
 );
-process.stdout.write(`${decided.length} cells -> ${decidesDir}/index.html\n`);
+process.stdout.write(`${rules.length} rules -> ${decidesDir}/index.html\n`);
 
 const docs = renderDocsSite(
   (file) => readFileSync(resolve(docsDir, file), "utf-8"),

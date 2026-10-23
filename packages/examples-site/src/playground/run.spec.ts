@@ -101,6 +101,32 @@ pick([{ sku: "a", price: 2 }], "sku");
     expect(result.skips.map((skip) => skip.reason)).toContain("no-site");
   });
 
+  it("says which rule wrote each type", async () => {
+    const code =
+      'function greet(user) {\n  return user.name;\n}\ngreet({ name: "Ada" });\n';
+    const result = await runPlayground(code, libs);
+    if (!result.ok) throw new Error(result.error);
+    expect(result.written).toContainEqual(
+      expect.objectContaining({
+        name: "user",
+        rule: "written",
+        type: "{ name: string }",
+      }),
+    );
+  });
+
+  it("applies with the options it is given over the defaults", async () => {
+    const code =
+      "function findUser(id: number) {\n  if (id < 0) return null;\n  return { id };\n}\nfindUser(1);\n";
+    const result = await runPlayground(code, libs, {
+      infer: { skipRedundantAnnotations: false },
+    });
+    if (!result.ok) throw new Error(result.error);
+    expect(result.after).toContain(
+      "function findUser(id: number): { id: number } | null {",
+    );
+  });
+
   it("observes an implicit this when asked to", async () => {
     const code =
       'function describe() {\n  return this.name;\n}\ndescribe.call({ name: "Ada" });\n';
