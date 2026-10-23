@@ -88,6 +88,16 @@
 .toc a:hover {
   color: var(--text);
 }
+.toc .toc-cards {
+  display: none;
+  padding-left: 12px;
+}
+.toc li.open > .toc-cards {
+  display: block;
+}
+.toc li.open > a {
+  color: var(--text);
+}
 .toc a.on-screen {
   color: var(--text);
   border-left-color: var(--accent);

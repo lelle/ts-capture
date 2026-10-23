@@ -282,7 +282,7 @@ describe("renderDecidesPage", () => {
       '<h3><a href="#syntax.only-undefined-seen">Only <code>undefined</code> was seen</a></h3>',
     );
     expect(html).toContain(
-      '<a href="#syntax.only-undefined-seen">Only <code>undefined</code> was seen</a></li>',
+      '<li><a href="#syntax.only-undefined-seen">Only <code>undefined</code> was seen</a>',
     );
     expect(html).toContain("A <code>get</code> that missed");
     expect(html).toContain('title="Only undefined was seen"');
@@ -356,6 +356,12 @@ describe("renderDecidesPage", () => {
       );
       expect(menu).toContain(
         '<a href="#gate.redundant">TypeScript already knows</a>',
+      );
+    });
+
+    it("lists each rule's examples under it", () => {
+      expect(menu).toContain(
+        '<a href="#gate.redundant">TypeScript already knows</a><ul class="toc-cards"><li><a href="#gate.redundant--typescript-already-knows">TypeScript already knows</a></li></ul>',
       );
     });
 

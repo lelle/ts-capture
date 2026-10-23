@@ -163,13 +163,19 @@ const staged = (rules: DecidedRule[]) =>
     ),
   })).filter(({ rules: those }) => those.length > 0);
 
-/** The stages, each with its rules, beside the page; folded on a narrow screen. */
+/** The stages, each with its rules and their examples, beside the page; folded on a narrow screen. */
 function renderToc(rules: DecidedRule[]): Markup {
   const groups = staged(rules).map(
     ({ stage, rules: those }) =>
       markup`<p class="toc-kind">${stage.title}</p><ul>${those.map(
-        ({ rule }) =>
-          markup`<li><a href="#${rule.id}">${prose(rule.title)}</a></li>`,
+        ({ rule, examples }) =>
+          markup`<li><a href="#${rule.id}">${prose(rule.title)}</a>${
+            examples.length > 0 &&
+            markup`<ul class="toc-cards">${examples.map(
+              (decided) =>
+                markup`<li><a href="#${anchor(decided)}">${prose(decided.example.title)}</a></li>`,
+            )}</ul>`
+          }</li>`,
       )}</ul>`,
   );
   return markup`<nav class="toc" aria-label="Rules">

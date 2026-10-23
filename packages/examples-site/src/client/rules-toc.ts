@@ -1,8 +1,8 @@
 import { atPageBottom, onScrollFrame } from "./scroll.js";
 
-// The rule being read is the last whose heading has passed the top, or the
-// last at the bottom of the page. On a narrow screen the menu folds behind a
-// bar that names it.
+// What is being read is the last rule or example whose heading has passed the
+// top, or the last at the bottom of the page; only its rule shows its examples.
+// On a narrow screen the menu folds behind a bar that names the rule.
 
 /** How it decides: the rules menu beside the page. */
 export function setUpRulesToc(): void {
@@ -42,7 +42,12 @@ export function setUpRulesToc(): void {
     });
     if (atPageBottom()) at = targets.length - 1;
     links.forEach((link, i) => link.classList.toggle("on-screen", i === at));
-    current.textContent = links[at]?.textContent ?? "Rules";
+    const rule = links[at]?.closest(".toc-list > ul > li");
+    for (const item of list.querySelectorAll(".toc-list > ul > li")) {
+      item.classList.toggle("open", item === rule);
+    }
+    current.textContent =
+      rule?.querySelector(":scope > a")?.textContent ?? "Rules";
     if (at !== marked) {
       marked = at;
       reveal(links[at]);

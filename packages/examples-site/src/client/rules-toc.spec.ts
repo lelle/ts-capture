@@ -7,16 +7,37 @@ import { renderDecidesPage } from "../how-it-decides/page.js";
 import { setUpRulesToc } from "./rules-toc.js";
 import { resetPageHeight, setPageHeight } from "./stubs.js";
 
-const rule = (id: CorpusRule["id"], title: string) => ({
+const rule = (
+  id: CorpusRule["id"],
+  title: string,
+  cards: Record<string, string> = {},
+) => ({
   rule: { id, title, about: "", examples: [] },
-  examples: [],
+  examples: Object.entries(cards).map(([name, cardTitle]) => ({
+    example: {
+      rule: id,
+      name,
+      site: "word",
+      title: cardTitle,
+      real: [],
+      infer: {},
+      verdict: "ok" as const,
+      why: "",
+      code: "",
+    },
+    kind: "parameter" as const,
+    after: "",
+  })),
 });
 
 beforeEach(() => {
   document.body.innerHTML = renderDecidesPage(
     [
       rule("syntax.ignored", "Asked to stay out"),
-      rule("gate.redundant", "TypeScript already knows"),
+      rule("gate.redundant", "TypeScript already knows", {
+        "from-the-body": "A return inferred from the body",
+        "from-math-max": "A variable inferred from `Math.max`",
+      }),
     ],
     { sources: {}, examples: [] },
     { version: "0.4.0" },
@@ -33,8 +54,16 @@ const marked = (): string[] =>
   links()
     .filter((link) => link.classList.contains("on-screen"))
     .map((link) => link.hash);
+const opened = (): string[] =>
+  [...document.querySelectorAll<HTMLElement>(".toc-list li.open > a")].map(
+    (link) => (link as HTMLAnchorElement).hash,
+  );
+/** Where the rules and examples are; any not named is far down the page. */
 const placeAt = (tops: Record<string, number>): void => {
-  for (const [id, top] of Object.entries(tops)) {
+  const far = Object.fromEntries(
+    links().map((link) => [decodeURIComponent(link.hash.slice(1)), 9000]),
+  );
+  for (const [id, top] of Object.entries({ ...far, ...tops })) {
     vi.spyOn(
       document.getElementById(id)!,
       "getBoundingClientRect",
@@ -78,11 +107,40 @@ describe("setUpRulesToc", () => {
     );
   });
 
-  it("marks the last rule once the page is scrolled to the bottom", () => {
+  it("marks the last example once the page is scrolled to the bottom", () => {
     placeAt({ "syntax.ignored": 400, "gate.redundant": 400 });
     setPageHeight(window.innerHeight);
     setUpRulesToc();
+    expect(marked()).toEqual(["#gate.redundant--from-math-max"]);
+  });
+
+  it("marks the example being read, opens its rule, and names the rule on the bar", () => {
+    placeAt({
+      "syntax.ignored": -900,
+      "gate.redundant": -500,
+      "gate.redundant--from-the-body": -300,
+      "gate.redundant--from-math-max": 400,
+    });
+    setPageHeight(5000);
+    setUpRulesToc();
+    expect(marked()).toEqual(["#gate.redundant--from-the-body"]);
+    expect(opened()).toEqual(["#gate.redundant"]);
+    expect(document.querySelector(".toc-current")!.textContent).toBe(
+      "TypeScript already knows",
+    );
+  });
+
+  it("opens a rule whose heading has passed before its first example has", () => {
+    placeAt({
+      "syntax.ignored": -900,
+      "gate.redundant": 20,
+      "gate.redundant--from-the-body": 300,
+      "gate.redundant--from-math-max": 400,
+    });
+    setPageHeight(5000);
+    setUpRulesToc();
     expect(marked()).toEqual(["#gate.redundant"]);
+    expect(opened()).toEqual(["#gate.redundant"]);
   });
 
   it("scrolls the menu just enough to show the rule it marks", () => {
