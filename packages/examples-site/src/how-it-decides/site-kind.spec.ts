@@ -44,6 +44,13 @@ describe("siteKind", () => {
     expect(siteKind("function f() {}\n", "this")).toBe("this");
   });
 
+  it("takes the declaration on the line the run points at, where the name is declared twice", () => {
+    const code =
+      'function each(words, visit) {\n  for (const word of words) visit(word);\n}\neach(["a"], (word) => word);\n';
+    expect(siteKind(code, "word", 4)).toBe("parameter");
+    expect(siteKind(code, "word", 2)).toBe("variable");
+  });
+
   it("throws for a site the code does not declare", () => {
     expect(() => siteKind("const a = 1;\n", "b")).toThrow(/b/);
   });

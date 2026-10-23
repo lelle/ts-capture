@@ -53,24 +53,31 @@ export async function decide(
     example.apply === "moved" || name === example.site;
   const records = [
     ...result.skips.filter(at).map((skip) => ({
-      outcome: skip.reason,
-      rule: skip.rule ?? "",
-      observed: skip.observed,
-      detail: skip.detail,
+      line: skip.line,
+      atSite: {
+        outcome: skip.reason,
+        rule: skip.rule ?? "",
+        observed: skip.observed,
+        detail: skip.detail,
+      },
     })),
     ...result.written.filter(at).map((write) => ({
-      outcome: "written" as const,
-      rule: write.rule,
-      observed: write.type,
+      line: write.line,
+      atSite: {
+        outcome: "written" as const,
+        rule: write.rule,
+        observed: write.type,
+      },
     })),
   ];
-  const atSite =
-    records.find((record) => record.rule === example.rule) ?? records[0];
+  const found =
+    records.find((record) => record.atSite.rule === example.rule) ?? records[0];
+  // Positions are in the text the last apply was given.
   return {
     example,
-    kind: siteKind(example.code, example.site),
+    kind: siteKind(appliedTo ?? example.code, example.site, found?.line),
     after: result.after,
     ...(appliedTo !== undefined ? { appliedTo } : {}),
-    ...(atSite ? { atSite } : {}),
+    ...(found ? { atSite: found.atSite } : {}),
   };
 }

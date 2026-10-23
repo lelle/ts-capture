@@ -116,3 +116,15 @@ describe("each example on the page is what the corpus says", () => {
     expect(decided.atSite?.rule).toBe(example.rule);
   });
 });
+
+describe("the kind of position an example stands at", () => {
+  it("is the declaration the run points at, where the name is declared twice", async () => {
+    // `word` is a loop variable inside `each`, and the callback's parameter.
+    const example = rules
+      .find((rule) => rule.id === "gate.contradiction")!
+      .examples.find(
+        (e) => e.name === "parameter-the-run-disagrees-with-typescript",
+      )!;
+    expect((await decide(example, libs)).kind).toBe("parameter");
+  });
+});
