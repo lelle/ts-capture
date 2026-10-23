@@ -19,7 +19,7 @@ function identity(x) {
 
 ```ts title="Current"
 // Flattened to the observed union, not generalized to <T>(x: T) => T
-function identity(x: string | number): string | number {
+function identity(x: number | string): number | string {
   return x;
 }
 ```
@@ -53,7 +53,7 @@ returned promise as `Promise<unknown>`, which `apply` drops. `async` functions
 are unaffected either way: TypeScript infers their promise type once the
 parameters are typed.
 
-## Mixed-type union arithmetic produces TS errors
+## Mixed-type union arithmetic leaves a parameter untyped
 
 ```ts title="Input"
 // Exercised with both strings and numbers
@@ -63,8 +63,8 @@ function add(a, b) {
 ```
 
 ```ts title="Current"
-// `+` on `string | number` is itself a TS error
-function add(a: string | number, b: string | number) {
+// `+` on two `string | number` is a TS error, so `b` is left untyped
+function add(a: number | string, b): number | string {
   return a + b;
 }
 ```

@@ -14,8 +14,9 @@ greet("World");
 ```
 
 ```ts title="Expected"
-// After apply — the observed type is written back
-function greet(name: string): string {
+// After apply — the observed type is written back; the return is left to
+// TypeScript, which infers `string` from it
+function greet(name: string) {
   return "Hello, " + name;
 }
 greet("World");
