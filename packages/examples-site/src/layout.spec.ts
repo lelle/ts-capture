@@ -291,6 +291,14 @@ describe("renderLayout", () => {
     expect(home).not.toContain('name="description"');
   });
 
+  it("keeps the bar on every page in a header of its own, so it can stay while the top scrolls away", () => {
+    for (const page of Object.values(pages)) {
+      expect(page).toMatch(
+        /<header class="bar"><nav class="site"[\s\S]*?<\/nav><\/header>\s*<div class="top">/,
+      );
+    }
+  });
+
   it("puts the bar and the top first, then the page, the footer, and the scripts last", () => {
     const at = order(
       '<nav class="site"',

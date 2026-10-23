@@ -46,9 +46,9 @@
 }
 .toc {
   position: sticky;
-  top: 0;
+  top: var(--bar);
   align-self: start;
-  height: 100vh;
+  height: calc(100vh - var(--bar));
   box-sizing: border-box;
   display: flex;
   flex-direction: column;
@@ -161,7 +161,7 @@
 }
 .kind .example,
 .rule-section {
-  scroll-margin-top: 16px;
+  scroll-margin-top: calc(var(--bar) + 16px);
 }
 .rule-section {
   padding-top: 24px;

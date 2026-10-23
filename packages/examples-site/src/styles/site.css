@@ -16,6 +16,8 @@
   --str: light-dark(#9a4a12, #e8a878);
   --num: light-dark(#1a6b52, #86d6b8);
   --com: light-dark(#7b776e, #8a8780);
+  /* How much of the window the site bar holds while it stays at the top. */
+  --bar: 49px;
 }
 :root[data-theme="light"] {
   color-scheme: light;
@@ -38,6 +40,7 @@ body {
 }
 main,
 .top,
+nav.site,
 footer {
   max-width: 1180px;
   margin: 0 auto;
@@ -64,16 +67,24 @@ pre {
   font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
 }
 .top {
-  padding-top: 44px;
+  padding-top: 15px;
   padding-bottom: 8px;
 }
+.bar {
+  position: sticky;
+  top: 0;
+  z-index: 3;
+  border-bottom: 1px solid var(--line);
+  background: var(--bg);
+}
+/* One line at every width, so the bar is as tall on a phone as it is wide. */
 nav.site {
   display: flex;
-  flex-wrap: wrap;
-  align-items: baseline;
-  gap: 6px 22px;
-  margin: 0 0 28px;
+  align-items: center;
+  gap: 22px;
+  height: 48px;
   font-size: 14px;
+  white-space: nowrap;
 }
 nav.site a {
   text-decoration: none;
@@ -82,19 +93,26 @@ nav.site a:hover {
   text-decoration: underline;
 }
 nav.site > a {
+  flex-shrink: 0;
   font-weight: 650;
   color: var(--text);
 }
 nav.site .pages,
 nav.site .out {
   display: flex;
-  flex-wrap: wrap;
-  gap: 6px 16px;
+  gap: 16px;
+}
+/* Where the pages do not fit, they scroll sideways; room below for the underline. */
+nav.site .pages {
+  min-width: 0;
+  overflow-x: auto;
+  padding: 8px 0;
+  scrollbar-width: none;
 }
 nav.site .out {
+  flex-shrink: 0;
   margin-left: auto;
   align-items: center;
-  align-self: center;
 }
 nav.site .out a,
 nav.site .theme {
@@ -157,7 +175,7 @@ h1 {
   gap: 10px 24px;
   padding: 18px 0 6px;
   position: sticky;
-  top: 0;
+  top: var(--bar);
   background: var(--bg);
   z-index: 1;
   border-bottom: 1px solid var(--line);
@@ -193,6 +211,7 @@ a:focus-visible {
   border-radius: 10px;
   padding: 24px 28px 22px;
   margin: 0 0 24px;
+  scroll-margin-top: calc(var(--bar) + 16px);
 }
 main > .example:first-child {
   margin-top: 24px;
@@ -573,5 +592,13 @@ main > .note {
   pre {
     font-size: 12.5px;
     padding: 12px;
+  }
+}
+@media (max-width: 900px) {
+  :root {
+    --bar: 0px;
+  }
+  .bar {
+    position: static;
   }
 }

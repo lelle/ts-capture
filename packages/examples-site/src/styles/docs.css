@@ -8,9 +8,9 @@
 }
 .docs-menu {
   position: sticky;
-  top: 0;
+  top: var(--bar);
   align-self: start;
-  max-height: 100vh;
+  max-height: calc(100vh - var(--bar));
   overflow-y: auto;
   padding: 4px 0 24px;
   font-size: 14px;
@@ -63,7 +63,7 @@ main.doc {
 }
 .doc h2,
 .doc h3 {
-  scroll-margin-top: 16px;
+  scroll-margin-top: calc(var(--bar) + 16px);
 }
 .doc h3 {
   font-size: 19px;

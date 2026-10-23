@@ -148,8 +148,8 @@ ${COUNTER}
 </head>
 <body>
 <a class="skip" href="#content">Skip to content</a>
-<div class="top">
-  ${renderSiteBar(id, root)}${
+<header class="bar">${renderSiteBar(id, root)}</header>
+<div class="top">${
     page.top &&
     markup`
   ${page.top}`
