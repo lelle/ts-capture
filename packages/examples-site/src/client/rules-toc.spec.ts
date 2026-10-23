@@ -44,6 +44,21 @@ const placeAt = (tops: Record<string, number>): void => {
   }
 };
 
+const list = (): HTMLElement => document.querySelector(".toc-list")!;
+/** The menu's box, and the tops of the links in it, each 20 tall. */
+const showMenu = (
+  box: { top: number; bottom: number },
+  tops: Record<string, number>,
+): void => {
+  vi.spyOn(list(), "getBoundingClientRect").mockReturnValue(box as DOMRect);
+  for (const [id, top] of Object.entries(tops)) {
+    vi.spyOn(
+      document.querySelector(`.toc-list a[href="#${id}"]`)!,
+      "getBoundingClientRect",
+    ).mockReturnValue({ top, bottom: top + 20 } as DOMRect);
+  }
+};
+
 describe("setUpRulesToc", () => {
   it("opens and folds the menu with its button, and folds it when a rule is picked", () => {
     setUpRulesToc();
@@ -68,5 +83,32 @@ describe("setUpRulesToc", () => {
     setPageHeight(window.innerHeight);
     setUpRulesToc();
     expect(marked()).toEqual(["#gate.redundant"]);
+  });
+
+  it("scrolls the menu just enough to show the rule it marks", () => {
+    placeAt({ "syntax.ignored": 400, "gate.redundant": 20 });
+    setPageHeight(5000);
+    showMenu({ top: 0, bottom: 300 }, { "gate.redundant": 500 });
+    setUpRulesToc();
+    expect(list().scrollTop).toBe(220);
+  });
+
+  it("leaves the menu where it is while the rule it marks shows", () => {
+    placeAt({ "syntax.ignored": 400, "gate.redundant": 20 });
+    setPageHeight(5000);
+    showMenu({ top: 0, bottom: 300 }, { "gate.redundant": 100 });
+    setUpRulesToc();
+    expect(list().scrollTop).toBe(0);
+  });
+
+  it("shows the marked rule when the folded menu opens", () => {
+    placeAt({ "syntax.ignored": 20, "gate.redundant": 400 });
+    setPageHeight(5000);
+    showMenu({ top: 0, bottom: 300 }, { "syntax.ignored": 0 });
+    setUpRulesToc();
+    list().scrollTop = 100;
+    showMenu({ top: 40, bottom: 300 }, { "syntax.ignored": 0 });
+    toggle().click();
+    expect(list().scrollTop).toBe(60);
   });
 });
