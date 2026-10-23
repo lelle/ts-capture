@@ -8,15 +8,23 @@ was seen. The spec checks two things:
 - the site named in the header ends in the folder's rule;
 - every rule has at least one example.
 
-## Header
+## A rule's folder
+
+`README.md` is the rule's title and a short paragraph about it. The other
+files are examples: a header of `//` lines, a blank line, and the code. Only
+the code runs, and the How it decides page shows it.
 
 ```ts
-// rule: gate.discards-union-arm   the folder's rule
-// site: fromNull                  the name the report gives the site; `*` for any
-// apply: twice                    optional: twice | moved | no-project
+// rule: gate.erases-enum          the folder's rule
+// site: mode                      the name of the site in the code, or `return type` / `this`
+// title: An enum would become its values
+// real: named-type                optional: ids in docs/examples/examples.json
+// apply: twice                    optional: twice | moved | no-project | implicit-this
 // infer: skipRedundantAnnotations=false   optional: options over the defaults
-// verdict: questionable           ok | questionable
-// Why apply does this, and what makes it questionable.
+// verdict: ok                     ok | questionable; questionable stays off the page
+// Why apply does this, written for the page's reader.
+
+enum Mode { ... }
 ```
 
 Each `apply:` value changes how the example is applied:
@@ -24,6 +32,7 @@ Each `apply:` value changes how the example is applied:
 - `twice`: the second apply meets what the first one wrote.
 - `moved`: a line is added above the code after the run.
 - `no-project`: apply runs with no tsconfig, so there is no checker.
+- `implicit-this`: `this` is observed where TypeScript says it is implicitly `any`.
 
 ## Answer keys
 

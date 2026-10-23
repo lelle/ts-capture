@@ -1,8 +1,11 @@
 // rule: verify.wider-after-run
 // site: fromNull
+// title: Narrower than the call it came from
 // verdict: ok
-// The run saw `null[]`, but once `valuesOrNull` has its return type TypeScript
-// infers the wider array, which holds what the run saw.
+// This call returned `null[]`. Once `valuesOrNull` has its return type,
+// TypeScript infers the wider array for the variable, and that holds what the
+// run saw. Writing `null[]` would only narrow it.
+
 function valuesOrNull(...values) {
   return values;
 }

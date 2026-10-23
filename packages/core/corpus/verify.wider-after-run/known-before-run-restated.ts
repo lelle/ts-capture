@@ -1,9 +1,11 @@
 // rule: verify.wider-after-run
 // site: return type
+// title: The same, with restatements asked for
 // infer: skipRedundantAnnotations=false
 // verdict: ok
-// The same function, with restatements asked for: TypeScript's type is written,
-// as `double(n: number): number` would be.
+// With `skipRedundantAnnotations` off, apply writes types TypeScript already
+// infers. That includes this return, as TypeScript has it.
+
 function findUser(id: number) {
   if (id < 0) return null;
   return { id };

@@ -1,7 +1,10 @@
 // rule: written
 // site: produce
+// title: Different functions at each call
 // verdict: ok
-// Each call passed a different function, so the parameter accepts either.
+// One call passed a function returning a number, the other one returning a
+// string. The parameter accepts either.
+
 function resultOf(produce) {
   return produce();
 }

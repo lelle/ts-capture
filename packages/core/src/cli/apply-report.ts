@@ -51,8 +51,7 @@ export function locateSite<T extends ApplySkip | ApplyWrite>(
   file: string,
   source: string,
 ): T & Location {
-  const named = /([A-Za-z_$][\w$]*)\??\s*$/.exec(source.slice(0, skip.pos));
-  const start = named ? named.index : skip.pos;
+  const { start, name } = siteNameBefore(source.slice(0, skip.pos));
   const before = source.slice(0, start);
   const lineStart = before.lastIndexOf("\n") + 1;
   return {
@@ -60,8 +59,29 @@ export function locateSite<T extends ApplySkip | ApplyWrite>(
     file,
     line: before.split("\n").length,
     column: start - lineStart + 1,
-    name: named ? named[1] : "return type",
+    name,
   };
+}
+
+/**
+ * What stands just before an annotation's position: a name, a destructuring
+ * pattern, the `(` a `this` parameter goes after, or the `)` a return type does.
+ */
+function siteNameBefore(text: string): { start: number; name: string } {
+  const named = /([A-Za-z_$][\w$]*)\??\s*$/.exec(text);
+  if (named) return { start: named.index, name: named[1] };
+  const end = text.trimEnd().length;
+  const last = text[end - 1];
+  if (last === "(") return { start: end - 1, name: "this" };
+  const open = last === "}" ? "{" : last === "]" ? "[" : undefined;
+  if (open) {
+    let depth = 0;
+    for (let i = end - 1; i >= 0; i--) {
+      if (text[i] === last) depth++;
+      else if (text[i] === open && --depth === 0) return { start: i, name: text.slice(i, end) };
+    }
+  }
+  return { start: text.length, name: "return type" };
 }
 
 const plural = (count: number, word: string): string => `${count} ${word}${count === 1 ? "" : "s"}`;

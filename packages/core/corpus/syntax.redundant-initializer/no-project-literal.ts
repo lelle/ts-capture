@@ -1,9 +1,11 @@
 // rule: syntax.redundant-initializer
 // site: count
+// title: Without a project, read from the initializer
 // apply: no-project
 // verdict: questionable
-// Without a tsconfig there is no checker, so redundancy is read from the
-// initializer's syntax instead. With a project the gate always answers first,
-// as `gate.redundant`; this rule is reached only without one.
+// With no tsconfig there is no type checker, so whether TypeScript would infer
+// the same type is read from the initializer itself: `0` is a number. With a
+// project, the checker answers first.
+
 let count = 0;
 count += 1;

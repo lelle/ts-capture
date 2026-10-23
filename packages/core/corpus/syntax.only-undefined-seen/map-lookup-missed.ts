@@ -1,6 +1,10 @@
 // rule: syntax.only-undefined-seen
 // site: missing
+// title: Only `undefined` was seen
 // verdict: ok
-// A lookup that missed; `: undefined` would forbid the hit TypeScript knows can happen.
+// The lookup missed, so the run saw `undefined` alone. TypeScript knows the
+// lookup can also hit. Writing `undefined` would forbid that, so the type is
+// left to TypeScript.
+
 const prices = new Map([["tea", 3]]);
 const missing = prices.get("coffee");

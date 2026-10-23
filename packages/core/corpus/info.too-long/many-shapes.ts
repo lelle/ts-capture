@@ -1,8 +1,11 @@
 // rule: info.too-long
 // site: record
+// title: Too long to be worth writing
 // verdict: ok
-// The calls passed 400 different shapes; their union is longer than
-// `maxAnnotationChars` (4096), so nothing is written.
+// The calls passed 400 different shapes. Their union is longer than
+// `maxAnnotationChars` (4096 characters by default), and an annotation that
+// long is harder to read than no annotation.
+
 function store(record) {
   return Object.keys(record).length;
 }

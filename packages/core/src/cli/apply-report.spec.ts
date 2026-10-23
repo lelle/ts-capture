@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { newApplyTelemetry } from "../contract.js";
-import { type LocatedSkip, reportLines } from "./apply-report.js";
+import { type LocatedSkip, locateSite, reportLines } from "./apply-report.js";
 
 const skip = (reason: LocatedSkip["reason"], name: string): LocatedSkip => ({
   pos: 0,
@@ -50,5 +50,32 @@ describe("reportLines", () => {
     expect(lines.join("\n")).toContain(
       "Observed but not written (1)\n\n  No place to write it - has the code changed since the run? (1)\n    /src/a.ts:1:1  total",
     );
+  });
+});
+
+describe("locateSite", () => {
+  const nameAt = (source: string, before: string): string =>
+    locateSite(
+      { pos: source.indexOf(before) + before.length, reason: "redundant", observed: "" },
+      "/src/a.ts",
+      source,
+    ).name;
+
+  it("names a parameter or variable after itself", () => {
+    expect(nameAt("function f(count) {}", "count")).toBe("count");
+    expect(nameAt("let total = 1;", "total")).toBe("total");
+  });
+
+  it("names the site after a parameter list the return type", () => {
+    expect(nameAt("function f(a) {}", "(a)")).toBe("return type");
+  });
+
+  it("names the site at the start of a parameter list `this`", () => {
+    expect(nameAt("function f() {}", "f(")).toBe("this");
+  });
+
+  it("names a destructuring after its pattern", () => {
+    expect(nameAt("let { size } = { size: 1 };", "{ size }")).toBe("{ size }");
+    expect(nameAt("let [first] = [1];", "[first]")).toBe("[first]");
   });
 });

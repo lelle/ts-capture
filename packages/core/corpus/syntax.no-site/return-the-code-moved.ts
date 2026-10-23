@@ -1,0 +1,14 @@
+// rule: syntax.no-site
+// site: return type
+// title: The code moved
+// apply: moved
+// verdict: ok
+// A line was added above the code after the run. Every recorded position now
+// points one line too early, at no function, so apply writes nothing there and
+// says so.
+
+function load() {
+  return JSON.parse('{"a": 1}');
+}
+
+load();

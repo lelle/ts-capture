@@ -1,7 +1,10 @@
 // rule: info.unparseable
 // site: item
+// title: A name no type can have
 // verdict: ok
-// The class was renamed at runtime to something no identifier can be.
+// The class was renamed at runtime to `9lives`, which no identifier can be. The
+// type would not parse, so nothing is written.
+
 function label(item) {
   return String(item);
 }

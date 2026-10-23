@@ -1,4 +1,4 @@
-import { readdirSync, readFileSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import ts from "typescript";
@@ -17,7 +17,8 @@ import { APPLY_RULES } from "./contract.js";
 
 // One folder per rule apply decides by, each with files that end in that
 // rule. Run the way the playground runs a file, so a corpus example and the
-// playground cannot disagree about it.
+// playground cannot disagree about it. A file is a header of `//` lines, a
+// blank line, and the code; only the code runs.
 
 const CORPUS = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../corpus");
 const FILE = "/playground.ts";
@@ -36,10 +37,13 @@ interface Example {
   rule: string;
   file: string;
   site: string;
+  title: string;
+  /** The code, without the header. */
   source: string;
   /**
    * `twice`: apply again to what the first apply wrote. `moved`: the code moved
    * a line after the run. `no-project`: apply with no tsconfig, so no checker.
+   * `implicit-this`: observe `this` where TypeScript says it is implicitly `any`.
    */
   apply?: string;
   /** `name=true|false` pairs over the defaults, as `skipRedundantAnnotations=false`. */
@@ -68,13 +72,16 @@ function examples(): Example[] {
       .filter(isExample)
       .map((name) => {
         const file = path.join(CORPUS, rule, name);
-        const source = readFileSync(file, "utf-8");
-        const header = (key: string) => new RegExp(`^// ${key}: (.+)$`, "m").exec(source)?.[1];
+        const text = readFileSync(file, "utf-8");
+        const split = text.indexOf("\n\n");
+        const head = text.slice(0, split);
+        const header = (key: string) => new RegExp(`^// ${key}: (.+)$`, "m").exec(head)?.[1];
         return {
           rule: header("rule") ?? "",
           file,
           site: header("site") ?? "",
-          source,
+          title: header("title") ?? "",
+          source: text.slice(split + 2),
           apply: header("apply"),
           infer: inferFrom(header("infer")),
         };
@@ -102,6 +109,12 @@ function memorySystem(source: string): ts.System {
   };
 }
 
+interface RunOptions {
+  project?: boolean;
+  implicitThis?: boolean;
+  infer?: Partial<InferOptions>;
+}
+
 interface Decided {
   line: number;
   name: string;
@@ -111,15 +124,33 @@ interface Decided {
   detail?: string;
 }
 
+function programOf(source: string): ts.Program {
+  const system = memorySystem(source);
+  const host = ts.createCompilerHost(compilerOptions);
+  host.readFile = system.readFile;
+  host.fileExists = system.fileExists;
+  host.getCurrentDirectory = () => "/";
+  host.getDefaultLibLocation = () => "/ts";
+  host.getSourceFile = (name, language) => {
+    const text = system.readFile(name);
+    return text === undefined ? undefined : ts.createSourceFile(name, text, language);
+  };
+  return ts.createProgram([FILE], compilerOptions, host);
+}
+
 /** Observe `source` running, and apply what was seen to `target`. */
 async function run(
   source: string,
   target = source,
-  project = true,
-  infer: Partial<InferOptions> = {},
+  { project = true, implicitThis = false, infer = {} }: RunOptions = {},
 ): Promise<{ after: string; decided: Decided[] }> {
   const observer = createObserver();
-  const js = ts.transpileModule(instrumentSource(source, FILE), {
+  const instrumented = instrumentSource(
+    source,
+    FILE,
+    implicitThis ? { instrumentImplicitThis: true, program: programOf(source) } : undefined,
+  );
+  const js = ts.transpileModule(instrumented, {
     compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.None },
   }).outputText;
   new Function("__tscptr__", js)(observer.hook);
@@ -167,24 +198,25 @@ describe("corpus: each example ends in the rule its folder names", () => {
     "%s",
     async (_, example) => {
       expect(example.rule, "the header's rule").toBe(path.basename(path.dirname(example.file)));
+      expect(example.title, "the header's title").not.toBe("");
       const { source } = example;
+      const options: RunOptions = {
+        project: example.apply !== "no-project",
+        implicitThis: example.apply === "implicit-this",
+        infer: example.infer,
+      };
       const target =
         example.apply === "twice"
-          ? (await run(source)).after
+          ? (await run(source, source, options)).after
           : example.apply === "moved"
             ? MOVED + source
             : source;
-      const { after, decided } = await run(
-        source,
-        target,
-        example.apply !== "no-project",
-        example.infer,
-      );
+      const { after, decided } = await run(source, target, options);
       await expect(answerKey(after, decided)).toMatchFileSnapshot(
         example.file.replace(/\.ts$/, ".after.ts"),
       );
-      // `*`: the positions no longer name the site, as when the code moved.
-      const atSite = decided.filter((d) => example.site === "*" || d.name === example.site);
+      // Moved code's positions no longer point at the site they were recorded for.
+      const atSite = decided.filter((d) => example.apply === "moved" || d.name === example.site);
       expect(atSite.map((d) => d.rule)).toContain(example.rule);
     },
   );
@@ -198,6 +230,14 @@ describe("corpus: completeness", () => {
       (rule) => !folders.includes(rule) || !readdirSync(path.join(CORPUS, rule)).some(isExample),
     );
     expect(empty).toEqual([]);
+  });
+
+  it("explains every rule in a README that leads with its title", () => {
+    const missing = folders.filter((folder) => {
+      const readme = path.join(CORPUS, folder, "README.md");
+      return !existsSync(readme) || !readFileSync(readme, "utf-8").startsWith("# ");
+    });
+    expect(missing).toEqual([]);
   });
 
   it("names no folder after a rule that does not exist", () => {

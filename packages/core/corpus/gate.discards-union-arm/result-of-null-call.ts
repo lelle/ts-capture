@@ -1,9 +1,11 @@
 // rule: gate.discards-union-arm
 // site: fromNull
+// title: A value that was one arm of what TypeScript infers
 // verdict: ok
-// The run saw only `null`; TypeScript has the array as well. Left to TypeScript,
-// as the same binding without the `return null` branch is (see
-// verify.wider-after-run); the rule says which check noticed.
+// The tests only ever got `null` back here, but TypeScript knows the call can
+// also return the array. Writing `null` would forbid the array, so the type is
+// left to TypeScript, which already holds both.
+
 function valuesOrNull(...values) {
   if (!values[0]) {
     return null;
