@@ -1,21 +1,15 @@
 import { APPLY_RULES } from "@ts-capture/core/browser";
-import { createDefaultMapFromNodeModules } from "@typescript/vfs";
 import { readFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import ts from "typescript";
 import { describe, expect, it } from "vitest";
 
-import { reachableLibs } from "../playground/libs.js";
-import { COMPILER_OPTIONS } from "../playground/run.js";
+import { playgroundLibs } from "../playground/libs.js";
 import { CORPUS_DIR, parseExample, published, readCorpus } from "./corpus.js";
 import { decide } from "./decide.js";
 import { DECIDED_BY, STAGES } from "./rules.js";
 
-const libs = reachableLibs(
-  createDefaultMapFromNodeModules(COMPILER_OPTIONS, ts),
-  ["/lib.es2022.d.ts"],
-);
+const libs = playgroundLibs();
 const coreSrc = resolve(
   dirname(fileURLToPath(import.meta.url)),
   "../../../core/src",

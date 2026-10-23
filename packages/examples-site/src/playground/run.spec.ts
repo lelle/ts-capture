@@ -1,15 +1,11 @@
-import { createDefaultMapFromNodeModules } from "@typescript/vfs";
 import ts from "typescript";
 import { describe, expect, it } from "vitest";
 
-import { reachableLibs } from "./libs.js";
+import { playgroundLibs } from "./libs.js";
 import { COMPILER_OPTIONS, runPlayground } from "./run.js";
 import { STARTERS } from "./starters.js";
 
-const libs = reachableLibs(
-  createDefaultMapFromNodeModules(COMPILER_OPTIONS, ts),
-  ["/lib.es2022.d.ts"],
-);
+const libs = playgroundLibs();
 
 function errorCount(code: string): number {
   const files = new Map(libs).set("/playground.ts", code);

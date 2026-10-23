@@ -16,8 +16,9 @@
   --str: light-dark(#9a4a12, #e8a878);
   --num: light-dark(#1a6b52, #86d6b8);
   --com: light-dark(#7b776e, #8a8780);
+  --bar-height: 49px;
   /* How much of the window the site bar holds while it stays at the top. */
-  --bar: 49px;
+  --bar: var(--bar-height);
   /* And the filters on Examples, which stay below it. */
   --filters: 59px;
 }
@@ -84,7 +85,7 @@ nav.site {
   display: flex;
   align-items: center;
   gap: 22px;
-  height: 48px;
+  height: calc(var(--bar-height) - 1px);
   font-size: 14px;
   white-space: nowrap;
 }

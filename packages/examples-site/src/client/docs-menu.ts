@@ -1,4 +1,4 @@
-import { atPageBottom, onScrollFrame } from "./scroll.js";
+import { beingRead, onScrollFrame } from "./scroll.js";
 
 // Open in the HTML, so the menu is there without a script; folded on a narrow
 // screen, where it would push the page down. The section being read is the
@@ -20,11 +20,7 @@ export function setUpDocsMenu(): void {
     document.getElementById(decodeURIComponent(link.hash.slice(1))),
   );
   const update = (): void => {
-    let at = -1;
-    targets.forEach((target, i) => {
-      if (target && target.getBoundingClientRect().top <= 80) at = i;
-    });
-    if (atPageBottom()) at = targets.length - 1;
+    const at = beingRead(targets);
     links.forEach((link, i) => link.classList.toggle("on-screen", i === at));
   };
   onScrollFrame(update);

@@ -141,10 +141,6 @@
   .toc.open .toc-list {
     display: block;
   }
-  .example,
-  .rule-section {
-    scroll-margin-top: 48px;
-  }
 }
 .kind {
   padding-top: 56px;
@@ -159,7 +155,6 @@
   text-transform: uppercase;
   color: var(--muted);
 }
-.kind .example,
 .rule-section {
   scroll-margin-top: calc(var(--bar) + 16px);
 }

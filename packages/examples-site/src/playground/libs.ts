@@ -1,3 +1,8 @@
+import { createDefaultMapFromNodeModules } from "@typescript/vfs";
+import ts from "typescript";
+
+import { COMPILER_OPTIONS } from "./run.js";
+
 const REFERENCE = /^\/\/\/\s*<reference\s+lib="([^"]+)"\s*\/>/gm;
 
 /** The lib files `roots` need: themselves and everything they reference. */
@@ -17,4 +22,12 @@ export function reachableLibs(
       waiting.push(`/lib.${match[1]}.d.ts`);
   }
   return kept;
+}
+
+/** The lib files the playground's compiler options need, read from node_modules. */
+export function playgroundLibs(): Map<string, string> {
+  return reachableLibs(
+    createDefaultMapFromNodeModules(COMPILER_OPTIONS, ts),
+    (COMPILER_OPTIONS.lib ?? []).map((lib) => `/${lib}`),
+  );
 }

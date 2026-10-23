@@ -35,6 +35,9 @@ const anchor = ({ example }: DecidedExample): string =>
 const prose = (text: string): Markup =>
   trusted(escapeHtml(text).replace(/`([^`]+)`/g, "<code>$1</code>"));
 
+/** The same prose as plain text, for a tooltip or a label. */
+const plain = (text: string): string => text.replace(/`/g, "");
+
 /** Kinds down, outcomes across; in each square, the rules an example ends in there. */
 function renderGrid(rules: DecidedRule[]): Markup {
   const decided = rules.flatMap(({ rule, examples }) =>
@@ -56,7 +59,7 @@ function renderGrid(rules: DecidedRule[]): Markup {
         )
         .map(
           ({ rule }) =>
-            markup`<a href="#${rule.id}" title="${rule.title.replace(/`/g, "")}">●</a>`,
+            markup`<a href="#${rule.id}" title="${plain(rule.title)}">●</a>`,
         );
       return markup`<td>${join(here, "")}</td>`;
     });
@@ -206,26 +209,26 @@ ${join(
 
 /** For each real example, the example on the page that stands for the fewest: the most specific. */
 export function ruleLinks(rules: DecidedRule[]): Map<string, RuleLink> {
-  const best = new Map<string, DecidedExample>();
-  for (const { examples } of rules) {
+  const best = new Map<string, { decided: DecidedExample; rule: CorpusRule }>();
+  for (const { rule, examples } of rules) {
     for (const decided of examples) {
       for (const id of decided.example.real) {
         const current = best.get(id);
         if (
           !current ||
-          decided.example.real.length < current.example.real.length
+          decided.example.real.length < current.decided.example.real.length
         ) {
-          best.set(id, decided);
+          best.set(id, { decided, rule });
         }
       }
     }
   }
   return new Map(
-    [...best].map(([id, decided]) => [
+    [...best].map(([id, { decided, rule }]) => [
       id,
       {
         href: `../how-it-decides/#${anchor(decided)}`,
-        label: `${KINDS[decided.kind]} · ${rules.find(({ rule }) => rule.id === decided.example.rule)!.rule.title.replace(/`/g, "")}`,
+        label: `${KINDS[decided.kind]} · ${plain(rule.title)}`,
       },
     ]),
   );

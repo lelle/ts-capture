@@ -1,4 +1,3 @@
-import { createDefaultMapFromNodeModules } from "@typescript/vfs";
 import { build } from "esbuild";
 import { execFileSync } from "node:child_process";
 import {
@@ -10,7 +9,6 @@ import {
 } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import ts from "typescript";
 
 import type { BuildInfo } from "./layout.js";
 
@@ -22,9 +20,8 @@ import { decide } from "./how-it-decides/decide.js";
 import { renderDecidesPage, ruleLinks } from "./how-it-decides/page.js";
 import { renderNotFoundPage } from "./not-found.js";
 import { type ExamplesData, renderPage } from "./page.js";
-import { reachableLibs } from "./playground/libs.js";
+import { playgroundLibs } from "./playground/libs.js";
 import { renderPlaygroundPage } from "./playground/page.js";
-import { COMPILER_OPTIONS } from "./playground/run.js";
 import { STARTERS } from "./playground/starters.js";
 
 const packageDir = resolve(dirname(fileURLToPath(import.meta.url)), "..");
@@ -65,10 +62,7 @@ for (const asset of readdirSync(assetsDir)) {
     copyFileSync(resolve(assetsDir, asset), resolve(outDir, asset));
   }
 }
-const libs = reachableLibs(
-  createDefaultMapFromNodeModules(COMPILER_OPTIONS, ts),
-  (COMPILER_OPTIONS.lib ?? []).map((lib) => `/${lib}`),
-);
+const libs = playgroundLibs();
 // Each corpus example is run when the page is built, the same way the
 // playground runs a file. Examples links to the ones that stand for its own.
 const rules = await Promise.all(

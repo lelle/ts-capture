@@ -1,4 +1,4 @@
-import { atPageBottom, onScrollFrame } from "./scroll.js";
+import { beingRead, onScrollFrame } from "./scroll.js";
 
 // What is being read is the last rule or example whose heading has passed the
 // top, or the last at the bottom of the page; only its rule shows its examples.
@@ -11,6 +11,7 @@ export function setUpRulesToc(): void {
   const current = toc.querySelector<HTMLElement>(".toc-current")!;
   const list = toc.querySelector<HTMLElement>(".toc-list")!;
   const links = [...list.querySelectorAll<HTMLAnchorElement>("a")];
+  const ruleItems = [...list.querySelectorAll(".toc-list > ul > li")];
   const targets = links.map((link) =>
     document.getElementById(decodeURIComponent(link.hash.slice(1))),
   );
@@ -36,22 +37,15 @@ export function setUpRulesToc(): void {
   );
   for (const link of links) link.addEventListener("click", () => fold(false));
   const update = (): void => {
-    let at = -1;
-    targets.forEach((target, i) => {
-      if (target && target.getBoundingClientRect().top <= 80) at = i;
-    });
-    if (atPageBottom()) at = targets.length - 1;
+    const at = beingRead(targets);
+    if (at === marked) return;
+    marked = at;
     links.forEach((link, i) => link.classList.toggle("on-screen", i === at));
     const rule = links[at]?.closest(".toc-list > ul > li");
-    for (const item of list.querySelectorAll(".toc-list > ul > li")) {
-      item.classList.toggle("open", item === rule);
-    }
+    for (const item of ruleItems) item.classList.toggle("open", item === rule);
     current.textContent =
       rule?.querySelector(":scope > a")?.textContent ?? "Rules";
-    if (at !== marked) {
-      marked = at;
-      reveal(links[at]);
-    }
+    reveal(links[at]);
   };
   onScrollFrame(update);
   update();
