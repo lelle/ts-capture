@@ -176,9 +176,9 @@ export function renderPage(
         "Before and after: what ts-capture wrote into real code, including the results a reviewer should change.",
       top: markup`<h1>Examples</h1>
   <p class="lede">ts-capture watches your code run under its tests and writes the types it saw back into the source. These are annotations it wrote into real code: the ones you would have written yourself, and the ones a reviewer should change. What it left alone, and why, is on <a href="../how-it-decides/">How it decides</a>.</p>
-  <p class="how">Nothing here was typed by hand. Each example is cut from the diff of an actual run; the highlighted parts are what <code>apply</code> added.</p>
-  ${renderFilters(written)}`,
+  <p class="how">Nothing here was typed by hand. Each example is cut from the diff of an actual run; the highlighted parts are what <code>apply</code> added.</p>`,
       body: markup`<main id="content">
+${renderFilters(written)}
 ${examples}
 <p class="empty" hidden>No example matches both filters.</p>
 <section class="sources">

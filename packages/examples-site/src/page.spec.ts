@@ -80,6 +80,12 @@ describe("renderPage", () => {
     );
   });
 
+  it("puts the filters in the page, ahead of the cards, so they stay while the cards scroll by", () => {
+    expect(html).toMatch(
+      /<main id="content">\s*<nav class="filters"[\s\S]*?<\/nav>\s*<article /,
+    );
+  });
+
   it("has a card for every example it wrote, and leaves the ones it left alone to How it decides", () => {
     expect(
       [...html.matchAll(/<article id="([^"]+)"/g)].map((m) => m[1]),

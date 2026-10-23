@@ -18,6 +18,8 @@
   --com: light-dark(#7b776e, #8a8780);
   /* How much of the window the site bar holds while it stays at the top. */
   --bar: 49px;
+  /* And the filters on Examples, which stay below it. */
+  --filters: 59px;
 }
 :root[data-theme="light"] {
   color-scheme: light;
@@ -213,8 +215,11 @@ a:focus-visible {
   margin: 0 0 24px;
   scroll-margin-top: calc(var(--bar) + 16px);
 }
-main > .example:first-child {
+.filters + .example {
   margin-top: 24px;
+}
+main:has(> .filters) .example {
+  scroll-margin-top: calc(var(--bar) + var(--filters) + 16px);
 }
 .example[hidden] {
   display: none;
@@ -594,11 +599,14 @@ main > .note {
     padding: 12px;
   }
 }
+/* On a phone the bar and the filters wrap, and would hold the screen. */
 @media (max-width: 900px) {
   :root {
     --bar: 0px;
+    --filters: 0px;
   }
-  .bar {
+  .bar,
+  .filters {
     position: static;
   }
 }
