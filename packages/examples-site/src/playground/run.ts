@@ -107,7 +107,8 @@ export async function runPlayground(
     infer: {
       ...INFER_DEFAULTS,
       ...options.infer,
-      aliasRepeatedShapes: options.nameShapes ?? false,
+      aliasRepeatedShapes:
+        options.nameShapes ?? options.infer?.aliasRepeatedShapes ?? false,
     },
     types,
     compilerOptions: COMPILER_OPTIONS,

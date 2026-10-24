@@ -152,6 +152,11 @@ ship({ id: 1, address: { city: "Oslo", zip: "0150" } });
     );
     expect(named.after).toContain("function city(address: Address)");
     expect(plain.after).not.toContain("type Address");
+    const fromOptions = await runPlayground(code, libs, {
+      infer: { aliasRepeatedShapes: true },
+    });
+    if (!fromOptions.ok) throw new Error("did not run");
+    expect(fromOptions.after).toContain("function city(address: Address)");
   });
 
   it("opens with an API response typed as named shapes, the case the playground leads with", async () => {
