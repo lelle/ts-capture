@@ -320,6 +320,22 @@ describe("renderDecidesPage", () => {
     expect(html).not.toContain("open in the playground");
   });
 
+  it("leaves out the playground link for an example run with its own options, which a link cannot carry", () => {
+    const html = renderDecidesPage(
+      [
+        {
+          rule: RULES[0]!.rule,
+          examples: [
+            decided(example({ infer: { skipRedundantAnnotations: false } })),
+          ],
+        },
+      ],
+      REAL,
+      BUILD,
+    );
+    expect(html).not.toContain("open in the playground");
+  });
+
   it("lays out like a docs page: bar and heading first, then the menu beside the rules", () => {
     const at = (marker: string): number => page.indexOf(marker);
     expect(at('<nav class="site"')).toBeLessThan(at("<h1>"));

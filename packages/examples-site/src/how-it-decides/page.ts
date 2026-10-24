@@ -114,8 +114,9 @@ function renderExample(decided: DecidedExample, real: ExamplesData): Markup {
   );
   const links = [
     markup`<a href="${CORPUS}/${example.rule}/${example.name}.ts">the corpus file</a>`,
-    // The playground runs one text, as written, without looking for `this`.
+    // The playground runs one text, as written, with the default options.
     !example.apply &&
+      Object.keys(example.infer).length === 0 &&
       markup`<a href="../playground/#code=${encodeURIComponent(example.code)}">open in the playground</a>`,
   ].filter((link): link is Markup => link instanceof Markup);
   const site =
