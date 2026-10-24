@@ -23,6 +23,18 @@ const examplesJson = JSON.parse(
 const rules = readCorpus();
 
 describe("parseExample", () => {
+  it("reads an option's number as a number, and true and false as booleans", () => {
+    const parsed = parseExample(
+      "written",
+      "x",
+      "// rule: written\n// site: x\n// title: X\n// infer: maxAnnotationChars=300 skipRedundantAnnotations=false\n// verdict: ok\n\nconst x = 1;\n",
+    );
+    expect(parsed.infer).toEqual({
+      maxAnnotationChars: 300,
+      skipRedundantAnnotations: false,
+    });
+  });
+
   const text =
     "// rule: gate.erases-enum\n" +
     "// site: mode\n" +

@@ -60,6 +60,12 @@ export const CORPUS_DIR = resolve(
   "../../../core/corpus",
 );
 
+/** `true`, `false` and numbers as what they say; anything else as text. */
+function optionValue(value = ""): boolean | number | string {
+  if (value === "true" || value === "false") return value === "true";
+  return /^\d+$/.test(value) ? Number(value) : value;
+}
+
 const KEY = /^\/\/ (rule|site|title|real|apply|infer|verdict): (.*)$/;
 
 /** One example file: a header of `//` lines, a blank line, then the code. */
@@ -92,7 +98,7 @@ export function parseExample(
     infer: Object.fromEntries(
       pairs
         .map((pair) => pair.split("="))
-        .map(([key, value]) => [key, value === "true"]),
+        .map(([key, value]) => [key, optionValue(value)]),
     ),
     verdict: keys.get("verdict") === "ok" ? "ok" : "questionable",
     why: why.join(" "),

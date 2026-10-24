@@ -57,7 +57,12 @@ const isExample = (name: string) => name.endsWith(".ts") && !name.endsWith(".aft
 function inferFrom(header: string | undefined): Partial<InferOptions> {
   const pairs = (header ?? "").split(/\s+/).filter(Boolean);
   return Object.fromEntries(
-    pairs.map((pair) => pair.split("=")).map(([k, v]) => [k, v === "true"]),
+    pairs
+      .map((pair) => pair.split("="))
+      .map(([k, v = ""]) => [
+        k,
+        v === "true" || v === "false" ? v === "true" : /^\d+$/.test(v) ? Number(v) : v,
+      ]),
   );
 }
 
