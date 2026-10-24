@@ -527,6 +527,35 @@ describe("annotate, a return type judged with the parameters written", () => {
     );
   });
 
+  // Before the run TypeScript writes a generic with defaults out in full
+  // (`Call<any>`), and by its name alone where the return is judged; both are
+  // the type it already had.
+  it("leaves a known return to TypeScript however TypeScript spells a generic's defaults", () => {
+    const source =
+      "interface Call<TRequest = any> { request: TRequest }\n" +
+      "class Server {\n" +
+      "  handlerFor(prefix: string) {\n" +
+      "    return async (call: Call, done: (error: unknown) => void) => {\n" +
+      "      if (!call) return done(null);\n" +
+      "      done(prefix);\n" +
+      "    };\n" +
+      "  }\n" +
+      "}\n";
+    const pos = source.indexOf(") {") + 1;
+    const observed = "(call: Call, done: (error: unknown) => void) => Promise<undefined>";
+    const { result } = annotated("project", source, [
+      entry("target.ts", pos, [[observed]], { returnType: true }),
+    ]);
+    expect(result.text).toBe(source);
+    expect(result.skips).toContainEqual(
+      expect.objectContaining({
+        pos,
+        reason: "left-to-typescript",
+        rule: "verify.wider-after-run",
+      }),
+    );
+  });
+
   it("restates it when redundant annotations are asked for", () => {
     const { result } = annotated("project", known, collect(known), "target.ts", {
       skipRedundantAnnotations: false,

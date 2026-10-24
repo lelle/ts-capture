@@ -325,13 +325,18 @@ export function writesOverCallSignature(
   return hasCallSignature(checker, inferred);
 }
 
-/** How the checker's type reads, for a note addressed to a person. */
+/**
+ * How the checker's type reads, for a note addressed to a person. From
+ * `enclosing` it reads as it would there: a generic named in the code keeps
+ * its defaults implicit (`Call`, not `Call<any>`).
+ */
 export function describeInferred(
   checker: ts.TypeChecker | undefined,
   type: ts.Type | undefined,
+  enclosing?: ts.Node,
 ): string | undefined {
   if (!checker || !type) return undefined;
-  return checker.typeToString(type, undefined, ts.TypeFormatFlags.NoTruncation);
+  return checker.typeToString(type, enclosing, ts.TypeFormatFlags.NoTruncation);
 }
 
 /** Type the checker infers at a node, or undefined when it cannot be asked. */

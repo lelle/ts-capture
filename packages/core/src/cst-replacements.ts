@@ -493,10 +493,8 @@ export function buildCstReplacements(
         skip("syntax.array-callback-shape");
         continue;
       }
-      const inferredReturn = inferredReturnType(
-        checker,
-        checkerIndex?.returnTypeSites.get(pos)?.node,
-      );
+      const returnSite = checkerIndex?.returnTypeSites.get(pos)?.node;
+      const inferredReturn = inferredReturnType(checker, returnSite);
       lastInferredString = describeInferred(checker, inferredReturn);
 
       // `this` has no single value to write down. Any concrete type here —
@@ -518,8 +516,9 @@ export function buildCstReplacements(
       const parensOpenPos = paramSites.get(pos)?.parensOpenPos;
       if (parensOpenPos !== undefined) requestParenWrap(parensOpenPos, pos);
       recordPreview(pos, nameAt("returnType", pos), emitted, types.length);
+      // Read from the site, as the type it is compared with later is.
       bufferAnnotation(pos, emitted, annotation(markerSuffix), undefined, -1, {
-        inferredBefore: lastInferredString,
+        inferredBefore: describeInferred(checker, inferredReturn, returnSite),
       });
     } else {
       // varDecl: user-written `as Type` / `<Type>` cast on RHS — defer
