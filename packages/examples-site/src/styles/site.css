@@ -431,6 +431,40 @@ textarea:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 2px;
 }
+.options {
+  margin: 0 0 14px;
+  font-size: 14px;
+}
+.options summary {
+  cursor: pointer;
+  color: var(--muted);
+}
+.options #changed {
+  margin-left: 6px;
+  color: var(--text);
+}
+.options ul {
+  list-style: none;
+  margin: 10px 0 0;
+  padding: 0;
+  display: grid;
+  gap: 6px;
+}
+.options fieldset {
+  display: inline;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+.options legend {
+  display: inline;
+  padding: 0 6px 0 0;
+  float: left;
+}
+.options code {
+  font-size: 12.5px;
+  color: var(--muted);
+}
 .status {
   font-size: 14px;
   color: var(--muted);

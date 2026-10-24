@@ -144,7 +144,9 @@ function ship(order) {
 
 ship({ id: 1, address: { city: "Oslo", zip: "0150" } });
 `;
-    const named = await runPlayground(code, libs, { nameShapes: true });
+    const named = await runPlayground(code, libs, {
+      infer: { aliasRepeatedShapes: true },
+    });
     const plain = await runPlayground(code, libs);
     if (!named.ok || !plain.ok) throw new Error("did not run");
     expect(named.after).toContain(
@@ -152,17 +154,14 @@ ship({ id: 1, address: { city: "Oslo", zip: "0150" } });
     );
     expect(named.after).toContain("function city(address: Address)");
     expect(plain.after).not.toContain("type Address");
-    const fromOptions = await runPlayground(code, libs, {
-      infer: { aliasRepeatedShapes: true },
-    });
-    if (!fromOptions.ok) throw new Error("did not run");
-    expect(fromOptions.after).toContain("function city(address: Address)");
   });
 
   it("opens with an API response typed as named shapes, the case the playground leads with", async () => {
     const first = STARTERS[0]!;
-    expect(first.nameShapes).toBe(true);
-    const result = await runPlayground(first.code, libs, { nameShapes: true });
+    expect(first.options).toEqual({ aliasRepeatedShapes: true });
+    const result = await runPlayground(first.code, libs, {
+      infer: first.options,
+    });
     if (!result.ok) throw new Error(result.error);
     expect(result.after).toMatch(/^type Customer = /m);
     expect(result.after).toContain("function shipTo(customer: Customer)");
@@ -172,7 +171,7 @@ ship({ id: 1, address: { city: "Oslo", zip: "0150" } });
     "annotates the starter $title without adding a type error",
     async (starter) => {
       const result = await runPlayground(starter.code, libs, {
-        nameShapes: starter.nameShapes,
+        infer: starter.options,
       });
       if (!result.ok) throw new Error(result.error);
       expect(result.after).not.toBe(starter.code);

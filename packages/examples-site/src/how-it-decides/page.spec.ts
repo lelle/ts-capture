@@ -320,20 +320,24 @@ describe("renderDecidesPage", () => {
     expect(html).not.toContain("open in the playground");
   });
 
-  it("leaves out the playground link for an example run with its own options, which a link cannot carry", () => {
-    const html = renderDecidesPage(
-      [
-        {
-          rule: RULES[0]!.rule,
-          examples: [
-            decided(example({ infer: { skipRedundantAnnotations: false } })),
-          ],
-        },
-      ],
+  const withOptions = (infer: CorpusExample["infer"]): string =>
+    renderDecidesPage(
+      [{ rule: RULES[0]!.rule, examples: [decided(example({ infer }))] }],
       REAL,
       BUILD,
     );
-    expect(html).not.toContain("open in the playground");
+
+  it("opens an example run with its own options in the playground with those options set", () => {
+    const shown = example({ infer: { skipRedundantAnnotations: false } });
+    expect(withOptions(shown.infer)).toContain(
+      `href="../playground/#code=${encodeURIComponent(shown.code)}&amp;infer.skipRedundantAnnotations=false"`,
+    );
+  });
+
+  it("leaves out the playground link for an option the playground cannot set", () => {
+    expect(withOptions({ maxAnnotationChars: 300 })).not.toContain(
+      "open in the playground",
+    );
   });
 
   it("lays out like a docs page: bar and heading first, then the menu beside the rules", () => {

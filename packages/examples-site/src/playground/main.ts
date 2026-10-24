@@ -2,7 +2,14 @@ import type { RunMessage, RunRequest } from "./messages.js";
 import type { PlaygroundResult } from "./run.js";
 import type { Starter } from "./starters.js";
 
-import { codeFromHash } from "./link.js";
+import { linkFromHash } from "./link.js";
+import {
+  changedOptions,
+  changedSummary,
+  OPTION_DEFAULTS,
+  type PlaygroundOptions,
+  SWITCHES,
+} from "./options.js";
 
 const TIMEOUT_MS = 10_000;
 const stacked = matchMedia("(max-width: 760px)");
@@ -10,7 +17,15 @@ const stillMotion = matchMedia("(prefers-reduced-motion: reduce)");
 
 const code = document.querySelector<HTMLTextAreaElement>("#code")!;
 const starter = document.querySelector<HTMLSelectElement>("#starter")!;
-const nameShapes = document.querySelector<HTMLInputElement>("#name-shapes")!;
+const optionsPart = document.querySelector<HTMLDetailsElement>(".options")!;
+const changed = document.querySelector<HTMLElement>("#changed")!;
+const switches = SWITCHES.map(
+  ({ key }) =>
+    [key, document.querySelector<HTMLInputElement>(`#infer-${key}`)!] as const,
+);
+const modes = [
+  ...document.querySelectorAll<HTMLInputElement>('input[name="outputMode"]'),
+];
 const button = document.querySelector<HTMLButtonElement>("#run")!;
 const status = document.querySelector<HTMLElement>("#status")!;
 const output = document.querySelector<HTMLElement>("#result")!;
@@ -31,6 +46,27 @@ function say(text: string, failed = false): void {
 function clear(): void {
   output.textContent = "";
   report.textContent = "";
+}
+
+function readOptions(): PlaygroundOptions {
+  const options = { ...OPTION_DEFAULTS };
+  for (const [key, box] of switches) options[key] = box.checked;
+  const mode = modes.find((candidate) => candidate.checked)?.value;
+  if (mode) options.outputMode = mode as PlaygroundOptions["outputMode"];
+  return options;
+}
+
+function countChanged(): void {
+  changed.textContent = changedSummary(
+    Object.keys(changedOptions(readOptions())).length,
+  );
+}
+
+function setOptions(options: Partial<PlaygroundOptions>): void {
+  const all = { ...OPTION_DEFAULTS, ...options };
+  for (const [key, box] of switches) box.checked = all[key];
+  for (const mode of modes) mode.checked = mode.value === all.outputMode;
+  countChanged();
 }
 
 function finish(): void {
@@ -96,7 +132,7 @@ function run(): void {
   const request: RunRequest = {
     id: current,
     code: code.value,
-    nameShapes: nameShapes.checked,
+    options: readOptions(),
   };
   worker.postMessage(request);
 }
@@ -105,19 +141,20 @@ button.addEventListener("click", run);
 code.addEventListener("keydown", (event) => {
   if (event.key === "Enter" && (event.metaKey || event.ctrlKey)) run();
 });
-// A link from another page (how it decides) brings its own code.
-const linked = codeFromHash(window.location.hash);
+optionsPart.addEventListener("change", countChanged);
+// A link from another page (how it decides) brings its own code and options.
+const linked = linkFromHash(window.location.hash);
 if (linked !== undefined) {
-  code.value = linked;
+  code.value = linked.code;
   starter.value = "";
-  nameShapes.checked = false;
+  setOptions(linked.options);
 }
 
 starter.addEventListener("change", () => {
   const chosen = starters.find((candidate) => candidate.id === starter.value);
   if (!chosen) return;
   code.value = chosen.code;
-  nameShapes.checked = chosen.nameShapes ?? false;
+  setOptions(chosen.options ?? {});
   clear();
   say("");
 });

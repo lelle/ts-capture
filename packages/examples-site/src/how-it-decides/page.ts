@@ -6,6 +6,7 @@ import {
   renderExampleBody,
   type RuleLink,
 } from "../page.js";
+import { playgroundLink } from "../playground/link.js";
 import { type CorpusRule, OUTCOMES, type SiteKind } from "./corpus.js";
 import { type DecidedExample } from "./decide.js";
 import { DECIDED_BY, STAGES } from "./rules.js";
@@ -112,12 +113,14 @@ function renderExample(decided: DecidedExample, real: ExamplesData): Markup {
       ),
     "\n",
   );
+  // The playground runs one text, as written.
+  const playground = example.apply
+    ? undefined
+    : playgroundLink(example.code, example.infer);
   const links = [
     markup`<a href="${CORPUS}/${example.rule}/${example.name}.ts">the corpus file</a>`,
-    // The playground runs one text, as written, with the default options.
-    !example.apply &&
-      Object.keys(example.infer).length === 0 &&
-      markup`<a href="../playground/#code=${encodeURIComponent(example.code)}">open in the playground</a>`,
+    playground !== undefined &&
+      markup`<a href="../playground/${playground}">open in the playground</a>`,
   ].filter((link): link is Markup => link instanceof Markup);
   const site =
     kind === "return" || kind === "this"

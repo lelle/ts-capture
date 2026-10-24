@@ -1,9 +1,10 @@
+import type { PlaygroundOptions } from "./options.js";
 import type { PlaygroundResult } from "./run.js";
 
 export interface RunRequest {
   id: number;
   code: string;
-  nameShapes: boolean;
+  options: PlaygroundOptions;
 }
 
 /** `started` is sent once the compiler is loaded, just before the code runs. */

@@ -2,6 +2,38 @@ import type { Starter } from "./starters.js";
 
 import { type BuildInfo, renderLayout } from "../layout.js";
 import { type Markup, markup, trusted } from "../markup.js";
+import {
+  changedOptions,
+  changedSummary,
+  OPTION_DEFAULTS,
+  OUTPUT_MODES,
+  type PlaygroundOptions,
+  SWITCHES,
+} from "./options.js";
+
+const REFERENCE = "../docs/reference/configuration/#infer";
+
+const configKey = (key: keyof PlaygroundOptions): Markup =>
+  markup`<a href="${REFERENCE}"><code>infer.${key}</code></a>`;
+
+function renderOptions(options: PlaygroundOptions): Markup {
+  const switches = SWITCHES.map(
+    ({ key, label }) =>
+      markup`<li><input type="checkbox" id="infer-${key}"${options[key] && markup` checked`}> <label for="infer-${key}">${label}</label> ${configKey(key)}</li>`,
+  );
+  const modes = OUTPUT_MODES.map(
+    (mode) =>
+      markup`<input type="radio" name="outputMode" id="output-${mode}" value="${mode}"${options.outputMode === mode && markup` checked`}> <label for="output-${mode}">${mode}</label>`,
+  );
+  const changed = Object.keys(changedOptions(options)).length;
+  return markup`<details class="options">
+    <summary>Options <span id="changed">${changedSummary(changed)}</span></summary>
+    <ul>
+      ${switches}
+      <li><fieldset><legend>Output</legend> ${modes}</fieldset> ${configKey("outputMode")}</li>
+    </ul>
+  </details>`;
+}
 
 /** JSON that can sit inside a `script` element: no `<` to end the element with. */
 function embeddedJson(value: unknown): Markup {
@@ -30,10 +62,10 @@ export function renderPlaygroundPage(
   <div class="controls">
     <label for="starter">Start from</label>
     <select id="starter">${options}</select>
-    <span class="option"><input type="checkbox" id="name-shapes"${starters[0]?.nameShapes && markup` checked`}> <label for="name-shapes">Name repeated shapes</label></span>
     <button type="button" id="run">Run</button>
     <span class="status" id="status" role="status"></span>
   </div>
+  ${renderOptions({ ...OPTION_DEFAULTS, ...starters[0]?.options })}
   <div class="panes playground">
     <figure><figcaption><label for="code">Your code</label></figcaption><textarea id="code" spellcheck="false" autocapitalize="off" autocomplete="off">${starters[0].code}</textarea></figure>
     <figure class="result"><figcaption>After <code>ts-capture apply</code></figcaption><pre><code id="result"></code></pre></figure>

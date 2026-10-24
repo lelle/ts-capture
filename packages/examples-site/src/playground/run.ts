@@ -48,9 +48,7 @@ export interface RunOptions {
   applyTo?: string;
   /** Observe `this` where the checker says it is implicitly `any`. */
   implicitThis?: boolean;
-  /** Declare a shape written more than once as a named type (`infer.aliasRepeatedShapes`). */
-  nameShapes?: boolean;
-  /** Options over the defaults; `nameShapes` sets `aliasRepeatedShapes` on top. */
+  /** Options over the defaults. */
   infer?: Partial<InferOptions>;
 }
 
@@ -104,12 +102,7 @@ export async function runPlayground(
   };
   const { files, telemetry, skips, written } = applyInMemory({
     fileNames: [FILE],
-    infer: {
-      ...INFER_DEFAULTS,
-      ...options.infer,
-      aliasRepeatedShapes:
-        options.nameShapes ?? options.infer?.aliasRepeatedShapes ?? false,
-    },
+    infer: { ...INFER_DEFAULTS, ...options.infer },
     types,
     compilerOptions: COMPILER_OPTIONS,
     rootDir: "/",

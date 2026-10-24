@@ -34,17 +34,45 @@ describe("renderPlaygroundPage", () => {
     );
   });
 
-  it("offers naming repeated shapes, ticked when the first starter asks for it", () => {
-    const box = (page: string) =>
-      /<input type="checkbox" id="name-shapes"[^>]*>/.exec(page)?.[0] ?? "";
-    expect(box(html)).not.toContain("checked");
+  const box = (page: string, id: string) =>
+    new RegExp(`<input [^>]*id="${id}"[^>]*>`).exec(page)?.[0] ?? "";
+
+  it("offers the options a config sets, each under its key in the reference", () => {
+    for (const key of [
+      "aliasRepeatedShapes",
+      "skipRedundantAnnotations",
+      "narrowParamShapes",
+      "outputMode",
+    ]) {
+      expect(html).toContain(
+        `<a href="../docs/reference/configuration/#infer"><code>infer.${key}</code></a>`,
+      );
+    }
     expect(html).toContain(
-      '<label for="name-shapes">Name repeated shapes</label>',
+      '<label for="infer-narrowParamShapes">Narrow parameter shapes</label>',
     );
+  });
+
+  it("starts at the defaults, behind a closed summary that says nothing changed", () => {
+    expect(html).toMatch(/<details class="options">\s*<summary>/);
+    expect(html).toContain('<span id="changed"></span>');
+    expect(box(html, "infer-aliasRepeatedShapes")).not.toContain("checked");
+    expect(box(html, "infer-skipRedundantAnnotations")).toContain("checked");
+    expect(box(html, "output-annotations")).toContain("checked");
+    expect(box(html, "output-comments")).not.toContain("checked");
+  });
+
+  it("sets the options the first starter asks for, and counts them in the summary", () => {
     const naming = renderPlaygroundPage(
-      [{ ...starters[0]!, nameShapes: true }, starters[1]!],
+      [
+        { ...starters[0]!, options: { aliasRepeatedShapes: true } },
+        starters[1]!,
+      ],
       { version: "0.4.0" },
     );
-    expect(box(naming)).toContain("checked");
+    expect(box(naming, "infer-aliasRepeatedShapes")).toContain("checked");
+    expect(naming).toContain(
+      '<span id="changed">1 changed from the defaults</span>',
+    );
   });
 });

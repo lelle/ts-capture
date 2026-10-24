@@ -1,16 +1,18 @@
+import type { PlaygroundOptions } from "./options.js";
+
 export interface Starter {
   id: string;
   title: string;
   code: string;
-  /** Ticks "Name repeated shapes" (`infer.aliasRepeatedShapes`) when chosen. */
-  nameShapes?: boolean;
+  /** The options set when it is chosen; the rest go back to the defaults. */
+  options?: Partial<PlaygroundOptions>;
 }
 
 export const STARTERS: Starter[] = [
   {
     id: "api",
     title: "An API response",
-    nameShapes: true,
+    options: { aliasRepeatedShapes: true },
     code: `// Stands in for fetch(): the body is text until it is parsed, so TypeScript
 // only sees \`any\`. The run sees what the API actually sent.
 async function getJson(url) {
