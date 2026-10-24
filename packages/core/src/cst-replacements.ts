@@ -374,7 +374,9 @@ export function buildCstReplacements(
       const named = rewriteToNamedInScope(computed, namedTypeIndex);
       const narrowed = infer.narrowParamShapes ? narrowParamShape(named, site.node) : named;
       const shaped = narrowed === named ? named : rewriteToNamedInScope(narrowed, namedTypeIndex);
-      const emitted = ctorArityMap ? expandCtorArity(shaped, ctorArityMap) : shaped;
+      const emitted = ctorArityMap
+        ? expandCtorArity(shaped, ctorArityMap, opts?.writtenParamTypes)
+        : shaped;
       if (outOfScope(emitted)) {
         // Paren-less single-param arrow: even when we skip emitting the
         // param annotation, the sibling returnType entry will try to
@@ -453,7 +455,9 @@ export function buildCstReplacements(
         continue;
       }
       const named = rewriteToNamedInScope(computed, namedTypeIndex);
-      const emitted = ctorArityMap ? expandCtorArity(named, ctorArityMap) : named;
+      const emitted = ctorArityMap
+        ? expandCtorArity(named, ctorArityMap, opts?.writtenParamTypes)
+        : named;
       if (outOfScope(emitted)) continue;
       // Parse-check.
       if (!isParseableTypeString(emitted)) {
@@ -483,7 +487,9 @@ export function buildCstReplacements(
         continue;
       }
       const named = rewriteToNamedInScope(computed, namedTypeIndex);
-      const emitted = ctorArityMap ? expandCtorArity(named, ctorArityMap) : named;
+      const emitted = ctorArityMap
+        ? expandCtorArity(named, ctorArityMap, opts?.writtenParamTypes)
+        : named;
       if (outOfScope(emitted)) continue;
       // Same suppression as for arrow-param entries —
       // when the returnType lands on an Array.prototype callback's
@@ -534,7 +540,9 @@ export function buildCstReplacements(
         continue;
       }
       const named = rewriteToNamedInScope(computed, namedTypeIndex);
-      const emitted = ctorArityMap ? expandCtorArity(named, ctorArityMap) : named;
+      const emitted = ctorArityMap
+        ? expandCtorArity(named, ctorArityMap, opts?.writtenParamTypes)
+        : named;
       if (outOfScope(emitted)) continue;
       // A const assertion is a narrowing the author asked for, and an
       // observation can only widen it. Unconditional, unlike

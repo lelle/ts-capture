@@ -153,6 +153,7 @@ export function crossReferenceObservations(input: CrossRefInput): CollectedTypeI
       // resolved to a registered signature.
       const fnKeys = recordedFnKeys.get(key);
       let crossRefUpgraded = false;
+      let entryOpts = opts;
       if (fnKeys) {
         // Different functions can stringify to one generic type, so each
         // generic entry stands for every recorded function's signature.
@@ -169,6 +170,10 @@ export function crossReferenceObservations(input: CrossRefInput): CollectedTypeI
             return [[typeName, srcLoc, reason]];
           });
           crossRefUpgraded = true;
+          const writtenParamTypes = fnKeys.flatMap((fnKey) =>
+            (returnsByFn.get(fnKey)?.writtenParams ?? []).map(([, , type]) => type),
+          );
+          if (writtenParamTypes.length > 0) entryOpts = { ...opts, writtenParamTypes };
         }
       }
 
@@ -217,7 +222,7 @@ export function crossReferenceObservations(input: CrossRefInput): CollectedTypeI
         });
       }
 
-      return [filename, pos, types, opts] as CollectedTypeEntry;
+      return [filename, pos, types, entryOpts] as CollectedTypeEntry;
     })
     .filter((entry): entry is CollectedTypeEntry => entry !== null);
 }

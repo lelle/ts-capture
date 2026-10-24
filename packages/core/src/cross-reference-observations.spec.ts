@@ -52,6 +52,24 @@ describe("crossReferenceObservations — plain-data engine (no live functions)",
     expect(entry[2][0][2]).toBeUndefined();
   });
 
+  it("keeps the types the code writes for an upgraded function's parameters", () => {
+    const returnSite = logKey("h.ts", 99, {
+      returnType: true,
+      writtenParams: [[10, "request", "Request"]],
+    });
+    const logs = new Map<string, Set<string>>([
+      [returnSite, new Set([typeEntry("number")])],
+      [logKey("app.ts", 42, { returnType: true }), new Set([typeEntry(GENERIC_FN)])],
+    ]);
+    const input: CrossRefInput = {
+      ...emptyInput(logs),
+      recordedFnKeys: new Map([[logKey("app.ts", 42, { returnType: true }), ["h.ts:99"]]]),
+    };
+
+    const entry = find(crossReferenceObservations(input), "app.ts", 42)!;
+    expect(entry[3].writtenParamTypes).toEqual(["Request"]);
+  });
+
   it("upgrades a generic function value to every distinct recorded fn's signature", () => {
     const logs = new Map<string, Set<string>>([
       [logKey("h.ts", 51, { returnType: true }), new Set([typeEntry("number")])],

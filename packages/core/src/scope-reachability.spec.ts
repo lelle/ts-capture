@@ -118,6 +118,16 @@ describe("expandCtorArity", () => {
     expect(expandCtorArity("string | Bar", new Map([["Map", 2]]))).toBe("string | Bar");
   });
 
+  it("leaves a name as the code writes it", () => {
+    const arity = new Map([
+      ["Request", 1],
+      ["Reply", 1],
+    ]);
+    expect(expandCtorArity("(request: Request) => Reply", arity, ["Request"])).toBe(
+      "(request: Request) => Reply<unknown>",
+    );
+  });
+
   it("does not double-expand an already-parameterized name", () => {
     expect(expandCtorArity("Map<string, number>", new Map([["Map", 2]]))).toBe(
       "Map<string, number>",

@@ -48,6 +48,12 @@ export interface ExtraOptions {
    * built from the observed ones needs them in their places.
    */
   writtenParams?: Array<[number, string, string]>;
+  /**
+   * On a function value upgraded to the signature of a function it returned:
+   * the types the code writes for that function's parameters, so apply spells
+   * them as written (`Request`, not `Request<unknown>`).
+   */
+  writtenParamTypes?: string[];
 }
 
 /**

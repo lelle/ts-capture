@@ -239,6 +239,8 @@ export function buildCtorArityMap(
   return arityMap;
 }
 
+const BARE_NAME = /(?<![.\w])([A-Z]\w*)(?![<\w])/g;
+
 /**
  * Expand bare generic type names in `typeStr` that appear in `arityMap`
  * with `<unknown, ...>` so they satisfy TS2314 ("Generic type 'X<T>'
@@ -246,8 +248,17 @@ export function buildCtorArityMap(
  * left unchanged (no double-expansion). Only PascalCase identifiers are
  * matched (consistent with `extractTypeRefs`).
  */
-export function expandCtorArity(typeStr: string, arityMap: Map<string, number>): string {
-  return typeStr.replace(/(?<![.\w])([A-Z]\w*)(?![<\w])/g, (match, name: string) => {
+export function expandCtorArity(
+  typeStr: string,
+  arityMap: Map<string, number>,
+  writtenInCode: readonly string[] = [],
+): string {
+  // A name the code writes bare compiles bare; its defaults stand.
+  const bare = new Set(
+    writtenInCode.flatMap((type) => [...type.matchAll(BARE_NAME)].map((m) => m[1])),
+  );
+  return typeStr.replace(BARE_NAME, (match, name: string) => {
+    if (bare.has(name)) return match;
     const arity = arityMap.get(name);
     if (!arity) return match;
     return `${name}<${Array(arity).fill("unknown").join(", ")}>`;
