@@ -1,5 +1,12 @@
 # @ts-capture/svelte
 
+## 0.5.0
+
+### Patch Changes
+
+- Updated dependencies [[`d900c26`](https://github.com/lelle/ts-capture/commit/d900c26d41fd72e11068ae6e5cc509ad77f6c387), [`a2b8835`](https://github.com/lelle/ts-capture/commit/a2b88357d253b4d75174156ab6f4b565ef72365b), [`2378aad`](https://github.com/lelle/ts-capture/commit/2378aad4cc121a27b33a0756b7b78a40af37ab41), [`61730fa`](https://github.com/lelle/ts-capture/commit/61730fa4146429d8e92f23ff966b3cd897cca766), [`b1fe1a4`](https://github.com/lelle/ts-capture/commit/b1fe1a478b3b9ffc79913e0aaab75703dc12e3eb), [`9981af1`](https://github.com/lelle/ts-capture/commit/9981af12cbb1ad5fdc54a6459d271e5cdf144ae8)]:
+  - @ts-capture/core@0.5.0
+
 ## 0.4.0
 
 ### Minor Changes

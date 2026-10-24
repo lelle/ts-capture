@@ -1,5 +1,23 @@
 # @ts-capture/core
 
+## 0.5.0
+
+### Minor Changes
+
+- [`d900c26`](https://github.com/lelle/ts-capture/commit/d900c26d41fd72e11068ae6e5cc509ad77f6c387) Thanks [@lelle](https://github.com/lelle)! - Every site apply skips now names the rule that decided it, as `rule` on the skip. `--report` prints it under the observed type, for example `rule  verify.type-error`. One reason has several rules behind it. `kept-existing` alone can be an enum, a named type, a polymorphic `this` or a dropped union arm. Written sites are recorded too, in `telemetry.written`, and `APPLY_RULES` lists every rule.
+
+### Patch Changes
+
+- [`a2b8835`](https://github.com/lelle/ts-capture/commit/a2b88357d253b4d75174156ab6f4b565ef72365b) Thanks [@lelle](https://github.com/lelle)! - A variable whose observed type is narrower than the type TypeScript infers from its initializer is reported as left for TypeScript to infer, not as a type error. An example is `const fromNull = valuesOrNull(null)` once `valuesOrNull`'s return type is written. Nothing is lost there: TypeScript already has a type that holds what the run saw.
+
+- [`2378aad`](https://github.com/lelle/ts-capture/commit/2378aad4cc121a27b33a0756b7b78a40af37ab41) Thanks [@lelle](https://github.com/lelle)! - A callback parameter passed different functions is typed from all of them, such as `(() => number) | (() => string)`. It used to take the first function's signature only, so apply left the parameter unwritten because the other calls failed the type check.
+
+- [`61730fa`](https://github.com/lelle/ts-capture/commit/61730fa4146429d8e92f23ff966b3cd897cca766) Thanks [@lelle](https://github.com/lelle)! - A return type TypeScript already inferred before the run is left to TypeScript also when it holds a generic with defaults, such as a returned `(call: Call) => Promise<void>` where `Call` is `interface Call<T = any>`. TypeScript spelled the type before the run as `Call<any>` and at the return as `Call`, so apply took them for two types and wrote the return out.
+
+- [`b1fe1a4`](https://github.com/lelle/ts-capture/commit/b1fe1a478b3b9ffc79913e0aaab75703dc12e3eb) Thanks [@lelle](https://github.com/lelle)! - The `apply` report now names a `this` parameter `this`, and a destructuring by its pattern, such as `{ size }`. Before, both were reported as `return type`.
+
+- [`9981af1`](https://github.com/lelle/ts-capture/commit/9981af12cbb1ad5fdc54a6459d271e5cdf144ae8) Thanks [@lelle](https://github.com/lelle)! - Apply now writes TypeScript's type for a return that the run saw narrower than what TypeScript infers once the parameters are written. An example is a `return null` branch the tests never took, which gives `{ id: number } | null`. Before, the return was left untyped and reported as a type error. The type is spelled the way apply spells its own, under the rule `verify.wider-after-run`. If TypeScript already inferred that type before the run, the return is left to TypeScript unless `skipRedundantAnnotations` is off. An observation that only misses a union arm TypeScript has is now reported as left to TypeScript, not as kept-existing.
+
 ## 0.4.0
 
 ### Minor Changes
