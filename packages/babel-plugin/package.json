@@ -1,6 +1,6 @@
 {
   "name": "@ts-capture/babel-plugin",
-  "version": "0.5.0",
+  "version": "0.5.1",
   "description": "Babel plugin for ts-capture — collects the types your code is called with when Jest or another Babel build runs it. (0.x — API may change between minor versions.)",
   "exports": {
     ".": {

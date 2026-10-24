@@ -1,5 +1,12 @@
 # @ts-capture/babel-plugin
 
+## 0.5.1
+
+### Patch Changes
+
+- Updated dependencies [[`77e3d18`](https://github.com/lelle/ts-capture/commit/77e3d189dfe68765f7626ce8518d25f4d9a40863)]:
+  - @ts-capture/core@0.5.1
+
 ## 0.5.0
 
 ### Patch Changes

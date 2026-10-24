@@ -1,5 +1,11 @@
 # @ts-capture/core
 
+## 0.5.1
+
+### Patch Changes
+
+- [`77e3d18`](https://github.com/lelle/ts-capture/commit/77e3d189dfe68765f7626ce8518d25f4d9a40863) Thanks [@lelle](https://github.com/lelle)! - A returned function's parameters keep the types the code writes for them. A returned `(request: Request) => Promise<void>`, where `Request` is `interface Request<Body = any>`, was written as `(request: Request<unknown>) => Promise<void>`. A generic type ts-capture only observed at run time is still written with `<unknown>`.
+
 ## 0.5.0
 
 ### Minor Changes
