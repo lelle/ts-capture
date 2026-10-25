@@ -42,7 +42,7 @@
   ],
   "license": "MIT",
   "engines": {
-    "node": ">=20"
+    "node": ">=20.19"
   },
   "peerDependencies": {
     "@ts-capture/core": "workspace:*",
@@ -52,7 +52,7 @@
     "@ts-capture/core": "workspace:*",
     "@types/node": "26.6.5",
     "@vitest/coverage-v8": "4.1.11",
-    "oxlint": "1.87.0",
+    "oxlint": "1.88.0",
     "svelte": "5.57.2",
     "typescript": "6.0.3",
     "vitest": "4.1.11"

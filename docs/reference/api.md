@@ -4,6 +4,10 @@
 Use them when the CLI does not fit: a custom runner, a build step, an editor
 integration. Everything here is from the package root.
 
+From a CommonJS project, set `"module": "nodenext"` in `tsconfig.json`. Under
+`node16`, TypeScript reads the package's declarations as ESM and reports
+TS1479 on the import, though `require` itself works.
+
 ```ts
 import {
   annotate,

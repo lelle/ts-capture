@@ -63,7 +63,7 @@
   ],
   "license": "MIT",
   "engines": {
-    "node": ">=20"
+    "node": ">=20.19"
   },
   "dependencies": {
     "source-map": "0.8.0",
@@ -73,7 +73,7 @@
     "@types/node": "26.6.5",
     "@vitest/coverage-v8": "4.1.11",
     "esbuild": "0.28.2",
-    "oxlint": "1.87.0",
+    "oxlint": "1.88.0",
     "ts7": "npm:typescript@7.0.2",
     "typescript": "6.0.3",
     "vitest": "4.1.11"

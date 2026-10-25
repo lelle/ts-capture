@@ -2,11 +2,12 @@
   "name": "@ts-capture/babel-plugin",
   "version": "0.5.2",
   "description": "Babel plugin for ts-capture — collects the types your code is called with when Jest or another Babel build runs it. (0.x — API may change between minor versions.)",
+  "type": "commonjs",
   "exports": {
     ".": {
+      "types": "./dist/index.d.ts",
       "require": "./dist/index.js",
-      "import": "./dist/index.js",
-      "types": "./dist/index.d.ts"
+      "import": "./dist/index.js"
     },
     "./runtime": "./runtime.cjs"
   },
@@ -33,7 +34,7 @@
   ],
   "license": "MIT",
   "engines": {
-    "node": ">=20"
+    "node": ">=20.19"
   },
   "peerDependencies": {
     "@babel/core": ">=7.0.0",
@@ -45,7 +46,7 @@
     "@ts-capture/core": "workspace:*",
     "@types/node": "26.6.5",
     "@vitest/coverage-v8": "4.1.11",
-    "oxlint": "1.87.0",
+    "oxlint": "1.88.0",
     "typescript": "6.0.3",
     "vitest": "4.1.11"
   },

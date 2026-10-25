@@ -33,7 +33,7 @@
   ],
   "license": "MIT",
   "engines": {
-    "node": ">=20"
+    "node": ">=20.19"
   },
   "peerDependencies": {
     "@ts-capture/core": "workspace:*",
@@ -44,7 +44,7 @@
     "@types/node": "26.6.5",
     "@vitest/coverage-v8": "4.1.11",
     "jsdom": "29.1.1",
-    "oxlint": "1.87.0",
+    "oxlint": "1.88.0",
     "typescript": "6.0.3",
     "vite": "8.3.4",
     "vitest": "4.1.11"
