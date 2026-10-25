@@ -40,9 +40,13 @@ function program(source: string): { checker: ts.TypeChecker; sf: ts.SourceFile }
 }
 
 /** Type the checker infers at the binding named `name`. */
-function typeOf(source: string, name: string): { checker: ts.TypeChecker; type: ts.Type } {
+function typeOf(
+  source: string,
+  name: string,
+): { checker: ts.TypeChecker; type: ts.Type; site: ts.Node } {
   const { checker, sf } = program(source);
   let found: ts.Type | undefined;
+  let site: ts.Node | undefined;
   const visit = (node: ts.Node): void => {
     if (
       (ts.isVariableDeclaration(node) || ts.isParameter(node)) &&
@@ -50,12 +54,13 @@ function typeOf(source: string, name: string): { checker: ts.TypeChecker; type: 
       node.name.text === name
     ) {
       found = checker.getTypeAtLocation(node.name);
+      site = node;
     }
     ts.forEachChild(node, visit);
   };
   visit(sf);
-  if (!found) throw new Error(`no binding named ${name}`);
-  return { checker, type: found };
+  if (!found || !site) throw new Error(`no binding named ${name}`);
+  return { checker, type: found, site };
 }
 
 /** Return type the checker infers for the function declaration `name`. */
@@ -181,6 +186,18 @@ describe("isRedundantAnnotation — same type, different spelling", () => {
   it("suppresses an object type whose numeric key we quote", () => {
     const { checker, type } = typeOf(`const a = { 3: "x" };`, "a");
     expect(isRedundantAnnotation(checker, type, '{ "3": string }')).toBe(true);
+  });
+
+  // Printed with no place in the code, a generic's defaults are spelled out;
+  // printed where the code names it, they are left implicit, as ts-capture
+  // writes them.
+  it("suppresses a generic with defaults, read where the code names it", () => {
+    const source = `interface Context<Env = any, Path extends string = any> { env: Env; path: Path }
+const conditions: ((c: Context) => boolean)[] = [];
+conditions.some((cond) => cond(null));`;
+    const { checker, type, site } = typeOf(source, "cond");
+    expect(widenedTypeString(checker, type)).toBe("(c: Context<any, any>) => boolean");
+    expect(isRedundantAnnotation(checker, type, "(c: Context) => boolean", site)).toBe(true);
   });
 
   // The printer elides a long object type as `... 8 more ...`, which matches

@@ -31,7 +31,11 @@ import {
  * reported as `string`. If the widened form matches what we would write, our
  * annotation is at best a restatement.
  */
-export function widenedTypeString(checker: ts.TypeChecker, type: ts.Type): string {
+export function widenedTypeString(
+  checker: ts.TypeChecker,
+  type: ts.Type,
+  enclosing?: ts.Node,
+): string {
   // `getBaseTypeOfLiteralType` widens string/number/boolean/enum literals but
   // leaves `unique symbol` alone, so that one is handled explicitly.
   if (type.flags & ts.TypeFlags.UniqueESSymbol) return "symbol";
@@ -39,7 +43,7 @@ export function widenedTypeString(checker: ts.TypeChecker, type: ts.Type): strin
   // `... 8 more ...`, which describes no type and can never match one.
   return checker.typeToString(
     checker.getBaseTypeOfLiteralType(type),
-    undefined,
+    enclosing,
     ts.TypeFormatFlags.NoTruncation,
   );
 }
@@ -64,10 +68,16 @@ export function isRedundantAnnotation(
   checker: ts.TypeChecker | undefined,
   inferred: ts.Type | undefined,
   emitted: string,
+  site?: ts.Node,
 ): boolean {
   if (!checker || !inferred) return false;
   if (inferred.flags & (ts.TypeFlags.Any | ts.TypeFlags.Unknown)) return false;
-  return sameTypeString(widenedTypeString(checker, inferred), emitted);
+  // From the site, a generic's defaults stay implicit (`Context`, not
+  // `Context<any>`), as ts-capture writes them.
+  return (
+    sameTypeString(widenedTypeString(checker, inferred), emitted) ||
+    (site !== undefined && sameTypeString(widenedTypeString(checker, inferred, site), emitted))
+  );
 }
 
 /**

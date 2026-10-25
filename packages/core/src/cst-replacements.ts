@@ -189,7 +189,7 @@ export function buildCstReplacements(
     inferred: ts.Type | undefined,
     emitted: string,
   ): boolean {
-    const verdict = checkerGate(checker, inferred, emitted, infer);
+    const verdict = checkerGate(checker, inferred, emitted, infer, checkerNodeAt(kind, pos));
     if (verdict.kind === "contradiction") {
       // A `this` slot has no identifier to name, so its note is placed under
       // the name `siteNameAt` gives it rather than a declaration's own.

@@ -52,6 +52,7 @@ export function checkerGate(
   inferred: ts.Type | undefined,
   emitted: string,
   infer: InferOptions,
+  site?: ts.Node,
 ): GateVerdict {
   if (!checker || !inferred) return WRITE;
 
@@ -77,7 +78,7 @@ export function checkerGate(
 
   // Asking for redundant annotations is asking for restatement, not for
   // destruction — so this one rule waits on the flag and the rest do not.
-  if (infer.skipRedundantAnnotations && isRedundantAnnotation(checker, inferred, emitted)) {
+  if (infer.skipRedundantAnnotations && isRedundantAnnotation(checker, inferred, emitted, site)) {
     return { kind: "redundant" };
   }
 
