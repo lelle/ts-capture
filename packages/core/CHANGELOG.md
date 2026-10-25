@@ -1,5 +1,11 @@
 # @ts-capture/core
 
+## 0.5.2
+
+### Patch Changes
+
+- [`397c2ef`](https://github.com/lelle/ts-capture/commit/397c2efa76060da23d9f9d6c91150e9054023c76) Thanks [@lelle](https://github.com/lelle)! - An annotation that names a generic with defaults is recognised as one TypeScript already infers, and is not written. `cond` in `conditions.some((cond) => cond(c))`, where `conditions` is `((c: Context) => boolean)[]` and `Context` is `interface Context<Env = any>`, was written as `cond: (c: Context) => boolean`. TypeScript spelled its own type `(c: Context<any>) => boolean`, so the two read as different types.
+
 ## 0.5.1
 
 ### Patch Changes
