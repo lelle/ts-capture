@@ -1,5 +1,13 @@
 # @ts-capture/core
 
+## 0.5.3
+
+### Patch Changes
+
+- [`397f4ab`](https://github.com/lelle/ts-capture/commit/397f4ab8e88b0f0bfc38c9185e8fee833d424c9f) Thanks [@lelle](https://github.com/lelle)! - `engines` says Node `>=20.19`, the oldest Node the packages run on: `@ts-capture/babel-plugin` loads Babel 8 with `require()`, which Node supports for ES modules from 20.19. `@ts-capture/babel-plugin` lists its `types` condition first, so TypeScript resolves its declarations by the condition rather than by the file next to the JavaScript.
+
+- [`789c216`](https://github.com/lelle/ts-capture/commit/789c2165e804a53f6390bcef2ebbde708bc6190b) Thanks [@lelle](https://github.com/lelle)! - An annotation that spells out the body of a type alias is recognised as one TypeScript already infers, and is not written. `cond` in `conditions.some((cond) => cond(c))`, where `conditions` is `Condition[]` and `type Condition = (c: Context) => boolean`, was written as `cond: (c: Context) => boolean`. TypeScript spelled its own type `Condition`, so the two read as different types.
+
 ## 0.5.2
 
 ### Patch Changes

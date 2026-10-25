@@ -1,5 +1,11 @@
 # @ts-capture/skills
 
+## 0.1.2
+
+### Patch Changes
+
+- [`397f4ab`](https://github.com/lelle/ts-capture/commit/397f4ab8e88b0f0bfc38c9185e8fee833d424c9f) Thanks [@lelle](https://github.com/lelle)! - `engines` says Node `>=20.19`, the oldest Node the packages run on: `@ts-capture/babel-plugin` loads Babel 8 with `require()`, which Node supports for ES modules from 20.19. `@ts-capture/babel-plugin` lists its `types` condition first, so TypeScript resolves its declarations by the condition rather than by the file next to the JavaScript.
+
 ## 0.1.1
 
 ### Patch Changes

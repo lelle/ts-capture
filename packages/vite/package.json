@@ -1,6 +1,6 @@
 {
   "name": "@ts-capture/vite",
-  "version": "0.5.2",
+  "version": "0.5.3",
   "description": "Vite plugin for ts-capture — collects the types your code is called with, in Vitest and the dev server. (0.x — API may change between minor versions.)",
   "type": "module",
   "exports": {

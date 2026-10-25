@@ -1,6 +1,6 @@
 {
   "name": "@ts-capture/esbuild",
-  "version": "0.5.2",
+  "version": "0.5.3",
   "description": "esbuild plugin for ts-capture — collects the types your code is called with during tsup, Bun or plain esbuild builds. (0.x — API may change between minor versions.)",
   "type": "module",
   "exports": {
