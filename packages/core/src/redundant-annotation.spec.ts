@@ -200,6 +200,16 @@ conditions.some((cond) => cond(null));`;
     expect(isRedundantAnnotation(checker, type, "(c: Context) => boolean", site)).toBe(true);
   });
 
+  it("suppresses the body of a type alias TypeScript prints by name", () => {
+    const source = `interface Context<Env = any> { env: Env }
+type Condition = (c: Context) => boolean
+const conditions: Condition[] = [];
+conditions.some((cond) => cond(null));`;
+    const { checker, type, site } = typeOf(source, "cond");
+    expect(widenedTypeString(checker, type)).toBe("Condition");
+    expect(isRedundantAnnotation(checker, type, "(c: Context) => boolean", site)).toBe(true);
+  });
+
   // The printer elides a long object type as `... 8 more ...`, which matches
   // nothing. One such annotation on nestjs/nest — 22 fields, every one of them
   // already inferred — survived on that alone.

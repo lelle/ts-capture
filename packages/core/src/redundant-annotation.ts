@@ -35,6 +35,7 @@ export function widenedTypeString(
   checker: ts.TypeChecker,
   type: ts.Type,
   enclosing?: ts.Node,
+  flags = ts.TypeFormatFlags.None,
 ): string {
   // `getBaseTypeOfLiteralType` widens string/number/boolean/enum literals but
   // leaves `unique symbol` alone, so that one is handled explicitly.
@@ -44,7 +45,7 @@ export function widenedTypeString(
   return checker.typeToString(
     checker.getBaseTypeOfLiteralType(type),
     enclosing,
-    ts.TypeFormatFlags.NoTruncation,
+    ts.TypeFormatFlags.NoTruncation | flags,
   );
 }
 
@@ -74,9 +75,16 @@ export function isRedundantAnnotation(
   if (inferred.flags & (ts.TypeFlags.Any | ts.TypeFlags.Unknown)) return false;
   // From the site, a generic's defaults stay implicit (`Context`, not
   // `Context<any>`), as ts-capture writes them.
+  if (sameTypeString(widenedTypeString(checker, inferred), emitted)) return true;
+  if (site === undefined) return false;
+  if (sameTypeString(widenedTypeString(checker, inferred, site), emitted)) return true;
+  // An alias prints as its name (`Condition`); ts-capture writes its body.
   return (
-    sameTypeString(widenedTypeString(checker, inferred), emitted) ||
-    (site !== undefined && sameTypeString(widenedTypeString(checker, inferred, site), emitted))
+    inferred.aliasSymbol !== undefined &&
+    sameTypeString(
+      widenedTypeString(checker, inferred, site, ts.TypeFormatFlags.InTypeAlias),
+      emitted,
+    )
   );
 }
 
