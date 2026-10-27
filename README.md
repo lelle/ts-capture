@@ -78,6 +78,20 @@ Read the diff before you keep it
 are skipped; other files to skip go under
 [`apply.skipFiles`](docs/reference/configuration.md#apply).
 
+## Packages
+
+| Package                                                                              | For                                                                 |
+| ------------------------------------------------------------------------------------ | ------------------------------------------------------------------- |
+| [`@ts-capture/core`](https://www.npmjs.com/package/@ts-capture/core)                 | The engine and the CLI; always needed                               |
+| [`@ts-capture/vite`](https://www.npmjs.com/package/@ts-capture/vite)                 | [Vite, Vitest, the dev server](docs/how-to/use-with-vite-vitest.md) |
+| [`@ts-capture/babel-plugin`](https://www.npmjs.com/package/@ts-capture/babel-plugin) | [Jest, Babel](docs/how-to/use-with-jest-babel.md)                   |
+| [`@ts-capture/esbuild`](https://www.npmjs.com/package/@ts-capture/esbuild)           | [esbuild, tsup, Bun](packages/esbuild/README.md)                    |
+| [`@ts-capture/svelte`](https://www.npmjs.com/package/@ts-capture/svelte)             | [Svelte 5](docs/how-to/use-with-svelte.md)                          |
+| [`@ts-capture/skills`](https://www.npmjs.com/package/@ts-capture/skills)             | [Coding agents: setup and review](packages/skills/README.md)        |
+
+Plain Node with no bundler needs only core:
+[use without a bundler](docs/how-to/use-without-a-bundler.md).
+
 ## When it helps (and when it doesn't)
 
 ts-capture shines on untyped or partially-typed code, in-progress TS
