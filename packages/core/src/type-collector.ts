@@ -53,9 +53,9 @@ let typeNameRunning = false;
 let depthWasExceeded = false;
 
 /**
- * @deprecated Prefer `createValueWalker(config)(value)` and read the
- * `WalkResult` directly. This shim preserves the legacy
- * `string | null` return plus the module-global re-entry guard.
+ * @deprecated Use `typesFromValues([value])`, which gives the type apply
+ * would write: merged, in source punctuation, and undefined where apply
+ * writes nothing. This returns the raw observation.
  */
 export function getTypeName(
   value: unknown,
