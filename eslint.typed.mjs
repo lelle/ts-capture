@@ -45,8 +45,9 @@ export default [
   },
   {
     // Specs intentionally model async functions (fixtures whose Promise type is
-    // under test) and use `new Function` to execute generated code.
-    files: ["**/*.spec.{ts,tsx}"],
+    // under test) and use `new Function` to execute generated code, as do the
+    // test-utils they share.
+    files: ["**/*.spec.{ts,tsx}", "**/test-utils/**/*.ts"],
     rules: {
       "@typescript-eslint/require-await": "off",
       "@typescript-eslint/no-implied-eval": "off",
