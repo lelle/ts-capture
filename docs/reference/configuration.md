@@ -45,8 +45,8 @@ most users only touch `infer` and `apply`.
 
 | Flag                    | Default | What it does                                                                                                                              |
 | ----------------------- | ------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
-| `recursiveObjectMerge`  | `true`  | Recursively merge nested object value types across observations.                                                                          |
-| `crossSampleArrayMerge` | `false` | Merge `T[] \| U[]` cross-sample observations into `(T \| U)[]`.                                                                           |
+| `recursiveObjectMerge`  | `true`  | Recursively merge nested object value types across observations, and lists of objects held by a property.                                 |
+| `crossSampleArrayMerge` | `false` | Merge `T[] \| U[]` cross-sample observations into `(T \| U)[]`. Lists of objects merge without it.                                        |
 | `rewriteCommonBase`     | `false` | Collapse a union of class instances to their most-specific shared ancestor. Requires runtime-side `LiteralOptions.captureClassHierarchy`. |
 | `lubFallback`           | `false` | When the legacy object merge bails, fall back to anti-unification (`type-ir`); emits `unknown` for disjoint polymorphic positions.        |
 

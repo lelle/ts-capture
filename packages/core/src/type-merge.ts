@@ -249,6 +249,12 @@ function mergeKeyValues(values: string[], infer: InferOptions = INFER_DEFAULTS):
   const unique = [...new Set(collapsed)];
   if (unique.length === 1) return unique[0];
 
+  if (infer.recursiveObjectMerge) {
+    const arms = mergeObjectArrayArms(unique, infer);
+    if (arms.length === 1) return arms[0]!;
+    if (arms.length < unique.length) return formatTypeSet(arms);
+  }
+
   const allObjects = unique.every((v) => parseObjectType(v) !== null);
   if (allObjects && infer.recursiveObjectMerge) {
     const merged = mergeObjectTypes(unique, infer);
@@ -273,17 +279,9 @@ function mergeKeyValues(values: string[], infer: InferOptions = INFER_DEFAULTS):
  * Also handles `{...}[]` shorthand at the top level.
  */
 function compressArrayObjectUnion(t: string, infer: InferOptions): string {
-  let inner: string;
-  let arrayMatch = /^Array<(.+)>$/.exec(t);
-  if (arrayMatch) {
-    inner = arrayMatch[1]!;
-  } else {
-    // `{...}[]` shorthand: only handle when the element is a brace-shape
-    // (otherwise `T[]` etc. has no union to collapse).
-    arrayMatch = /^(\{.*\})\[\]$/.exec(t);
-    if (!arrayMatch) return t;
-    inner = arrayMatch[1]!;
-  }
+  // `T[]` other than `{...}[]` has no union to collapse.
+  const inner = arrayElementText(t);
+  if (inner === undefined) return t;
 
   const parts = unionArms(inner);
   if (parts.length < 2) return t;
@@ -308,20 +306,93 @@ function compressArrayObjectUnion(t: string, infer: InferOptions): string {
   return `Array<${finalParts.join(" | ")}>`;
 }
 
+/** The element of `Array<T>`, or of `{ … }[]`. */
+function arrayElementText(t: string): string | undefined {
+  return /^Array<(.+)>$/.exec(t)?.[1] ?? /^(\{.*\})\[\]$/.exec(t)?.[1];
+}
+
+/**
+ * Apply `compressArrayObjectUnion` at every array in the type, not only the
+ * outermost, so an array held by a property merges as one passed directly.
+ */
+function compressNestedObjectArrays(t: string, infer: InferOptions): string {
+  // Each level parses its text; a type without an array has nothing to compress.
+  if (!t.includes("[]") && !t.includes("Array<")) return t;
+  const arms = unionArms(t);
+  if (arms.length > 1) {
+    const compressed = arms.map((arm) => compressNestedObjectArrays(arm, infer));
+    return compressed.every((arm, i) => arm === arms[i]) ? t : compressed.join(" | ");
+  }
+
+  const fields = parseObjectType(t);
+  if (fields !== null) {
+    let changed = false;
+    const pairs = [...fields].map(([key, value]) => {
+      const compressed = compressNestedObjectArrays(value, infer);
+      if (compressed !== value) changed = true;
+      return `${key}: ${compressed}`;
+    });
+    return changed ? `{ ${pairs.join(", ")} }` : t;
+  }
+
+  const element = arrayElementText(t);
+  if (element === undefined) return t;
+  const compressed = compressNestedObjectArrays(element, infer);
+  const elementArms = unionArms(compressed);
+  const merged = mergeObjectArrayArms(elementArms, infer);
+  const inner = merged.length < elementArms.length ? merged.join(" | ") : compressed;
+  const array = inner === element ? t : `Array<${inner}>`;
+  return compressArrayObjectUnion(array, infer);
+}
+
+/** The element arms of an array whose elements are all object shapes. */
+function objectArrayElements(t: string): string[] | null {
+  if (unionArms(t).length > 1) return null;
+  const element = arrayElementText(t);
+  if (element === undefined) return null;
+  const arms = unionArms(element);
+  return arms.every((arm) => parseObjectType(arm) !== null) ? arms : null;
+}
+
+/**
+ * Object arrays from different samples, merged into one array of one shape.
+ * Arrays of anything else stay apart (`crossSampleArrayMerge` decides those),
+ * and so do objects `mergeObjectTypes` keeps apart, such as a literal
+ * discriminator.
+ */
+function mergeObjectArrays(arrays: string[], infer: InferOptions): string | null {
+  const elements = arrays.map(objectArrayElements);
+  if (elements.some((e) => e === null)) return null;
+  const merged = mergeObjectTypes([...new Set(elements.flat() as string[])], infer);
+  return merged === null ? null : `${merged}[]`;
+}
+
+/** Union arms with their object arrays merged into one, the other arms kept. */
+function mergeObjectArrayArms(arms: string[], infer: InferOptions): string[] {
+  const objectArrays = arms.filter((arm) => objectArrayElements(arm) !== null);
+  if (objectArrays.length < 2) return arms;
+  const merged = mergeObjectArrays(objectArrays, infer);
+  if (merged === null) return arms;
+  return [...arms.filter((arm) => !objectArrays.includes(arm)), merged];
+}
+
 export function mergeTypes(types: string[], infer: InferOptions = INFER_DEFAULTS): string[] {
   // Class-hierarchy collapse runs first — it produces clean class names
   // that subsequent stages can treat as plain otherTypes. Skipping when
   // there's nothing to do (no @sa markers + flag off) is a no-op pass.
-  const pre = types.map((t) => compressArrayObjectUnion(t, infer));
+  const pre = types.map((t) => compressNestedObjectArrays(t, infer));
   const collapsed = mergeTupleTypes(rewriteCommonBase(pre, infer));
 
   const objectTypes: string[] = [];
+  const objectArrayTypes: string[] = [];
   const arrayTypes: string[] = [];
   const otherTypes: string[] = [];
 
   for (const t of collapsed) {
     if (parseObjectType(t) !== null) {
       objectTypes.push(t);
+    } else if (objectArrayElements(t) !== null) {
+      objectArrayTypes.push(t);
     } else if (infer.crossSampleArrayMerge && isSimpleArrayType(t)) {
       arrayTypes.push(t);
     } else {
@@ -354,12 +425,18 @@ export function mergeTypes(types: string[], infer: InferOptions = INFER_DEFAULTS
   // marker-stripped class observations even when object/array merge
   // didn't fire. Returning `types` here would silently leak `@sa`
   // markers into the apply output.
+  const mergedObjectArray =
+    infer.recursiveObjectMerge && objectArrayTypes.length >= 2
+      ? mergeObjectArrays(objectArrayTypes, infer)
+      : null;
+
   const legacyResult =
-    mergedObject === null && mergedArray === null
+    mergedObject === null && mergedArray === null && mergedObjectArray === null
       ? collapsed
       : [
           ...otherTypes,
           ...(mergedObject !== null ? [mergedObject] : objectTypes),
+          ...(mergedObjectArray !== null ? [mergedObjectArray] : objectArrayTypes),
           ...(mergedArray !== null ? [mergedArray] : arrayTypes),
         ];
 

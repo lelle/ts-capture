@@ -566,6 +566,88 @@ describe("mergeTypes — cartesian-product collapse inside Array<...>", () => {
   });
 });
 
+describe("mergeTypes — object arrays merge the same nested as at the top", () => {
+  it("merges the element union of an array held by a property", () => {
+    expect(
+      mergeTypes(
+        [
+          "{ id: number, lines: Array<{ note: string, qty: number, sku: string } | { qty: number, sku: string }> }",
+        ],
+        INFER_DEFAULTS,
+      ),
+    ).toBeTheType(["{ id: number, lines: { note?: string, qty: number, sku: string }[] }"]);
+  });
+
+  it("merges an element union two objects down", () => {
+    expect(
+      mergeTypes(["{ order: { lines: Array<{ sku: string } | { note: string, sku: string }> } }"]),
+    ).toBeTheType(["{ order: { lines: { note?: string, sku: string }[] } }"]);
+  });
+
+  it("merges object arrays from two samples at a property", () => {
+    expect(
+      mergeTypes([
+        "{ lines: { qty: number, sku: string }[] }",
+        "{ lines: { note: string, qty: number, sku: string }[] }",
+      ]),
+    ).toBeTheType(["{ lines: { note?: string, qty: number, sku: string }[] }"]);
+  });
+
+  it("merges object arrays from two samples at the top", () => {
+    expect(
+      mergeTypes([
+        "{ qty: number, sku: string }[]",
+        "{ note: string, qty: number, sku: string }[]",
+      ]),
+    ).toBeTheType(["{ note?: string, qty: number, sku: string }[]"]);
+  });
+
+  it("keeps primitive arrays from two samples apart, nested as at the top", () => {
+    expect(mergeTypes(["{ xs: number[] }", "{ xs: string[] }"])).toBeTheType([
+      "{ xs: number[] | string[] }",
+    ]);
+    expect(mergeTypes(["number[]", "string[]"])).toBeTheType(["number[]", "string[]"]);
+  });
+
+  it("keeps a nested union whose literal field tells the objects apart", () => {
+    expect(
+      mergeTypes(
+        ['{ shapes: Array<{ kind: "circle", r: number } | { kind: "square", s: number }> }'],
+        litOn,
+      ),
+    ).toBeTheType([
+      '{ shapes: Array<{ kind: "circle", r: number } | { kind: "square", s: number }> }',
+    ]);
+  });
+
+  it("keeps object arrays from two samples apart when a literal field tells them apart", () => {
+    expect(
+      mergeTypes(['{ kind: "circle", r: number }[]', '{ kind: "square", s: number }[]'], litOn),
+    ).toBeTheType(['{ kind: "circle", r: number }[]', '{ kind: "square", s: number }[]']);
+  });
+});
+
+describe("mergeTypes — object arrays beside other values, and inside arrays", () => {
+  it("merges object arrays at a property that is sometimes null", () => {
+    expect(
+      mergeTypes(["{ l: { a: number }[] }", "{ l: null }", "{ l: { a: number, b: string }[] }"]),
+    ).toBeTheType(["{ l: null | { a: number, b?: string }[] }"]);
+  });
+
+  it("merges object arrays held by an array", () => {
+    expect(mergeTypes(["Array<{ a: number }[] | { a: number, b: number }[]>"])).toBeTheType([
+      "{ a: number, b?: number }[][]",
+    ]);
+  });
+
+  it("leaves object arrays from two samples unmerged when recursiveObjectMerge is off", () => {
+    const off: InferOptions = { ...INFER_DEFAULTS, recursiveObjectMerge: false };
+    const input = ["{ a: number }[]", "{ a: number, b: number }[]"];
+    expect(mergeTypes(input, off)).toBeTheType(["{ a: number }[]"]);
+    expect(mergeTypes(input)).toBeTheType(["{ a: number, b?: number }[]"]);
+  });
+});
+
 describe("mergeTypes — lub fallback", () => {
   // Migrated from apply-types.spec.ts's "lub fallback" block. When the legacy
   // object-merge bails on a literal discriminator AND infer.lubFallback is on, a
