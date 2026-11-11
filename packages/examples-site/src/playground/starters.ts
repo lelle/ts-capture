@@ -1,9 +1,14 @@
 import type { PlaygroundOptions } from "./options.js";
 
+/** Whether a starter's text is code to run or a JSON value to type. */
+export type Kind = "code" | "json";
+
 export interface Starter {
   id: string;
   title: string;
   code: string;
+  /** `json`: the text is a value to type, not code to run. */
+  kind?: Kind;
   /** The options set when it is chosen; the rest go back to the defaults. */
   options?: Partial<PlaygroundOptions>;
 }
@@ -85,6 +90,24 @@ async function summarize(id) {
 }
 
 summarize(7);
+`,
+  },
+  {
+    id: "json",
+    title: "From JSON",
+    kind: "json",
+    options: { aliasRepeatedShapes: true },
+    code: `{
+  "id": 7,
+  "customer": { "name": "Ada", "email": "ada@example.com" },
+  "billing": { "street": "Storgata 1", "city": "Oslo", "zip": "0150" },
+  "shipping": { "street": "Strandkaien 3", "city": "Bergen", "zip": "5003" },
+  "lines": [
+    { "sku": "chair", "quantity": 2, "price": 120 },
+    { "sku": "lamp", "quantity": 1, "price": 45, "note": "gift wrap" }
+  ],
+  "paid": true
+}
 `,
   },
   {

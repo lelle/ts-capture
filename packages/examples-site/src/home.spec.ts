@@ -10,6 +10,7 @@ describe("renderHomePage", () => {
   it("links to the examples and the playground beside it", () => {
     expect(html).toContain('<a href="examples/">');
     expect(html).toContain('<a href="playground/">');
+    expect(html).toContain('<a href="playground/#starter=json">');
   });
 
   const shown = (): string => /<img class="shown"[^>]*>/.exec(html)?.[0] ?? "";

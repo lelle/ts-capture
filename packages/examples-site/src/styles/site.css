@@ -405,6 +405,7 @@ footer,
   color: var(--muted);
 }
 .controls select,
+.controls input,
 .controls button {
   font: inherit;
   font-size: 15px;
@@ -413,6 +414,17 @@ footer,
   border: 1px solid var(--line);
   background: var(--surface);
   color: var(--text);
+}
+.controls input {
+  width: 9ch;
+}
+.json-fields {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+.json-fields[hidden] {
+  display: none;
 }
 .controls button {
   cursor: pointer;
@@ -426,6 +438,7 @@ footer,
   cursor: progress;
 }
 .controls select:focus-visible,
+.controls input:focus-visible,
 .controls button:focus-visible,
 textarea:focus-visible {
   outline: 2px solid var(--accent);
@@ -437,6 +450,11 @@ textarea:focus-visible {
 }
 .options summary {
   cursor: pointer;
+  color: var(--muted);
+}
+.options .hint {
+  display: block;
+  font-size: 13px;
   color: var(--muted);
 }
 .options #changed {

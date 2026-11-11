@@ -56,3 +56,8 @@ export function linkFromHash(
   }
   return { code, options };
 }
+
+/** The starter a `#starter=<id>` link opens with. */
+export function starterFromHash(hash: string): string | undefined {
+  return /^#starter=([\w-]+)$/.exec(hash)?.[1];
+}

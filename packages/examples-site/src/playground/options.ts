@@ -7,14 +7,26 @@ export type PlaygroundOptions = Pick<
   | "narrowParamShapes"
   | "outputMode"
   | "skipRedundantAnnotations"
->;
+> & {
+  /** `infer.literal.string`, keyed by its path in the config. */
+  "literal.string": boolean;
+};
 
 export type SwitchKey = Exclude<keyof PlaygroundOptions, "outputMode">;
 
-export const SWITCHES: ReadonlyArray<{ key: SwitchKey; label: string }> = [
+export const SWITCHES: ReadonlyArray<{
+  key: SwitchKey;
+  label: string;
+  note?: string;
+}> = [
   { key: "aliasRepeatedShapes", label: "Name repeated shapes" },
   { key: "skipRedundantAnnotations", label: "Skip what TypeScript infers" },
   { key: "narrowParamShapes", label: "Narrow parameter shapes" },
+  {
+    key: "literal.string",
+    label: "Keep string literals",
+    note: "One value makes every string a literal; worth it when objects are told apart by a field.",
+  },
 ];
 
 export const OUTPUT_MODES: ReadonlyArray<PlaygroundOptions["outputMode"]> = [
@@ -30,6 +42,7 @@ export const OPTION_DEFAULTS: PlaygroundOptions = {
   skipRedundantAnnotations: true,
   narrowParamShapes: false,
   outputMode: "annotations",
+  "literal.string": false,
 };
 
 export function changedOptions(
