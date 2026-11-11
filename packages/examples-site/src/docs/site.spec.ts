@@ -85,7 +85,8 @@ describe("the docs on the site", () => {
       const broken: string[] = [];
       for (const [, href] of html.matchAll(/href="([^"]*)"/g)) {
         if (/^[a-z]+:/i.test(href!)) continue;
-        const [target = "", anchor] = href!.split("#");
+        const [address = "", anchor] = href!.split("#");
+        const target = address.split("?")[0]!;
         const resolved = target
           ? `${posix.normalize(posix.join(path, target))}/`.replace(/\/+$/, "/")
           : path;

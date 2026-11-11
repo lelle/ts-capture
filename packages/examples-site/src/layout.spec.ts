@@ -51,11 +51,17 @@ const stylesheets = (page: string): string[] =>
 
 describe("the site frame", () => {
   it.each([
-    ["home", ["css/site.css"]],
-    ["examples", ["../css/site.css"]],
-    ["how-it-decides", ["../css/site.css", "../css/how-it-decides.css"]],
-    ["playground", ["../css/site.css"]],
-    ["docs", ["../../../css/site.css", "../../../css/docs.css"]],
+    ["home", ["css/site.css?v=abc1234"]],
+    ["examples", ["../css/site.css?v=abc1234"]],
+    [
+      "how-it-decides",
+      ["../css/site.css?v=abc1234", "../css/how-it-decides.css?v=abc1234"],
+    ],
+    ["playground", ["../css/site.css?v=abc1234"]],
+    [
+      "docs",
+      ["../../../css/site.css?v=abc1234", "../../../css/docs.css?v=abc1234"],
+    ],
   ] as const)(
     "%s loads the site's stylesheet, and its own where it has one",
     (id, sheets) => {
@@ -63,6 +69,12 @@ describe("the site frame", () => {
       expect(pages[id]).not.toContain("<style>");
     },
   );
+
+  it("names the build in the stylesheet links, so a deploy is not read from an old cache", () => {
+    expect(stylesheets(renderHomePage({ version: "0.4.0" }))).toEqual([
+      "css/site.css?v=0.4.0",
+    ]);
+  });
 
   it.each(Object.entries(pages))(
     "%s has the same bar as the others",

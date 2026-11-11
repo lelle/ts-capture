@@ -39,11 +39,17 @@ const ICON_LINK = markup`<link rel="icon" type="image/svg+xml" href="data:image/
 // Each page's own rules, beside the ones every page shares.
 const OWN_STYLESHEET = new Set<PageId>(["docs", "how-it-decides"]);
 
-function renderStylesheets(current: PageId, root: string): Markup {
-  return markup`<link rel="stylesheet" href="${root}css/site.css">${
+// The build in the link, so a deploy's styles are not read from an old cache.
+function renderStylesheets(
+  current: PageId,
+  root: string,
+  build: BuildInfo,
+): Markup {
+  const version = build.commit ?? build.version;
+  return markup`<link rel="stylesheet" href="${root}css/site.css?v=${version}">${
     OWN_STYLESHEET.has(current) &&
     markup`
-<link rel="stylesheet" href="${root}css/${current}.css">`
+<link rel="stylesheet" href="${root}css/${current}.css?v=${version}">`
   }`;
 }
 
@@ -143,7 +149,7 @@ ${
 `
 }${renderShareCard(title, page.description, path)}
 <script src="${root}js/theme.js"></script>
-${renderStylesheets(id, root)}
+${renderStylesheets(id, root, build)}
 ${COUNTER}
 </head>
 <body>
