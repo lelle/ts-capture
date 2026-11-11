@@ -18,6 +18,9 @@ export { instrumentSource } from "./instrument.js";
 /** Apply observations to a project read through a `ts.System`, behind the type-check gate. */
 export { applyInMemory } from "./in-memory-apply.js";
 
+/** The type apply would write for a parameter given these values. */
+export { typesFromValues } from "./types-from-values.js";
+
 /** The summary and `--report` lines the CLI prints for an apply. */
 export { notWrittenLine, reportLines, summaryLines } from "./cli/apply-report.js";
 
@@ -37,6 +40,7 @@ export type {
 export { APPLY_RULES } from "./contract.js";
 export type { InMemoryApplyInput, InMemoryApplyResult } from "./in-memory-apply.js";
 export type { TscptrFn } from "./tscptr-hook.js";
+export type { TypesFromValuesOptions, TypesFromValuesResult } from "./types-from-values.js";
 
 export interface Observer {
   /** Hand this to the instrumented code as `__tscptr__`. */

@@ -213,7 +213,7 @@ function rewrite(text: string, alias: ReadonlyMap<string, string>, inner: boolea
 }
 
 /** `_product` and `$item` are `Product` and `Item`; anything else than an identifier is nothing. */
-function identifierCase(name: string): string | undefined {
+export function identifierCase(name: string): string | undefined {
   const bare = name.replace(/^[_$]+/, "");
   if (!/^[A-Za-z][\w$]*$/.test(bare)) return undefined;
   return bare[0].toUpperCase() + bare.slice(1);
