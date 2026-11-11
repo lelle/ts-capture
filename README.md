@@ -78,6 +78,23 @@ Read the diff before you keep it
 are skipped; other files to skip go under
 [`apply.skipFiles`](docs/reference/configuration.md#apply).
 
+## Types from a value
+
+The same engine types a value you already have, such as parsed JSON, a fixture
+or an object in a debugger, with nothing instrumented:
+
+```ts
+import { typesFromValues } from "@ts-capture/core";
+
+typesFromValues([await response.json()]).type;
+// { customer: { name: string }; id: number; lines: { note?: string; qty: number; sku: string }[] }
+```
+
+It gives the type `apply` would write for a parameter called with those values.
+[Type a value or JSON](docs/how-to/type-a-value.md) shows how, and the
+[playground](https://lelle.github.io/ts-capture/playground/#starter=json) types
+pasted JSON in the browser.
+
 ## Packages
 
 | Package                                                                              | For                                                                 |

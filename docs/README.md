@@ -38,6 +38,7 @@ looking something up.
 - [Use without a bundler](how-to/use-without-a-bundler.md)
 - [Review & apply safely](how-to/review-and-apply-safely.md)
 - [Check the types you wrote](how-to/check-your-types.md)
+- [Type a value or JSON](how-to/type-a-value.md)
 - [Pair with TypeStat](how-to/pair-with-typestat.md)
 
 ### Reference — facts
@@ -45,8 +46,8 @@ looking something up.
 - [CLI](reference/cli.md) — every command and flag.
 - [Configuration](reference/configuration.md) — every `infer.*` / `apply.*`
   flag, its default, and the config-file / CLI form.
-- [API](reference/api.md) — `annotate`, `annotateProject` and
-  `instrumentSource`, for a runner or build step of your own.
+- [API](reference/api.md) — `typesFromValues`, `annotate`, `annotateProject`
+  and `instrumentSource`, for a runner or build step of your own.
 - [Packages](reference/packages.md) — the package matrix and how they fit.
 
 ### Explanation — understanding
