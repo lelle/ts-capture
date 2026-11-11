@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 
+import { SWITCHES } from "./options.js";
 import { renderPlaygroundPage } from "./page.js";
 
 const starters = [
@@ -42,6 +43,7 @@ describe("renderPlaygroundPage", () => {
       "aliasRepeatedShapes",
       "skipRedundantAnnotations",
       "narrowParamShapes",
+      "literal.string",
       "outputMode",
     ]) {
       expect(html).toContain(
@@ -74,5 +76,53 @@ describe("renderPlaygroundPage", () => {
     expect(naming).toContain(
       '<span id="changed">1 changed from the defaults</span>',
     );
+  });
+
+  const shownFor = (page: string, kind: string) =>
+    [...page.matchAll(new RegExp(`<[^>]* data-kind="${kind}"[^>]*>`, "g"))].map(
+      (match) => match[0],
+    );
+
+  it("carries the words for both kinds of starter, showing those for the first", () => {
+    expect(shownFor(html, "code").length).toBeGreaterThan(0);
+    expect(shownFor(html, "json").length).toBeGreaterThan(0);
+    expect(shownFor(html, "code").every((tag) => !tag.includes("hidden"))).toBe(
+      true,
+    );
+    expect(shownFor(html, "json").every((tag) => tag.includes("hidden"))).toBe(
+      true,
+    );
+    expect(html).toContain("Paste a JSON value");
+  });
+
+  it("shows the JSON words when the first starter is JSON", () => {
+    const json = renderPlaygroundPage(
+      [{ ...starters[0]!, kind: "json" }, starters[1]!],
+      { version: "0.4.0" },
+    );
+    expect(shownFor(json, "json").every((tag) => !tag.includes("hidden"))).toBe(
+      true,
+    );
+    expect(shownFor(json, "code").every((tag) => tag.includes("hidden"))).toBe(
+      true,
+    );
+  });
+
+  it("asks for the name and the depth only when typing JSON", () => {
+    expect(html).toMatch(
+      /<span [^>]*data-kind="json"[^>]*hidden[^>]*>[\s\S]*?id="root-name"/,
+    );
+    expect(box(html, "root-name")).toContain('placeholder="data"');
+    expect(box(html, "max-depth")).not.toContain("value=");
+  });
+
+  it("says beside a switch what it costs, where a switch has a note", () => {
+    for (const { key, note } of SWITCHES.filter((entry) => entry.note)) {
+      const item = new RegExp(
+        `<li><input [^>]*id="infer-${key}"[^]*?</li>`,
+      ).exec(html)?.[0];
+      expect(item).toContain(note);
+    }
+    expect(SWITCHES.some((entry) => entry.note)).toBe(true);
   });
 });

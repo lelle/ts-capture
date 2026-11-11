@@ -1,5 +1,6 @@
 import {
   applyInMemory,
+  type CollectorOptions,
   createObserver,
   INFER_DEFAULTS,
   type InferOptions,
@@ -8,9 +9,12 @@ import {
   type LocatedWrite,
   reportLines,
   summaryLines,
+  typesFromValues,
 } from "@ts-capture/core/browser";
 import { createSystem, createVirtualCompilerHost } from "@typescript/vfs";
 import ts from "typescript";
+
+import type { PlaygroundOptions } from "./options.js";
 
 import { renderCode } from "../code.js";
 
@@ -50,6 +54,22 @@ export interface RunOptions {
   implicitThis?: boolean;
   /** Options over the defaults. */
   infer?: Partial<InferOptions>;
+  /** What is observed of each value. */
+  literalOptions?: CollectorOptions["literalOptions"];
+}
+
+/** The playground's options as apply takes them: the type's, and the observation's. */
+export function fromPlaygroundOptions(
+  options: Partial<PlaygroundOptions>,
+): Required<Pick<RunOptions, "infer" | "literalOptions">> {
+  const { "literal.string": literalString = false, ...infer } = options;
+  return {
+    infer: {
+      ...infer,
+      literal: { ...INFER_DEFAULTS.literal, string: literalString },
+    },
+    literalOptions: { literalString },
+  };
 }
 
 /**
@@ -62,7 +82,7 @@ export async function runPlayground(
   options: RunOptions = {},
 ): Promise<PlaygroundResult> {
   const target = options.applyTo ?? code;
-  const observer = createObserver();
+  const observer = createObserver({ literalOptions: options.literalOptions });
   try {
     const instrumented = instrumentSource(
       code,
@@ -118,6 +138,81 @@ export async function runPlayground(
     skips,
     written,
   };
+}
+
+const NOTHING_TO_WRITE =
+  "Nothing to write: part of the value is unknown. An empty list seen alone gives apply nothing it would write, and so does an object nested deeper than Depth levels.";
+
+export interface JsonOptions extends Pick<
+  RunOptions,
+  "infer" | "literalOptions"
+> {
+  /** What the value is called: the root type's name, and what shapes in it are named after. */
+  name?: string;
+  maxDepth?: number;
+}
+
+const DEFAULT_NAME = "data";
+
+/** The type apply would write for a parameter given the parsed `json`, declared under `name`. */
+export function typesFromJson(
+  json: string,
+  options: JsonOptions = {},
+): PlaygroundResult {
+  let value: unknown;
+  try {
+    value = JSON.parse(json);
+  } catch (error) {
+    return { ok: false, error: `This is not JSON: ${String(error)}` };
+  }
+  const typed = (name: string) =>
+    typesFromValues([value], {
+      name,
+      maxDepth: options.maxDepth,
+      literalOptions: options.literalOptions,
+      infer: options.infer,
+    });
+  // A name that is no identifier gives no root name; the value is then `data`.
+  const named = typed(options.name || DEFAULT_NAME);
+  const { rootName, type, declarations } =
+    named.rootName === undefined ? typed(DEFAULT_NAME) : named;
+  const after =
+    type === undefined
+      ? ""
+      : multiline([`type ${rootName} = ${type};`, ...declarations].join("\n"));
+  return {
+    ok: true,
+    after,
+    html: renderCode("", after).text,
+    summary: type === undefined ? [NOTHING_TO_WRITE] : [],
+    report: [],
+    skips: [],
+    written: [],
+  };
+}
+
+/** Type declarations with one member to a line, indented by two. */
+function multiline(declarations: string): string {
+  const file = ts.createSourceFile(
+    "/types.ts",
+    declarations,
+    ts.ScriptTarget.Latest,
+  );
+  const unfolded = ts.transform(file, [
+    (context) => (root) => {
+      const visit = (node: ts.Node): ts.Node =>
+        ts.isTypeLiteralNode(node)
+          ? ts.factory.createTypeLiteralNode(
+              ts.visitNodes(node.members, visit, ts.isTypeElement),
+            )
+          : ts.visitEachChild(node, visit, context);
+      return ts.visitNode(root, visit, ts.isSourceFile);
+    },
+  ]).transformed[0]!;
+  return ts
+    .createPrinter()
+    .printFile(unfolded)
+    .replace(/^(?: {4})+/gm, (indent) => " ".repeat(indent.length / 2));
 }
 
 function programOf(

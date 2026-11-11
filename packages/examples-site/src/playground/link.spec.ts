@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { linkFromHash, playgroundLink } from "./link.js";
+import { linkFromHash, playgroundLink, starterFromHash } from "./link.js";
 
 describe("playgroundLink", () => {
   const code = 'greet({ name: "Ada & Bo" });\n';
@@ -40,6 +40,12 @@ describe("linkFromHash", () => {
     });
   });
 
+  it("carries a literal switch under its path in the config", () => {
+    const link = playgroundLink("f();\n", { "literal.string": true })!;
+    expect(link).toContain("&infer.literal.string=true");
+    expect(linkFromHash(link)!.options).toEqual({ "literal.string": true });
+  });
+
   it("reads a link from before the options, with the code alone", () => {
     expect(linkFromHash(`#code=${encodeURIComponent("f();\n")}`)).toEqual({
       code: "f();\n",
@@ -50,7 +56,7 @@ describe("linkFromHash", () => {
   it("passes over an option it does not know, or a value it cannot use", () => {
     expect(
       linkFromHash(
-        "#code=f()&infer.literal.string=true&infer.outputMode=loud&infer.narrowParamShapes=yes",
+        "#code=f()&infer.literal.number=true&infer.outputMode=loud&infer.narrowParamShapes=yes",
       ),
     ).toEqual({ code: "f()", options: {} });
   });
@@ -62,5 +68,18 @@ describe("linkFromHash", () => {
 
   it("is undefined for a link that does not decode", () => {
     expect(linkFromHash("#code=%E0%A4%A")).toBeUndefined();
+  });
+});
+
+describe("starterFromHash", () => {
+  it("names the starter a link opens with", () => {
+    expect(starterFromHash("#starter=json")).toBe("json");
+  });
+
+  it("is undefined for a link that carries code, or nothing", () => {
+    expect(
+      starterFromHash(`#code=${encodeURIComponent("f();")}`),
+    ).toBeUndefined();
+    expect(starterFromHash("")).toBeUndefined();
   });
 });

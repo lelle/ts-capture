@@ -83,7 +83,7 @@ export function renderHomePage(build: BuildInfo): string {
     </ol>
     <figcaption id="demo-description">An order form whose code has no types. The ts-capture plugin is added to the Vite config, two orders are placed in the browser, and <code>ts-capture apply</code> writes four named types and six annotations into the source, taking type coverage from 77% to 100%.</figcaption>
   </figure>
-  <p class="how">The recording is made by running every step for real; nothing in it is written by hand. See <a href="examples/">what it wrote into real projects</a>, the results a reviewer should change included, or <a href="playground/">try it in your browser</a>.</p>
+  <p class="how">The recording is made by running every step for real; nothing in it is written by hand. See <a href="examples/">what it wrote into real projects</a>, the results a reviewer should change included, or <a href="playground/">try it in your browser</a>, on code or on <a href="playground/#starter=json">a JSON value</a>.</p>
   <h2>Install</h2>
   <ul class="install">
     ${join(INTEGRATIONS.map(renderIntegration), "\n    ")}
