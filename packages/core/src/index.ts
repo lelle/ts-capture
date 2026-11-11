@@ -12,6 +12,9 @@ export { applyTypesToFile, applyTypesToFileCst, applyTypesToFiles } from "./appl
 /** Compute annotation coverage (how many inferable positions carry a type) for a source file. */
 export { typeCoverage } from "./type-coverage.js";
 
+/** The type apply would write for a parameter given these values, without instrumenting any source. */
+export { typesFromValues } from "./types-from-values.js";
+
 /** Verify that applied annotations introduce no new type errors; check a single annotation's compatibility. */
 export { verifyTypes, isCompatible } from "./verify.js";
 
@@ -104,6 +107,9 @@ export type { ApplyTypesOptions } from "./contract.js";
 
 /** Compiler options accepted when building a `ts.Program`. */
 export type { CompilerOptions } from "./compiler-helper.js";
+
+/** What `typesFromValues` takes and returns. */
+export type { TypesFromValuesOptions, TypesFromValuesResult } from "./types-from-values.js";
 
 /** The result of a `typeCoverage` run. */
 export type { TypeCoverageResult } from "./type-coverage.js";

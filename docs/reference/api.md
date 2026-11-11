@@ -14,8 +14,58 @@ import {
   annotateProject,
   instrumentSource,
   typeCoverage,
+  typesFromValues,
 } from "@ts-capture/core";
 ```
+
+## From values: `typesFromValues`
+
+`typesFromValues` gives the type `apply` would write for a parameter called
+once with each value. Nothing is instrumented and no file is read, so it works
+on any value at hand: parsed JSON, a fixture, an object in a debugger.
+
+```ts
+import { typesFromValues } from "@ts-capture/core";
+
+const orders = [
+  { id: 7, customer: { name: "Ada" }, lines: [{ sku: "A1", qty: 2 }] },
+  {
+    id: 8,
+    customer: { name: "Bo" },
+    lines: [{ sku: "B2", qty: 1, note: "gift" }],
+  },
+];
+
+typesFromValues(orders).type;
+// { customer: { name: string }; id: number; lines: { note?: string; qty: number; sku: string }[] }
+```
+
+Each value counts as one call, so a field only some values have is optional.
+The options are the ones the rest of ts-capture takes: `infer` as in
+[`ts-capture.config.json`](configuration.md), and `literalOptions` as given to
+the Vite plugin. `infer.literal` also decides which literals are observed,
+unless `literalOptions` says otherwise. With `infer.aliasRepeatedShapes`, a
+shape the values repeat is declared once; `name` is the parameter name apply
+would see, which a declared shape may be named after. `rootName` is `name` as a
+type name (`_order` gives `Order`), and no declared shape takes it, so
+`type ${rootName} = ${type}` can sit beside the declarations.
+
+```ts
+const trip = JSON.parse(
+  '{"from":{"city":"Oslo","zip":"0150"},"to":{"city":"Bergen","zip":"5003"}}',
+);
+
+typesFromValues([trip], { name: "trip", infer: { aliasRepeatedShapes: true } });
+// { rootName: "Trip",
+//   type: "{ from: From; to: From }",
+//   declarations: ["type From = { city: string; zip: string };"] }
+```
+
+`type` is `undefined` when apply would write nothing: no value was given, or
+part of the type is unknown, as with an empty list seen alone or an object
+nested deeper than `maxDepth` levels. `maxDepth` is 5 unless given, as deep as
+observation reads, and `{ maxDepth: 8 }` reads deeper JSON such as a GraphQL
+response. It is also exported from `@ts-capture/core/browser`.
 
 ## Apply: `annotateProject` and `annotate`
 

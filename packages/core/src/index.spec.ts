@@ -12,6 +12,7 @@ describe("public API", () => {
     "applyTypesToFileCst",
     "applyTypesToFiles",
     "typeCoverage",
+    "typesFromValues",
     "verifyTypes",
     "isCompatible",
     "instrumentBundle",
