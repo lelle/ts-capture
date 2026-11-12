@@ -1,0 +1,26 @@
+{
+  "name": "@ts-capture/record-api",
+  "version": "0.0.0",
+  "private": true,
+  "description": "A reference for typing a service with no contract: record its responses, and write the types they show.",
+  "type": "module",
+  "scripts": {
+    "build": "tsc",
+    "typecheck": "tsc --noEmit -p tsconfig.test.json",
+    "test": "vitest run",
+    "test:coverage": "vitest run --coverage",
+    "test:watch": "vitest",
+    "lint": "oxlint src/ --deny-warnings"
+  },
+  "license": "MIT",
+  "dependencies": {
+    "@ts-capture/core": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/node": "26.6.5",
+    "@vitest/coverage-v8": "4.1.11",
+    "oxlint": "1.88.0",
+    "typescript": "6.0.3",
+    "vitest": "4.1.11"
+  }
+}
