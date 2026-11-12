@@ -1,5 +1,12 @@
 # @ts-capture/vite
 
+## 0.6.0
+
+### Patch Changes
+
+- Updated dependencies [[`de75dbe`](https://github.com/lelle/ts-capture/commit/de75dbec8e41188d2047bcfb06fc08eb8f3c30bb), [`8b21e00`](https://github.com/lelle/ts-capture/commit/8b21e002472d0562fc2e9a49688293486e088c9f)]:
+  - @ts-capture/core@0.6.0
+
 ## 0.5.3
 
 ### Patch Changes

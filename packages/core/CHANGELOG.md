@@ -1,5 +1,15 @@
 # @ts-capture/core
 
+## 0.6.0
+
+### Minor Changes
+
+- [#17](https://github.com/lelle/ts-capture/pull/17) [`8b21e00`](https://github.com/lelle/ts-capture/commit/8b21e002472d0562fc2e9a49688293486e088c9f) Thanks [@lelle](https://github.com/lelle)! - `typesFromValues(values, options)` gives the type apply would write for a parameter called once with each value, without instrumenting any source: parsed JSON, a fixture, an object at hand. It takes the same `infer` and `literalOptions` as the rest of ts-capture, and a `maxDepth` for values nested deeper than observation reads by default, and with `infer.aliasRepeatedShapes` it declares the shapes the values repeat, under names other than the `rootName` it gives for `name`. `infer.literal` also decides which literals are observed unless `literalOptions` says otherwise. It is exported from `@ts-capture/core` and `@ts-capture/core/browser`.
+
+### Patch Changes
+
+- [#16](https://github.com/lelle/ts-capture/pull/16) [`de75dbe`](https://github.com/lelle/ts-capture/commit/de75dbec8e41188d2047bcfb06fc08eb8f3c30bb) Thanks [@lelle](https://github.com/lelle)! - A list of objects that differ is written as one object type with optional fields wherever it sits, not only when it is passed on its own. A list inside an object used to be written as a union of near-identical objects, and lists of objects that differed between calls as a union of arrays, which the calls themselves failed against, so nothing was written. Lists of primitives, and objects told apart by a literal field, stay as they were. `infer.recursiveObjectMerge: false` keeps them apart, as before.
+
 ## 0.5.3
 
 ### Patch Changes
