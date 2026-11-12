@@ -3,6 +3,9 @@ import { defineConfig } from "vitest/config";
 export default defineConfig({
   test: {
     include: ["src/**/*.spec.ts"],
+    // The playground specs type-check against the full TypeScript libs. The
+    // first check in a run took 5.5-7s under coverage on CI runners.
+    testTimeout: 30000,
     coverage: {
       provider: "v8",
       include: ["src/**/*.ts"],
