@@ -95,6 +95,9 @@ It gives the type `apply` would write for a parameter called with those values.
 [playground](https://lelle.github.io/ts-capture/playground/#starter=json) types
 pasted JSON in the browser.
 
+Calling a service that has no contract? Record what it answers and check in
+the types: [Type a service with no contract](docs/how-to/type-a-service-from-its-responses.md).
+
 ## Packages
 
 | Package                                                                              | For                                                                 |

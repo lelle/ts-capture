@@ -16,6 +16,9 @@ library — these docs are organized so you can find what you need by intent.
 - **Looking up a flag or command?** See the
   [Configuration reference](reference/configuration.md).
 
+- **Calling a service with no contract?** Record what it answers and get its
+  types: [Type a service with no contract](how-to/type-a-service-from-its-responses.md).
+
 - **Want to see what it writes first?** [In real code](examples/README.md):
   before and after on real code, the weak results included.
 
@@ -39,6 +42,7 @@ looking something up.
 - [Review & apply safely](how-to/review-and-apply-safely.md)
 - [Check the types you wrote](how-to/check-your-types.md)
 - [Type a value or JSON](how-to/type-a-value.md)
+- [Type a service with no contract](how-to/type-a-service-from-its-responses.md)
 - [Pair with TypeStat](how-to/pair-with-typestat.md)
 
 ### Reference — facts

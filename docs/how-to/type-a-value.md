@@ -16,7 +16,9 @@ The type is the one `apply` would write for a parameter called with the same
 values, so it follows the same rules and the same
 [options](../reference/configuration.md). To try it without installing
 anything, paste JSON into the
-[playground](https://lelle.github.io/ts-capture/playground/#starter=json).
+[playground](https://lelle.github.io/ts-capture/playground/#starter=json). To
+type a service from the responses it gives while your code runs, see
+[Type a service with no contract](type-a-service-from-its-responses.md).
 
 ## Several values make one type
 
